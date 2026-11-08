@@ -12,3 +12,15 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
 - Wording: pithy, no helper text, icon names only as hold labels.
 - This repo is public: no tailnet hostnames, serials, keys or personal data.
   Server addresses (ccez-words, update mirror) are settings set with `keys`.
+
+## Building and checking
+
+- `scripts/build.sh` builds the release APK (key in `~/.config/ccez-keys`,
+  never regenerate it) and installs it on the connected phone.
+- `keys status | get | set | schema | log` (cli/) talks to the keyboard
+  over adb; `keys log` holds its events and errors (never typed text).
+- `scripts/phone-type.py "deja "` types on the phone by tapping keys, for
+  checks; screenshot with `adb exec-out screencap -p`.
+- Never `am force-stop uk.ccez.keys` while it's the chosen keyboard:
+  Android falls back to Samsung Keyboard. Put the owner's keyboard back
+  after a check (`ime set com.touchtype.swiftkey/com.touchtype.KeyboardService`).

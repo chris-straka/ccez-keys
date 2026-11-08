@@ -49,6 +49,21 @@ on the page.
 - Privacy: no strip, AI, learning or clipboard in password fields or
   apps that ask for no personalised learning. Typed text never in logs.
 
+## Stage 1 status (2026-11-08)
+
+Done, checked on the S24: QWERTY with accents (hold a key) for en/fr/de/es,
+autocorrect and suggestions (accents back: deja → déjà; j'ai; German
+capitals and ß), backspace undoes a correction and trusts the word,
+next words from own typing, double-space period, capitals, space-bar
+swipe between languages, face panel (emoji, kaomoji first in chat apps),
+settings panel (buttons, typing, size, languages, licences), clipboard
+chip, `keys` CLI, log, haptics (keys, held-key choices, language switch,
+undo) and short fades (bar, panels, held-key choices). Tests: core, 13.
+
+Not yet: the clipboard chip is untested on the phone; drag to reorder
+languages; hold space for the language list; self-update (like
+ccez-tube's); swipe typing (setting, off by default); number row.
+
 ## Order
 
 1. Daily-usable keyboard: QWERTY, autocorrect + suggestions (en, fr),

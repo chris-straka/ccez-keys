@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Three rows of keys, the space bar in the accent. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#EDEDED" android:pathData="M33,38h8v8h-8zM45,38h8v8h-8zM57,38h8v8h-8zM69,38h8v8h-8zM36,50h8v8h-8zM48,50h8v8h-8zM60,50h8v8h-8z" />
+    <path android:fillColor="#FF8A80" android:pathData="M39,62h30a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-30a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z" />
+</vector>
