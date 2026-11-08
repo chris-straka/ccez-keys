@@ -17,6 +17,9 @@ struct LayoutFile {
     /// The comma key, where the script has its own (Arabic ،).
     #[serde(default)]
     comma: Option<String>,
+    /// The period key, where the script has its own (。).
+    #[serde(default)]
+    period_key: Option<String>,
     popups: HashMap<String, HashMap<String, Vec<String>>>,
     period: Vec<String>,
     symbols: Vec<Vec<String>>,
@@ -37,6 +40,8 @@ const FILES: &[&str] = &[
     include_str!("../../data/layouts/hindi.json"),
     include_str!("../../data/layouts/thai.json"),
     include_str!("../../data/layouts/korean.json"),
+    include_str!("../../data/layouts/japanese.json"),
+    include_str!("../../data/layouts/chinese.json"),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -162,7 +167,7 @@ impl Layouts {
             }
             rows.push(Row { keys });
         }
-        let mut period = ch(".", f.period.clone());
+        let mut period = ch(f.period_key.as_deref().unwrap_or("."), f.period.clone());
         period.width = 0.8;
         let mut comma = ch(f.comma.as_deref().unwrap_or(","), vec![]);
         comma.width = 0.8;

@@ -20,6 +20,8 @@ import uk.ccez.keys.core.Page
 /** What the bar above the keys shows. */
 sealed interface Bar {
     data object Buttons : Bar
+    /** Japanese/Chinese: words for what's typed, the first the likeliest. */
+    data class Convert(val words: List<uk.ccez.keys.core.Conversion>) : Bar
     /** Three cells; `typed` marks the cell that keeps the word as typed. */
     data class Words(val left: String?, val mid: String?, val right: String?, val midIsFix: Boolean, val typed: String?) : Bar
 }
@@ -58,12 +60,62 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private var lang = engine.currentLanguage()
     private var page = Page.LETTERS
     private val word = StringBuilder()
+    /** Japanese: kana so far and romaji waiting for a vowel. Chinese: pinyin letters (in `conv`). */
+    private val conv = StringBuilder()
+    private var romaji = ""
+    private fun converting() = lang == "ja" || lang == "zh"
+
+    /** What the converter is given: kana (a last "n" as ん) or pinyin. */
+    private fun convInput(): String =
+        if (lang == "ja") conv.toString() + engine.romaji(romaji, true).kana else conv.toString()
+
+    private fun showConv() {
+        val ic = ic ?: return
+        val shown = conv.toString() + romaji
+        if (shown.isEmpty()) {
+            ic.setComposingText("", 1)
+            ui.bar = Bar.Buttons
+            return
+        }
+        ic.setComposingText(shown, 1)
+        val words = engine.convert(lang, convInput())
+        ui.bar = if (words.isEmpty()) Bar.Buttons else Bar.Convert(words)
+    }
+
+    /** A candidate picked: it goes in, the rest of the input stays to convert. */
+    fun pickConversion(c: uk.ccez.keys.core.Conversion) {
+        val ic = ic ?: return
+        val input = convInput()
+        val rest = input.drop(c.consumed.toInt())
+        ic.commitText(c.text, 1)
+        conv.setLength(0)
+        conv.append(rest)
+        romaji = ""
+        if (rest.isEmpty()) {
+            ui.bar = Bar.Buttons
+            updateBar()
+        } else {
+            showConv()
+        }
+    }
+
+    /** Leaves the input as typed (kana or pinyin letters). */
+    private fun commitConv() {
+        val ic = ic ?: return
+        val shown = if (lang == "ja") convInput() else conv.toString()
+        if (shown.isNotEmpty()) ic.commitText(shown, 1)
+        conv.setLength(0)
+        romaji = ""
+    }
+
     /** Korean: the letters typed, which `word` shows joined into syllables. */
     private val jamo = StringBuilder()
 
     private fun clearWord() {
         word.setLength(0)
         jamo.setLength(0)
+        conv.setLength(0)
+        romaji = ""
     }
     private var shift = Shift.OFF
     private var lastShiftTap = 0L
@@ -106,6 +158,11 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     /** Layout, size and labels again (after a setting or language change). */
     fun refresh() {
+        // `keys use` may have changed it.
+        if (lang != engine.currentLanguage() && word.isEmpty()) {
+            lang = engine.currentLanguage()
+            if (converting()) app.scope.launch { uk.ccez.keys.learn.Dictionaries.ensure(lang) }
+        }
         val face = engine.settingBool("buttons.face")
         var layout = withoutFace(engine.layout(lang, page), !face)
         if (page == Page.LETTERS && engine.settingBool("typing.numbers")) layout = withNumbers(layout)
@@ -231,6 +288,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     override fun onLanguage(code: String) {
         view.auto = false
         if (code == lang) return
+        if (code == "ja" || code == "zh") app.scope.launch { uk.ccez.keys.learn.Dictionaries.ensure(code) }
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         endWord(correct = false)
         engine.setCurrentLanguage(code)
@@ -245,6 +303,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         endWord(correct = false)
         lang = engine.stepLanguage(step)
+        if (converting()) app.scope.launch { uk.ccez.keys.learn.Dictionaries.ensure(lang) }
         app.scope.launch { app.ensureWords(lang) }
         refresh()
         updateBar()
@@ -263,6 +322,20 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             return
         }
         val ic = ic ?: return
+        if (converting() && !password && text.length == 1 && text[0].isLetter() && text[0].code < 128) {
+            autoSpace = false
+            if (lang == "ja") {
+                val r = engine.romaji(romaji + text.lowercase(), false)
+                conv.append(r.kana)
+                romaji = r.pending
+            } else {
+                conv.append(text.lowercase())
+            }
+            if (shift == Shift.ONCE) setShift(Shift.OFF)
+            showConv()
+            return
+        }
+        if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) commitConv()
         if (text.length == 1 && Hangul.isJamo(text[0]) && !password) {
             autoSpace = false
             jamo.append(text)
@@ -344,6 +417,10 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun space() {
         ui.ask?.let { a -> ui.ask = a.copy(input = a.input + " "); return }
         val ic = ic ?: return
+        if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) {
+            (ui.bar as? Bar.Convert)?.words?.firstOrNull()?.let { pickConversion(it) } ?: run { commitConv(); updateBar() }
+            return
+        }
         val now = SystemClock.uptimeMillis()
         if (word.isNotEmpty()) {
             endWord(correct = true)
@@ -368,6 +445,12 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun backspace() {
         ui.ask?.let { a -> if (a.input.isNotEmpty()) ui.ask = a.copy(input = a.input.substring(0, a.input.offsetByCodePoints(a.input.length, -1))); return }
         val ic = ic ?: return
+        if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) {
+            if (romaji.isNotEmpty()) romaji = romaji.dropLast(1) else conv.setLength(conv.length - 1)
+            showConv()
+            if (conv.isEmpty() && romaji.isEmpty()) updateBar()
+            return
+        }
         autoSpace = false
         val f = fix
         fix = null
@@ -420,6 +503,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun enter() {
         if (ui.ask != null) { ask.send(); return }
         val ic = ic ?: return
+        if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) { commitConv(); updateBar(); return }
         endWord(correct = false)
         val info = editor
         val action = (info?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
@@ -490,6 +574,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     private fun updateBar() {
         ui.card = null
+        if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) { showConv(); return }
         val sentence = if (password) "" else sentence()
         strip.update(sentence, lang, allowed = !password)
         tips.update(sentence, lang, allowed = !password, ended = sentence.trimEnd().lastOrNull()?.let { it in ".!?。！？" } == true)

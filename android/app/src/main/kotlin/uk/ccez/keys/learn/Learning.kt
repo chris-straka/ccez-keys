@@ -102,16 +102,25 @@ object Dictionaries {
         else -> listOf("$lang.tsv.gz")
     }
 
+    /** Japanese and Chinese also get a converter (typing them), built from the same file. */
+    private fun converts(lang: String) = lang == "ja" || lang == "zh"
+
+    private fun complete(lang: String): Boolean {
+        val e = App.instance.engine
+        return e.dictionaryReady(lang) && (!converts(lang) || e.hasConverter(lang))
+    }
+
     /** Fetches and installs `lang`'s dictionary unless it's there. True when it was installed just now. */
     suspend fun ensure(lang: String): Boolean {
         val engine = App.instance.engine
-        if (engine.dictionaryReady(lang) || lang in failed) return false
+        if (complete(lang) || lang in failed) return false
         ONE.withLock {
-            if (engine.dictionaryReady(lang)) return false
+            if (complete(lang)) return false
             val started = System.nanoTime()
             try {
                 val sums = sums ?: fetchSums().also { sums = it }
-                val wanted = files(lang).filter { it in sums }
+                // Only the main file when just the converter is missing.
+                val wanted = files(lang).filter { it in sums }.let { all -> if (engine.dictionaryReady(lang)) all.take(1) else all }
                 if (wanted.isEmpty()) { failed += lang; return false }
                 val dir = File(App.instance.cacheDir, "dict").apply { mkdirs() }
                 for (name in wanted) {
@@ -125,7 +134,13 @@ object Dictionaries {
                     when {
                         name == "ipadic.zip" -> unzip(file, File(engine.dictionaryDir(), "ipadic"))
                         name == "ja-pitch.tsv.gz" -> engine.installPitch(file.path)
-                        else -> engine.installDictionary(lang, file.path)
+                        else -> {
+                            if (!engine.dictionaryReady(lang)) engine.installDictionary(lang, file.path)
+                            if (converts(lang)) {
+                                val freq = App.instance.assets.open("words/$lang.txt").bufferedReader().readText()
+                                engine.buildConverter(lang, file.path, freq)
+                            }
+                        }
                     }
                     file.delete()
                 }

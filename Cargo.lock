@@ -209,6 +209,7 @@ name = "ccez-keys-core"
 version = "0.1.0"
 dependencies = [
  "ccez-lang-core",
+ "flate2",
  "serde",
  "serde_json",
  "thiserror",

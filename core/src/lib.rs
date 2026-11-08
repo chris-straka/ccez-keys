@@ -5,6 +5,7 @@
 //! decides about text, it asks here.
 
 pub mod ai;
+pub mod convert;
 pub mod layout;
 pub mod learn;
 pub mod log;
@@ -18,6 +19,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub use layout::{Key, KeyKind, Layout, Page, Row};
+pub use convert::Conversion;
 pub use ai::{AnswerSink, ChatMessage, Fix, FixKind, FixPart};
 pub use learn::{Card, Ruby, StripWord, WordStatus};
 pub use typing::Suggestions;
@@ -43,7 +45,15 @@ pub struct Engine {
     layouts: layout::Layouts,
     log: log::Log,
     learn: learn::Learn,
+    converters: Mutex<HashMap<String, convert::Index>>,
     state: Mutex<State>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct Romaji {
+    pub kana: String,
+    /// Letters still waiting for a vowel.
+    pub pending: String,
 }
 
 impl Engine {
@@ -74,6 +84,10 @@ impl Engine {
         ai::provider(&id).ok_or_else(|| KeysError::Bad(format!("no AI provider called {id}")))
     }
 
+    fn converter_path(&self, lang: &str) -> PathBuf {
+        self.dir.join(format!("convert-{lang}.tsv"))
+    }
+
     fn save_settings(&self, s: &settings::Settings) {
         let _ = fs::write(self.dir.join("settings.json"), s.to_json());
     }
@@ -91,6 +105,7 @@ impl Engine {
         let engine = Engine {
             log: log::Log::new(&dir),
             learn: learn::Learn::new(&dir),
+            converters: Mutex::new(HashMap::new()),
             layouts: layout::Layouts::load(),
             dir,
             state: Mutex::new(State { langs: HashMap::new(), keys: HashMap::new(), settings, current }),
@@ -309,6 +324,51 @@ impl Engine {
             return Err(KeysError::Bad("no words.server set".into()));
         }
         self.learn.sync(&server, &from).map_err(KeysError::Bad)
+    }
+
+    // --- Japanese and Chinese ---
+
+    pub fn has_converter(&self, lang: String) -> bool {
+        self.converter_path(&lang).exists()
+    }
+
+    /// Builds `lang`'s converter (ja from JMdict's ja.tsv.gz, zh from
+    /// cedict.txt.gz) with wordfreq's list (`freq`) for the order.
+    pub fn build_converter(&self, lang: String, dict_path: String, freq: String) -> Result<u32, KeysError> {
+        let out = self.converter_path(&lang);
+        let n = match lang.as_str() {
+            "ja" => convert::build_japanese(std::path::Path::new(&dict_path), &freq, &out),
+            "zh" => convert::build_chinese(std::path::Path::new(&dict_path), &freq, &out),
+            _ => return Err(KeysError::Bad(format!("no converter for {lang}"))),
+        }
+        .map_err(|e| KeysError::Bad(e.to_string()))?;
+        self.converters.lock().unwrap_or_else(|e| e.into_inner()).remove(&lang);
+        self.log.write("info", "converter", &serde_json::json!({"lang": lang, "keys": n}).to_string());
+        Ok(n as u32)
+    }
+
+    /// Romaji typed so far, as kana (`finish`: a last "n" counts as ん).
+    pub fn romaji(&self, input: String, finish: bool) -> Romaji {
+        let (kana, pending) = convert::romaji(&input, finish);
+        Romaji { kana, pending }
+    }
+
+    /// Words for kana (Japanese) or pinyin letters (Chinese).
+    pub fn convert(&self, lang: String, input: String) -> Vec<Conversion> {
+        let mut c = self.converters.lock().unwrap_or_else(|e| e.into_inner());
+        if !c.contains_key(&lang) {
+            match convert::Index::load(&self.converter_path(&lang)) {
+                Some(i) => {
+                    c.insert(lang.clone(), i);
+                }
+                None => return if lang == "ja" && !input.is_empty() {
+                    vec![Conversion { text: input.clone(), reading: String::new(), consumed: input.chars().count() as u32 }]
+                } else {
+                    vec![]
+                },
+            }
+        }
+        c.get(&lang).map(|i| i.convert(&input, lang == "ja")).unwrap_or_default()
     }
 
     // --- AI ---

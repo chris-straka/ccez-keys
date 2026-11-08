@@ -42,6 +42,14 @@ class Control : ContentProvider() {
                     engine.setSetting(key, value).also { app.settingsChanged() }
                 }
                 "schema" -> engine.settingsSchema()
+                // The language typed in, as if picked from the space bar.
+                "use" -> {
+                    val lang = arg ?: error("use needs a language code")
+                    if (lang !in engine.typingLanguages()) error("$lang isn't one of the languages typed in: ${engine.typingLanguages().joinToString(" ")}")
+                    engine.setCurrentLanguage(lang)
+                    app.settingsChanged()
+                    lang
+                }
                 // The AI key: from `keys key` (stdin on the Mac, read on the phone's shell).
                 "key" -> {
                     val value = extras?.getString("value")?.let { String(Base64.decode(it, Base64.DEFAULT)) } ?: error("key needs a value")

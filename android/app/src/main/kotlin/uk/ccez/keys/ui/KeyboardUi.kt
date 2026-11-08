@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -155,6 +156,22 @@ private fun PopupLayer(ui: UiState) {
 private fun BarRow(ui: UiState, typist: Typist) {
     val bar = ui.bar
     Row(Modifier.fillMaxWidth().height(BAR_H), verticalAlignment = Alignment.CenterVertically) {
+        if (bar is Bar.Convert && ui.panel == Panel.KEYS) {
+            Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                bar.words.forEachIndexed { i, c ->
+                    if (i > 0) Divider()
+                    Column(
+                        Modifier.fillMaxHeight().widthIn(min = 64.dp).combinedClickable(onClick = { typist.pickConversion(c) }).padding(horizontal = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(c.reading, color = Colors.muted, fontSize = 9.5.sp, lineHeight = 11.sp, maxLines = 1)
+                        Text(c.text, color = Colors.fg, fontSize = 17.sp, fontWeight = if (i == 0) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                    }
+                }
+            }
+            return@Row
+        }
         if (bar is Bar.Words && ui.panel == Panel.KEYS) {
             Cell(bar.left, false, bar.typed, typist, 1f)
             Divider()

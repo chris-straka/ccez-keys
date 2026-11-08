@@ -4,6 +4,7 @@
 //!     keys get [key]               every setting, or one, as JSON
 //!     keys set <key> <value>       true, 105, '["fr","ja"]' or a word
 //!     keys schema                  every setting with its kind and default
+//!     keys use <lang>              type in this language now (fr, ja…)
 //!     keys log [-n 50]             the keyboard's events and errors
 //!     keys key < file              the AI key, from stdin (empty removes it);
 //!                                  it never appears on a command line
@@ -23,6 +24,7 @@ fn main() {
         ["get", key] => ("get", Some(key.to_string()), None),
         ["set", key, value] => ("set", Some(key.to_string()), Some(value.to_string())),
         ["schema"] => ("schema", None, None),
+        ["use", lang] => ("use", Some(lang.to_string()), None),
         ["log"] => ("log", Some("50".to_string()), None),
         ["log", "-n", n] => ("log", Some(n.to_string()), None),
         ["key"] => {
@@ -36,7 +38,7 @@ fn main() {
             return;
         }
         _ => {
-            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | log [-n N] | key < file");
+            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key < file");
             exit(2);
         }
     };
