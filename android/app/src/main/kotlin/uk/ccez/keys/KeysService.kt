@@ -83,6 +83,10 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         typist.start(info)
         uk.ccez.keys.learn.WordSync.maybe()
+        App.instance.pendingInsert?.let { t ->
+            App.instance.pendingInsert = null
+            typist.paste(t)
+        }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

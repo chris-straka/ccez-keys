@@ -11,6 +11,10 @@ coroutines = "1.11.0"
 jna = "5.19.1"
 junit = "4.13.2"
 mlkit-translate = "17.0.3"
+mlkit-langid = "17.0.6"
+mlkit-text = "19.0.1"
+mlkit-text-scripts = "16.0.1"
+camerax = "1.6.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core-ktx" }
@@ -25,6 +29,15 @@ kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 junit = { module = "junit:junit", version.ref = "junit" }
 mlkit-translate = { module = "com.google.mlkit:translate", version.ref = "mlkit-translate" }
+mlkit-langid = { module = "com.google.mlkit:language-id", version.ref = "mlkit-langid" }
+mlkit-text = { module = "com.google.android.gms:play-services-mlkit-text-recognition", version.ref = "mlkit-text" }
+mlkit-text-chinese = { module = "com.google.android.gms:play-services-mlkit-text-recognition-chinese", version.ref = "mlkit-text-scripts" }
+mlkit-text-japanese = { module = "com.google.android.gms:play-services-mlkit-text-recognition-japanese", version.ref = "mlkit-text-scripts" }
+mlkit-text-korean = { module = "com.google.android.gms:play-services-mlkit-text-recognition-korean", version.ref = "mlkit-text-scripts" }
+camerax-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+camerax-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+camerax-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+camerax-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -113,5 +113,16 @@ dependencies {
     implementation("${libs.jna.get()}@aar")
     // The learning strip's translation, on the phone (a model per language).
     implementation(libs.mlkit.translate)
+    // Which language a picture's text is in.
+    implementation(libs.mlkit.langid)
+    // Camera text: Latin, Chinese, Japanese, Korean (models from Play services on first use).
+    implementation(libs.mlkit.text)
+    implementation(libs.mlkit.text.chinese)
+    implementation(libs.mlkit.text.japanese)
+    implementation(libs.mlkit.text.korean)
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
     testImplementation(libs.junit)
 }

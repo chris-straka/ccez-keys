@@ -18,6 +18,9 @@ class App : Application() {
     /** Started on first use: `keys` can call in before onCreate has run. */
     val engine: Engine by lazy { Engine(filesDir.resolve("keys").path) }
 
+    /** Text camera text asked to put in the field the keyboard comes back to. */
+    @Volatile var pendingInsert: String? = null
+
     /** Bumped whenever a setting changes (from the panel or `keys`). */
     val settingsVersion = MutableStateFlow(0)
 

@@ -302,7 +302,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         fix = fixed?.let { typed to it }
         word.clear()
         if (!noLearn) engine.learn(lang, prev, out, false)
-        noticeLanguage(out)
+        // What was typed tells the language, not what it became.
+        noticeLanguage(typed)
         return out
     }
 
@@ -441,6 +442,11 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     fun currentLanguage() = lang
+
+    fun openCamera() {
+        endWord(correct = false)
+        service.startActivity(android.content.Intent(service, CameraActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 
     /** For the face panel's own bottom row. */
     fun press(kind: KeyKind) {

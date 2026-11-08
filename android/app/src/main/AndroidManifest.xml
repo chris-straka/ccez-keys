@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Dictation. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Camera text: the camera, or the latest screenshot. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <queries>
         <!-- ccez-whisper hears held dictation; Android's recogniser hears the rest. -->
@@ -33,6 +37,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".CameraActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="uk.ccez.keys.camera" />
 
         <service
             android:name=".KeysService"

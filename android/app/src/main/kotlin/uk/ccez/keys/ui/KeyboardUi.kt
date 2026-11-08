@@ -197,6 +197,12 @@ private fun BarRow(ui: UiState, typist: Typist) {
             )
         }
         Spacer(Modifier.weight(1f))
+        if (!ui.password && App.instance.engine.settingBool("buttons.camera")) {
+            Box(
+                Modifier.padding(end = 4.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = { typist.openCamera() }),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.cam, "Camera text", tint = Colors.muted, modifier = Modifier.size(20.dp)) }
+        }
         if (!ui.password && App.instance.engine.settingBool("buttons.mic")) MicButton(typist)
         val on = ui.panel == Panel.SETTINGS
         Box(
@@ -556,6 +562,8 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
             Triple(Icons.face, "Face key", "buttons.face"),
             Triple(Icons.mic, "Dictation", "buttons.mic"),
             Triple(Icons.tr, "Translate", "learning.strip"),
+            Triple(Icons.cam, "Camera text", "buttons.camera"),
+            Triple(Icons.vibrate, "Vibrate", "typing.vibrate"),
         ),
         version,
     )
@@ -565,7 +573,6 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
             Triple(Icons.check, "Autocorrect", "typing.autocorrect"),
             Triple(Icons.capital, "Capitals", "typing.capitals"),
             Triple(Icons.dot, "Double space .", "typing.double_space_period"),
-            Triple(Icons.vibrate, "Vibrate", "typing.vibrate"),
             Triple(Icons.sound, "Sound", "typing.sound"),
             Triple(Icons.number, "Numbers", "typing.numbers"),
             Triple(Icons.size, "Size", ""),
@@ -835,6 +842,7 @@ internal object Icons {
     val dot = stroke("M4 17h3M10 17h3", "M18 17h.01")
     val vibrate = stroke("M10 4h4a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1 -1.5 1.5h-4a1.5 1.5 0 0 1 -1.5 -1.5v-13a1.5 1.5 0 0 1 1.5 -1.5z", "M4 9v6M20 9v6")
     val sound = stroke("M4 9h4l5-4v14l-5-4H4z", "M16.5 8.5a5 5 0 0 1 0 7")
+    val cam = stroke("M4 8h3l1.5-2h7L17 8h3v11H4z", "M15.5 13a3.5 3.5 0 1 1 -7 0a3.5 3.5 0 1 1 7 0z")
     val mic = stroke("M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1 -6 0z", "M5 11a7 7 0 0 0 14 0M12 18v3")
     val tr = stroke("M3 5h9M7.5 3v2M5 5c.5 3 2.5 5.5 5.5 7M10 5c-.7 3.5-3 6-6 7.5", "M13 20l4-10 4 10M14.5 16.5h5")
     val spark = stroke("M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", "M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z")

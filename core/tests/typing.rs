@@ -62,6 +62,16 @@ fn french_wins_when_its_spelling_is_commoner() {
     assert_eq!(fix(&e, "fr", "the"), None);
     assert_eq!(fix(&e, "fr", "you"), None);
     assert_eq!(fix(&e, "es", "tres"), None);
+}
+
+#[test]
+fn words_of_another_language_are_not_turned_into_this_ones() {
+    // French typed before the keyboard noticed it isn't English.
+    let e = engine(&["en", "fr"]);
+    for w in ["nous", "allons", "manger", "avec", "amis", "soir"] {
+        assert_eq!(fix(&e, "en", w), None, "{w}");
+    }
+    assert_eq!(fix(&e, "en", "teh").as_deref(), Some("the"));
     assert_eq!(fix(&e, "es", "deja"), None);
 }
 

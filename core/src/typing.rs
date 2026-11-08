@@ -144,6 +144,9 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: 
     // ("the" over "thé"); near-equal ones go to the language being typed
     // ("tres" → très on French, though "tres" is Spanish).
     let blocked = |logf: f32| other.is_some_and(|o| o > COMMON && logf + 1.0 < o);
+    // A real word elsewhere ("allons", "manger" while still on English)
+    // never becomes a different word here; only its accents may change.
+    let elsewhere = other.is_some_and(|o| o > COMMON);
     let mid_word = scored.first().is_some_and(|c| c.completion);
     match own {
         // A word as typed: only its capitals, accents or apostrophe can
@@ -164,7 +167,7 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: 
             }
             // A rare word one slip or swap from a far commoner one ("teh").
             let slip = scored.iter().find(|c| !c.completion && c.cost > 0.0 && c.cost <= 0.7)?;
-            if own < COMMON && slip.logf >= own + 5.5 && !blocked(slip.logf) { pick(slip.word) } else { None }
+            if own < COMMON && slip.logf >= own + 5.5 && !elsewhere { pick(slip.word) } else { None }
         }
         None => {
             // Mid-word ("bonj"): a longer word is likelier than a fix.
@@ -172,7 +175,7 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: 
                 return None;
             }
             let best = scored.first()?;
-            if blocked(best.logf) {
+            if blocked(best.logf) || (elsewhere && best.cost > 0.3) {
                 return None;
             }
             let limit = match n {
