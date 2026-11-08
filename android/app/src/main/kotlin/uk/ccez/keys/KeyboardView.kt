@@ -22,7 +22,7 @@ enum class Shift { OFF, ONCE, LOCK }
 const val WORDS_AFTER = 12
 
 /** A held key's choices, in this view's coordinates. */
-data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int)
+data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int, val codes: List<String> = emptyList())
 
 /**
  * The keys, drawn on one canvas so a press shows in the same frame. All
@@ -37,6 +37,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onSpaceSwipe(step: Int)
         fun onPress(key: Key)
         fun onPopup(popup: Popup?)
+        /** A language picked from the space bar's list. */
+        fun onLanguage(code: String)
         /** Delete held: the `count`th repeat. */
         fun onRepeat(key: Key, count: Int)
     }
@@ -49,6 +51,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         set(v) { if (field != v) { field = v; invalidate() } }
     var showArrows = false
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** The space bar's list: (code, flag), and the one in use. */
+    var languages: List<Pair<String, String>> = emptyList()
+    var language = ""
     var scale = 1f
         set(v) { if (field != v) { field = v; requestLayout() } }
 
@@ -212,6 +217,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val p = pressed ?: return@Runnable
         when (p.key.kind) {
             KeyKind.BACKSPACE -> { repeats = 0; held = true; repeatTask.run() }
+            KeyKind.SPACE -> if (languages.size > 1) openLanguages(p)
             else -> if (p.key.popups.isNotEmpty()) openPopup(p)
         }
     }
@@ -300,13 +306,25 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         popup = null
         if (pop != null) {
             listener.onPopup(null)
-            if (commit) listener.onChoice(pop.choices[pop.selected])
+            if (commit) {
+                if (pop.codes.isNotEmpty()) listener.onLanguage(pop.codes[pop.selected]) else listener.onChoice(pop.choices[pop.selected])
+            }
         } else if (p != null && commit && !held) {
             listener.onKey(p.key)
         }
         held = false
         pointerId = -1
         invalidate()
+    }
+
+    private fun openLanguages(p: Placed) {
+        val w = 46 * dp
+        val boxW = w * languages.size
+        val left = max(side, min(p.face.centerX() - boxW / 2, width - side - boxW))
+        val top = p.face.top - rowH - 6 * dp
+        val at = languages.indexOfFirst { it.first == language }.coerceAtLeast(0)
+        popup = Popup(RectF(p.face), RectF(left, top, left + boxW, top + rowH), languages.map { it.second }, at, languages.map { it.first })
+        listener.onPopup(popup)
     }
 
     private fun openPopup(p: Placed) {

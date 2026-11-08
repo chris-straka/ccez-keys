@@ -79,12 +79,16 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /** Layout, size and labels again (after a setting or language change). */
     fun refresh() {
         val face = engine.settingBool("buttons.face")
-        view.layout = withoutFace(engine.layout(lang, page), !face)
+        var layout = withoutFace(engine.layout(lang, page), !face)
+        if (page == Page.LETTERS && engine.settingBool("typing.numbers")) layout = withNumbers(layout)
+        view.layout = layout
         view.scale = (engine.setting("keyboard.height").toIntOrNull() ?: 100) / 100f
         val langs = engine.typingLanguages()
         view.spaceLabel = uk.ccez.keys.ui.Langs.of(service, lang)?.own ?: lang
         view.showArrows = langs.size > 1
-        ui.keysHeightDp = keysHeightDp(view.scale)
+        view.languages = langs.map { it to (uk.ccez.keys.ui.Langs.of(service, it)?.flag ?: it) }
+        view.language = lang
+        ui.keysHeightDp = keysHeightDp(view.scale, layout.rows.size)
     }
 
     // --- keys ---
@@ -194,6 +198,17 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             KeyKind.SPACE -> space()
             KeyKind.ENTER -> enter()
         }
+    }
+
+    override fun onLanguage(code: String) {
+        if (code == lang) return
+        buzz(HapticFeedbackConstants.CONTEXT_CLICK)
+        endWord(correct = false)
+        engine.setCurrentLanguage(code)
+        lang = code
+        app.scope.launch { app.ensureWords(lang) }
+        refresh()
+        updateBar()
     }
 
     override fun onSpaceSwipe(step: Int) {
@@ -453,7 +468,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
         fun isWordChar(c: Char) = c.isLetterOrDigit() || c == '\'' || c == '’' || c == '-'
 
-        fun keysHeightDp(scale: Float) = 6 + 6 + 4 * 44 * scale + 3 * 8
+        fun keysHeightDp(scale: Float, rows: Int = 4) = 6 + 6 + rows * 44 * scale + (rows - 1) * 8
+
+        /** SwiftKey's row of digits over the letters (Settings: Numbers). */
+        private fun withNumbers(l: Layout): Layout {
+            val digits = "1234567890".map { d -> Key(KeyKind.CHAR, d.toString(), d.toString(), "", emptyList(), 1f) }
+            val top = l.rows.first().let { r -> r.copy(keys = r.keys.map { it.copy(hint = "", popups = it.popups.drop(1)) }) }
+            return Layout(listOf(uk.ccez.keys.core.Row(digits), top) + l.rows.drop(1))
+        }
 
         private fun withoutFace(l: Layout, drop: Boolean): Layout {
             if (!drop) return l

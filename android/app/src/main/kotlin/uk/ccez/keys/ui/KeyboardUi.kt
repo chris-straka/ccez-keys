@@ -379,6 +379,7 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
             Triple(Icons.dot, "Double space .", "typing.double_space_period"),
             Triple(Icons.vibrate, "Vibrate", "typing.vibrate"),
             Triple(Icons.sound, "Sound", "typing.sound"),
+            Triple(Icons.number, "Numbers", "typing.numbers"),
             Triple(Icons.size, "Size", ""),
         ),
         version,
@@ -611,5 +612,6 @@ private object Icons {
     val dot = stroke("M4 17h3M10 17h3", "M18 17h.01")
     val vibrate = stroke("M10 4h4a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1 -1.5 1.5h-4a1.5 1.5 0 0 1 -1.5 -1.5v-13a1.5 1.5 0 0 1 1.5 -1.5z", "M4 9v6M20 9v6")
     val sound = stroke("M4 9h4l5-4v14l-5-4H4z", "M16.5 8.5a5 5 0 0 1 0 7")
+    val number = stroke("M5 9l2-1.5V16", "M10.5 9.5a2 2 0 0 1 4 .5c0 2-4 3.5-4 6h4", "M17.5 8h3l-2 3a2.5 2.5 0 1 1-1.5 4.5")
     val size = stroke("M4 9h16M4 15h16", "M12 3v4M12 17v4")
 }
