@@ -63,6 +63,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.speech.tts.TextToSpeech
+import org.json.JSONArray
 import org.json.JSONObject
 import uk.ccez.keys.App
 import uk.ccez.keys.Bar
@@ -287,71 +289,275 @@ private fun Modifier.combinedClickableCompat(onClick: () -> Unit) = this.combine
 
 // --- settings ---
 
-private val FLAGS = mapOf("en" to "🇬🇧", "fr" to "🇫🇷", "de" to "🇩🇪", "es" to "🇪🇸", "ja" to "🇯🇵", "zh" to "🇨🇳", "ar" to "🇸🇦", "ko" to "🇰🇷", "it" to "🇮🇹", "pt" to "🇵🇹")
+/** Every language the keyboard knows (data/languages.json): code → English name, own name, flag. */
+object Langs {
+    data class L(val code: String, val name: String, val own: String, val flag: String)
+    private var all: List<L> = emptyList()
+
+    fun all(ctx: Context): List<L> {
+        if (all.isEmpty()) {
+            val a = JSONObject(ctx.assets.open("languages.json").bufferedReader().readText()).getJSONArray("languages")
+            all = (0 until a.length()).map { i -> a.getJSONArray(i).let { L(it.getString(0), it.getString(1), it.getString(2), it.getString(3)) } }
+        }
+        return all
+    }
+
+    fun of(ctx: Context, code: String) = all(ctx).firstOrNull { it.code == code }
+}
+
+/** Languages with a speech voice on the phone (installed, works offline). */
+private object Voices {
+    var ready by mutableStateOf<Set<String>?>(null)
+    private var tts: TextToSpeech? = null
+
+    fun load(ctx: Context) {
+        if (ready != null || tts != null) return
+        tts = TextToSpeech(ctx.applicationContext) { status ->
+            val t = tts
+            ready = if (status == TextToSpeech.SUCCESS && t != null) {
+                runCatching {
+                    t.voices.orEmpty()
+                        .filter { !it.isNetworkConnectionRequired && TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in it.features }
+                        .map { v -> v.locale.language.let { OLD[it] ?: it } }
+                        .toSet()
+                }.getOrDefault(emptySet())
+            } else {
+                emptySet()
+            }
+            t?.shutdown()
+            tts = null
+        }
+    }
+
+    private val OLD = mapOf("iw" to "he", "in" to "id", "nb" to "no", "nn" to "no")
+}
+
+private enum class Page { MAIN, ADD, DEFAULT, LICENCES }
 
 @Composable
 private fun SettingsPanel(ui: UiState, typist: Typist, version: Int) {
-    val e = App.instance.engine
-    var credits by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(Page.MAIN) }
+    val scroll = rememberScrollState()
+    LaunchedEffect(page) { scroll.scrollTo(0) }
     Column(
-        Modifier.fillMaxWidth().height(ui.keysHeightDp.dp).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.fillMaxWidth().height(ui.keysHeightDp.dp).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 4.dp),
     ) {
-        Heading("Buttons")
-        TwoColumns(
-            listOf(
-                Triple(Icons.clip, "Clipboard", "buttons.clipboard"),
-                Triple(Icons.face, "Face key", "buttons.face"),
-            ),
-            version,
-        )
-        Heading("Typing")
-        TwoColumns(
-            listOf(
-                Triple(Icons.check, "Autocorrect", "typing.autocorrect"),
-                Triple(Icons.capital, "Capitals", "typing.capitals"),
-                Triple(Icons.dot, "Space space .", "typing.double_space_period"),
-                Triple(Icons.vibrate, "Vibrate", "typing.vibrate"),
-                Triple(Icons.sound, "Sound", "typing.sound"),
-                Triple(Icons.size, "Size", ""),
-            ),
-            version,
-        )
-        Heading("I speak")
-        LangChips(e.settingStrings("languages.mine"), e.typingLanguages())
-        Heading("I'm learning")
-        LangChips(e.settingStrings("languages.learning"), e.typingLanguages())
-        Text(
-            "Licences",
-            color = Colors.muted,
-            fontSize = 13.sp,
-            modifier = Modifier.combinedClickableCompat { credits = !credits }.padding(vertical = 4.dp),
-        )
-        if (credits) {
-            Text(
-                "ccez-keys: MIT.\nWords: wordfreq by Robyn Speer, CC BY-SA 4.0.\nGerman capitals: Wiktionary via kaikki.org, CC BY-SA 4.0.",
-                color = Colors.dim,
-                fontSize = 12.sp,
-            )
+        when (page) {
+            Page.MAIN -> SettingsMain(version) { page = it }
+            Page.ADD -> LanguageList("Add", version, { page = Page.MAIN }) { code ->
+                set("languages.learning", JSONArray(learning() + code).toString())
+                page = Page.MAIN
+            }
+            Page.DEFAULT -> LanguageList("Default language", version, { page = Page.MAIN }, includeAll = true) { code ->
+                set("languages.default", "\"$code\"")
+                page = Page.MAIN
+            }
+            Page.LICENCES -> Licences { page = Page.MAIN }
         }
         Spacer(Modifier.height(8.dp))
     }
 }
 
-@Composable
-private fun Heading(t: String) = Text(t.uppercase(), color = Colors.dim, fontSize = 11.sp, letterSpacing = 0.8.sp, modifier = Modifier.padding(top = 4.dp))
+private fun learning() = App.instance.engine.settingStrings("languages.learning")
+
+private fun set(key: String, json: String) {
+    App.instance.engine.setSetting(key, json)
+    App.instance.settingsChanged()
+}
 
 @Composable
+private fun SettingsMain(version: Int, go: (Page) -> Unit) {
+    val ctx = LocalContext.current
+    val e = App.instance.engine
+    Heading("Buttons")
+    TwoColumns(listOf(Triple(Icons.clip, "Clipboard", "buttons.clipboard"), Triple(Icons.face, "Face key", "buttons.face")), version)
+    Heading("Typing")
+    TwoColumns(
+        listOf(
+            Triple(Icons.check, "Autocorrect", "typing.autocorrect"),
+            Triple(Icons.capital, "Capitals", "typing.capitals"),
+            Triple(Icons.dot, "Double space .", "typing.double_space_period"),
+            Triple(Icons.vibrate, "Vibrate", "typing.vibrate"),
+            Triple(Icons.sound, "Sound", "typing.sound"),
+            Triple(Icons.size, "Size", ""),
+        ),
+        version,
+    )
+    Heading("Languages")
+    FlagGrid(learning(), version, go)
+    Heading("Default language")
+    val def = remember(version) { e.setting("languages.default").trim('"') }
+    val d = Langs.of(ctx, def)
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat { go(Page.DEFAULT) }.padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(d?.flag ?: def, fontSize = 22.sp)
+        Spacer(Modifier.weight(1f))
+        Text("›", color = Colors.muted, fontSize = 20.sp)
+    }
+    Heading("About")
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat { go(Page.LICENCES) }.padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Licences", color = Colors.fg, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Text("›", color = Colors.muted, fontSize = 20.sp)
+    }
+}
+
+/** The learning order as numbered flags, five a row, + last; tap a flag to move or remove it. */
+@Composable
+private fun FlagGrid(order: List<String>, @Suppress("UNUSED_PARAMETER") version: Int, go: (Page) -> Unit) {
+    val ctx = LocalContext.current
+    var picked by remember { mutableStateOf<String?>(null) }
+    val tiles = order.map { it as String? } + listOf(null)
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        tiles.chunked(5).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { code ->
+                    val i = if (code == null) -1 else order.indexOf(code)
+                    Box(
+                        Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(12.dp))
+                            .background(if (code != null && code == picked) Colors.popupSel else Colors.key)
+                            .combinedClickableCompat { if (code == null) go(Page.ADD) else picked = if (picked == code) null else code },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (code == null) {
+                            Text("+", color = Colors.accent, fontSize = 22.sp)
+                        } else {
+                            Text(Langs.of(ctx, code)?.flag ?: code, fontSize = 26.sp)
+                            Text(
+                                "${i + 1}",
+                                color = Colors.muted,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 5.dp, bottom = 2.dp),
+                            )
+                        }
+                    }
+                }
+                repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+        val p = picked
+        if (p != null && p in order) {
+            val i = order.indexOf(p)
+            fun move(to: Int) {
+                val l = order.toMutableList()
+                l.add(to.coerceIn(0, l.lastIndex), l.removeAt(i))
+                set("languages.learning", JSONArray(l).toString())
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(Langs.of(ctx, p)?.name ?: p, color = Colors.fg, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                if (i > 0) Action("First") { move(0) }
+                if (i > 0) Action("Earlier") { move(i - 1) }
+                if (i < order.lastIndex) Action("Later") { move(i + 1) }
+                Action("Remove") { set("languages.learning", JSONArray(order - p).toString()); picked = null }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Action(label: String, onTap: () -> Unit) = Text(
+    label,
+    color = Colors.fg,
+    fontSize = 12.5.sp,
+    modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Colors.chip).combinedClickableCompat(onTap).padding(horizontal = 10.dp, vertical = 6.dp),
+)
+
+/** Languages to choose from, by name, with 🔊 where the phone has a voice for it. */
+@Composable
+private fun LanguageList(title: String, @Suppress("UNUSED_PARAMETER") version: Int, back: () -> Unit, includeAll: Boolean = false, pick: (String) -> Unit) {
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) { Voices.load(ctx) }
+    val voices = Voices.ready
+    BackRow(title, back)
+    val skip = if (includeAll) emptySet() else learning().toSet()
+    Langs.all(ctx).filter { it.code !in skip }.forEach { l ->
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat { pick(l.code) }.padding(vertical = 9.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(l.flag, fontSize = 20.sp)
+            Spacer(Modifier.width(12.dp))
+            Text(l.name, color = Colors.fg, fontSize = 14.sp)
+            if (l.own != l.name) {
+                Spacer(Modifier.width(8.dp))
+                Text(l.own, color = Colors.dim, fontSize = 13.sp, maxLines = 1)
+            }
+            Spacer(Modifier.weight(1f))
+            if (voices != null && l.code in voices) Icon(Icons.sound, "Voice", tint = Colors.muted, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun BackRow(title: String, back: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat(back).padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("‹", color = Colors.fg, fontSize = 22.sp, modifier = Modifier.padding(end = 12.dp))
+        Text(title, color = Colors.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun Licences(back: () -> Unit) {
+    BackRow("Licences", back)
+    listOf(
+        Triple("ccez-keys", "The keyboard", "MIT"),
+        Triple("wordfreq", "Word lists · Robyn Speer", "CC BY-SA 4.0"),
+        Triple("Wiktionary", "German capitals · via kaikki.org", "CC BY-SA 4.0"),
+        Triple("UniFFI", "Rust ↔ Kotlin · Mozilla", "MPL 2.0"),
+        Triple("JNA", "Native calls", "Apache 2.0"),
+        Triple("Jetpack Compose", "Panels · Google", "Apache 2.0"),
+    ).forEach { (name, what, licence) ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(name, color = Colors.fg, fontSize = 14.sp)
+                Text(what, color = Colors.dim, fontSize = 12.sp)
+            }
+            Text(licence, color = Colors.muted, fontSize = 12.sp)
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Colors.line))
+    }
+}
+
+@Composable
+private fun Heading(t: String) = Text(
+    t.uppercase(),
+    color = Colors.dim,
+    fontSize = 11.sp,
+    letterSpacing = 0.8.sp,
+    modifier = Modifier.padding(top = 14.dp, bottom = 4.dp),
+)
+
+/**
+ * Two settings a row; the whole cell is the switch. `version` makes it
+ * redraw when a setting changes (the values come from the core, which
+ * Compose can't watch).
+ */
+@Composable
 private fun TwoColumns(rows: List<Triple<ImageVector, String, String>>, version: Int) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val app = App.instance
+    Column {
         rows.chunked(2).forEach { pair ->
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 pair.forEach { (icon, label, key) ->
-                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    val on = remember(version, key) { key.isNotEmpty() && app.engine.settingBool(key) }
+                    Row(
+                        Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(10.dp))
+                            .let { m -> if (key.isEmpty()) m else m.combinedClickableCompat { set(key, (!on).toString()) } }
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(icon, null, tint = Colors.muted, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(10.dp))
                         Text(label, color = Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f), maxLines = 1)
-                        if (key.isEmpty()) SizeStepper(version) else Toggle(key, version)
+                        if (key.isEmpty()) SizeStepper(version) else Switch(on)
                     }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
@@ -361,44 +567,21 @@ private fun TwoColumns(rows: List<Triple<ImageVector, String, String>>, version:
 }
 
 @Composable
-private fun Toggle(key: String, @Suppress("UNUSED_PARAMETER") version: Int) {
-    val app = App.instance
-    val on = app.engine.settingBool(key)
-    Box(
-        Modifier.width(32.dp).height(18.dp).clip(RoundedCornerShape(10.dp)).background(if (on) Colors.switchOn else Colors.switchOff)
-            .combinedClickableCompat { app.engine.setSetting(key, (!on).toString()); app.settingsChanged() },
-    ) {
-        Box(
-            Modifier.padding(2.dp).offset(x = if (on) 14.dp else 0.dp).size(14.dp).clip(RoundedCornerShape(7.dp))
-                .background(if (on) Colors.accent else Color(0xFF8A8A8A)),
-        )
+private fun Switch(on: Boolean) {
+    val x by androidx.compose.animation.core.animateDpAsState(if (on) 14.dp else 0.dp, tween(120), label = "switch")
+    Box(Modifier.width(32.dp).height(18.dp).clip(RoundedCornerShape(10.dp)).background(if (on) Colors.switchOn else Colors.switchOff)) {
+        Box(Modifier.padding(2.dp).offset(x = x).size(14.dp).clip(RoundedCornerShape(7.dp)).background(if (on) Colors.accent else Color(0xFF8A8A8A)))
     }
 }
 
 @Composable
-private fun SizeStepper(@Suppress("UNUSED_PARAMETER") version: Int) {
-    val app = App.instance
-    val now = app.engine.setting("keyboard.height").toIntOrNull() ?: 100
-    fun set(v: Int) { app.engine.setSetting("keyboard.height", v.coerceIn(80, 130).toString()); app.settingsChanged() }
+private fun SizeStepper(version: Int) {
+    val now = remember(version) { App.instance.engine.setting("keyboard.height").toIntOrNull() ?: 100 }
+    fun to(v: Int) = set("keyboard.height", v.coerceIn(80, 130).toString())
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("−", color = Colors.fg, fontSize = 16.sp, modifier = Modifier.combinedClickableCompat { set(now - 5) }.padding(horizontal = 6.dp))
+        Text("−", color = Colors.fg, fontSize = 18.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).combinedClickableCompat { to(now - 5) }.padding(horizontal = 10.dp, vertical = 4.dp))
         Text("$now", color = Colors.muted, fontSize = 12.sp)
-        Text("+", color = Colors.fg, fontSize = 16.sp, modifier = Modifier.combinedClickableCompat { set(now + 5) }.padding(horizontal = 6.dp))
-    }
-}
-
-@Composable
-private fun LangChips(langs: List<String>, typing: List<String>) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        langs.forEach { l ->
-            val ready = l in typing
-            Text(
-                "${FLAGS[l] ?: ""} ${Typist.NAMES[l] ?: l}".trim(),
-                color = if (ready) Colors.fg else Colors.dim,
-                fontSize = 12.5.sp,
-                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFF232325)).padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
+        Text("+", color = Colors.fg, fontSize = 18.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).combinedClickableCompat { to(now + 5) }.padding(horizontal = 10.dp, vertical = 4.dp))
     }
 }
 

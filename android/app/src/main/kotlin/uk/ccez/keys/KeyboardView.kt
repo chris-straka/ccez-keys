@@ -18,6 +18,9 @@ import kotlin.math.min
 
 enum class Shift { OFF, ONCE, LOCK }
 
+/** Repeats of a held delete before it takes whole words. */
+const val WORDS_AFTER = 12
+
 /** A held key's choices, in this view's coordinates. */
 data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int)
 
@@ -34,6 +37,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onSpaceSwipe(step: Int)
         fun onPress(key: Key)
         fun onPopup(popup: Popup?)
+        /** Delete held: the `count`th repeat. */
+        fun onRepeat(key: Key, count: Int)
     }
 
     var layout: Layout? = null
@@ -87,6 +92,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val w = k.width * u
                 val cell = RectF(x, top - rowGap / 2, x + w, top + rowH + rowGap / 2)
                 val face = RectF(x + gap / 2, top, x + w - gap / 2, top + rowH)
+                // Shift and delete keep their touch area but look narrower,
+                // with room on the letters' side (z and m stay put).
+                if (k.width > 1.2f && row.keys.any { it.kind == KeyKind.CHAR }) {
+                    val trim = 0.22f * unit
+                    if (k.kind == KeyKind.SHIFT || k.kind == KeyKind.MORE || (k.kind == KeyKind.SYMBOLS && r < l.rows.size - 1)) face.right -= trim
+                    if (k.kind == KeyKind.BACKSPACE) face.left += trim
+                }
                 out += Placed(k, cell, face)
                 x += w
             }
@@ -141,7 +153,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     else -> k.label
                 }
                 val big = k.kind == KeyKind.CHAR && label.length == 1 && label[0].isLetterOrDigit()
-                text.textSize = (if (big) 22 else if (k.kind == KeyKind.CHAR) 19 else if (k.kind == KeyKind.BACKSPACE || k.kind == KeyKind.SHIFT) 21 else 15) * sp
+                text.textSize = (if (big) 22 else if (k.kind == KeyKind.CHAR) 19 else if (k.kind == KeyKind.BACKSPACE || k.kind == KeyKind.SHIFT) 17 else 15) * sp
                 text.color = when (k.kind) {
                     KeyKind.CHAR -> Colors.FG
                     KeyKind.ENTER -> Colors.ENTER_FG
@@ -199,16 +211,19 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val holdTask = Runnable {
         val p = pressed ?: return@Runnable
         when (p.key.kind) {
-            KeyKind.BACKSPACE -> { listener.onKey(p.key); held = true; handler.postDelayed(repeatTask, 50) }
+            KeyKind.BACKSPACE -> { repeats = 0; held = true; repeatTask.run() }
             else -> if (p.key.popups.isNotEmpty()) openPopup(p)
         }
     }
+    private var repeats = 0
     private val repeatTask: Runnable = object : Runnable {
         override fun run() {
             val p = pressed ?: return
             if (p.key.kind == KeyKind.BACKSPACE) {
-                listener.onKey(p.key)
-                handler.postDelayed(this, 50)
+                repeats += 1
+                listener.onRepeat(p.key, repeats)
+                // Letters quickly, then (after about a second) whole words, slower.
+                handler.postDelayed(this, if (repeats > WORDS_AFTER) 140 else 50)
             }
         }
     }

@@ -5,6 +5,8 @@ use serde_json::{Map, Value, json};
 
 pub enum Kind {
     Bool,
+    /// One language code.
+    Lang,
     Int { min: i64, max: i64 },
     /// Language codes, in order.
     Langs,
@@ -45,12 +47,18 @@ pub const DEFS: &[Def] = &[
     Def { key: "typing.vibrate", kind: Kind::Bool, default: || json!(true), about: "Vibrate on each key." },
     Def { key: "typing.sound", kind: Kind::Bool, default: || json!(false), about: "Click on each key." },
     Def { key: "keyboard.height", kind: Kind::Int { min: 80, max: 130 }, default: || json!(100), about: "Key height, percent." },
-    Def { key: "languages.mine", kind: Kind::Langs, default: || json!(["en"]), about: "Languages the owner speaks, first is the main one." },
+    Def {
+        key: "languages.default",
+        kind: Kind::Lang,
+        default: || json!("en"),
+        about: "The language meanings and translations come in (as ccez-tube's Default language). Typed in too.",
+    },
     Def {
         key: "languages.learning",
         kind: Kind::Langs,
-        default: || json!(["fr", "de", "es", "ja", "zh", "ar"]),
-        about: "Languages being learned, in the order the learning strip uses. All of them are typed in too.",
+        // The owner's order in ccez-tube (2026-11-08).
+        default: || json!(["fr", "de", "es", "zh", "ja", "ko", "pt", "ar", "hi", "ru", "pl", "id", "tr", "it", "no", "cs", "el", "fa", "th", "vi", "ro", "bg", "hu", "hy"]),
+        about: "Languages being learned, most wanted first: the learning strip's order. Each one with a layout is typed in too.",
     },
     Def { key: "apps.chat", kind: Kind::List, default: || json!(CHAT_APPS), about: "Apps where the face key opens kaomoji first." },
 ];
@@ -101,13 +109,16 @@ impl Settings {
     }
 }
 
+fn is_lang(s: &str) -> bool {
+    (2..=3).contains(&s.len()) && s.chars().all(|c| c.is_ascii_lowercase())
+}
+
 fn check(d: &Def, v: &Value) -> Result<(), String> {
     let ok = match d.kind {
         Kind::Bool => v.is_boolean(),
+        Kind::Lang => v.as_str().is_some_and(is_lang),
         Kind::Int { min, max } => v.as_i64().is_some_and(|n| (min..=max).contains(&n)),
-        Kind::Langs => v.as_array().is_some_and(|a| {
-            a.iter().all(|x| x.as_str().is_some_and(|s| (2..=3).contains(&s.len()) && s.chars().all(|c| c.is_ascii_lowercase())))
-        }),
+        Kind::Langs => v.as_array().is_some_and(|a| a.iter().all(|x| x.as_str().is_some_and(is_lang))),
         Kind::List => v.as_array().is_some_and(|a| a.iter().all(Value::is_string)),
     };
     if ok {
@@ -115,6 +126,7 @@ fn check(d: &Def, v: &Value) -> Result<(), String> {
     } else {
         Err(match d.kind {
             Kind::Bool => format!("{} takes true or false", d.key),
+            Kind::Lang => format!("{} takes a language code, like \"fr\"", d.key),
             Kind::Int { min, max } => format!("{} takes a number from {min} to {max}", d.key),
             Kind::Langs => format!("{} takes a list of language codes, like [\"fr\",\"ja\"]", d.key),
             Kind::List => format!("{} takes a list of strings", d.key),
@@ -128,6 +140,7 @@ pub fn schema() -> String {
         .map(|d| {
             let kind = match d.kind {
                 Kind::Bool => json!("bool"),
+                Kind::Lang => json!("language"),
                 Kind::Int { min, max } => json!({"int": [min, max]}),
                 Kind::Langs => json!("languages"),
                 Kind::List => json!("strings"),

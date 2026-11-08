@@ -1,7 +1,11 @@
 package uk.ccez.keys
 
 import android.media.AudioManager
+import android.os.Build
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.text.InputType
 import android.view.HapticFeedbackConstants
 import android.view.inputmethod.EditorInfo
@@ -78,7 +82,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         view.layout = withoutFace(engine.layout(lang, page), !face)
         view.scale = (engine.setting("keyboard.height").toIntOrNull() ?: 100) / 100f
         val langs = engine.typingLanguages()
-        view.spaceLabel = NAMES[lang] ?: lang
+        view.spaceLabel = uk.ccez.keys.ui.Langs.of(service, lang)?.own ?: lang
         view.showArrows = langs.size > 1
         ui.keysHeightDp = keysHeightDp(view.scale)
     }
@@ -86,7 +90,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     // --- keys ---
 
     override fun onPress(key: Key) {
-        if (engine.settingBool("typing.vibrate")) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        buzz(HapticFeedbackConstants.KEYBOARD_TAP)
         if (engine.settingBool("typing.sound")) {
             val am = service.getSystemService(AudioManager::class.java)
             am?.playSoundEffect(
@@ -109,11 +113,61 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         }
     }
 
+    private val vibrator: Vibrator? =
+        if (Build.VERSION.SDK_INT >= 31) service.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        else @Suppress("DEPRECATION") service.getSystemService(Vibrator::class.java)
+
+    /**
+     * Through the vibrator itself: View.performHapticFeedback is skipped
+     * when the phone's touch feedback is off, and the owner felt nothing.
+     */
     private fun buzz(kind: Int) {
-        if (engine.settingBool("typing.vibrate")) view.performHapticFeedback(kind)
+        if (!engine.settingBool("typing.vibrate")) return
+        val v = vibrator ?: return
+        if (!v.hasVibrator()) return
+        val (primitive, scale, fallback) = when (kind) {
+            HapticFeedbackConstants.KEYBOARD_TAP -> Triple(VibrationEffect.Composition.PRIMITIVE_TICK, 0.7f, VibrationEffect.EFFECT_TICK)
+            HapticFeedbackConstants.CLOCK_TICK -> Triple(VibrationEffect.Composition.PRIMITIVE_TICK, 0.4f, VibrationEffect.EFFECT_TICK)
+            else -> Triple(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.8f, VibrationEffect.EFFECT_CLICK)
+        }
+        val effect = if (Build.VERSION.SDK_INT >= 30 && v.areAllPrimitivesSupported(primitive)) {
+            VibrationEffect.startComposition().addPrimitive(primitive, scale).compose()
+        } else {
+            VibrationEffect.createPredefined(fallback)
+        }
+        runCatching { v.vibrate(effect) }
     }
 
     override fun onChoice(text: String) = type(text)
+
+    override fun onRepeat(key: Key, count: Int) {
+        if (count > WORDS_AFTER) deleteWord() else backspace()
+        if (count > 1) buzz(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    /** Back to the start of the word (or the run of marks) before the cursor. */
+    private fun deleteWord() {
+        val ic = ic ?: return
+        fix = null
+        autoSpace = false
+        if (word.isNotEmpty()) {
+            word.clear()
+            ic.setComposingText("", 1)
+        } else {
+            val before = ic.getTextBeforeCursor(64, 0)?.toString().orEmpty()
+            val trimmed = before.trimEnd()
+            val last = trimmed.lastOrNull()
+            val body = when {
+                last == null -> ""
+                isWordChar(last) -> trimmed.takeLastWhile(::isWordChar)
+                else -> trimmed.takeLastWhile { !isWordChar(it) && !it.isWhitespace() }
+            }
+            val n = before.length - trimmed.length + body.length
+            if (n > 0) ic.deleteSurroundingText(n, 0)
+        }
+        updateShift()
+        updateBar()
+    }
 
     override fun onKey(key: Key) {
         if (key.kind != KeyKind.BACKSPACE) fix = null
@@ -386,7 +440,6 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     companion object {
-        val NAMES = mapOf("en" to "English", "fr" to "Français", "de" to "Deutsch", "es" to "Español", "ja" to "日本語", "zh" to "中文", "ar" to "العربية")
         private val PASSWORDS = setOf(
             InputType.TYPE_TEXT_VARIATION_PASSWORD,
             InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,

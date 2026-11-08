@@ -60,9 +60,20 @@ settings panel (buttons, typing, size, languages, licences), clipboard
 chip, `keys` CLI, log, haptics (keys, held-key choices, language switch,
 undo) and short fades (bar, panels, held-key choices). Tests: core, 13.
 
-Not yet: the clipboard chip is untested on the phone; drag to reorder
-languages; hold space for the language list; self-update (like
-ccez-tube's); swipe typing (setting, off by default); number row.
+Owner's first try (2026-11-08), fixed: hold delete takes whole words after
+about a second; haptics through the vibrator (performHapticFeedback is
+skipped when the phone's touch feedback is off); smaller shift/delete
+icons and narrower faces (letters stay put); settings: whole cells tap,
+switches redraw (they didn't, so taps re-sent the same value), Languages
+as ccez-tube's numbered flag grid (tap: First/Earlier/Later/Remove; + to
+add, names only in the Add list, 🔊 where the phone has an offline voice),
+"Default language" as ccez-tube calls it, Licences as its own page. The
+owner's ccez-tube order is the default learning order.
+
+Not yet: the clipboard chip is untested on the phone; hold space for the
+language list; self-update (like ccez-tube's); swipe typing (setting, off
+by default); number row; searching the Add list (needs typing into the
+keyboard's own field, which Ask Muse needs too).
 
 ## Order
 

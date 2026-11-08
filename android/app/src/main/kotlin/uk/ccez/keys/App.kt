@@ -11,8 +11,12 @@ import uk.ccez.keys.core.Engine
 
 /** The one Engine (Rust core) for the keyboard, the settings screen and `keys`. */
 class App : Application() {
-    lateinit var engine: Engine
-        private set
+    init {
+        instance = this
+    }
+
+    /** Started on first use: `keys` can call in before onCreate has run. */
+    val engine: Engine by lazy { Engine(filesDir.resolve("keys").path) }
 
     /** Bumped whenever a setting changes (from the panel or `keys`). */
     val settingsVersion = MutableStateFlow(0)
@@ -21,8 +25,6 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        instance = this
-        engine = Engine(filesDir.resolve("keys").path)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             runCatching { log("error", "crash", "thread" to t.name, "error" to e.toString(), "at" to e.stackTrace.take(8).joinToString(" < ")) }

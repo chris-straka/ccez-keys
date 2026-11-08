@@ -62,6 +62,9 @@ fn call(method: &str, arg: Option<&str>, value: Option<&str>) -> Result<String, 
     if let Some(v) = value {
         cmd += &format!(" --extra value:s:{}", quote(&b64(v)));
     }
+    if std::env::var("KEYS_DEBUG").is_ok() {
+        eprintln!("adb -s {serial} shell {cmd}");
+    }
     let out = Command::new("adb").args(["-s", &serial, "shell", &cmd]).output().map_err(|e| format!("adb didn't run: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
     if text.contains("Could not find provider") || text.contains("Unknown authority") {

@@ -52,7 +52,8 @@ impl Engine {
 
     fn typing_languages_of(&self, s: &settings::Settings) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
-        for l in s.strings("languages.mine").into_iter().chain(s.strings("languages.learning")) {
+        let default = s.get("languages.default").and_then(|v| v.as_str()).unwrap_or("en").to_string();
+        for l in std::iter::once(default).chain(s.strings("languages.learning")) {
             if self.layouts.has(&l) && !out.contains(&l) {
                 out.push(l);
             }
@@ -113,8 +114,8 @@ impl Engine {
         self.lock().langs.contains_key(&lang)
     }
 
-    /// The languages the space bar cycles through: the owner's own, then
-    /// the ones being learned, those with a layout.
+    /// The languages the space bar cycles through: the default language,
+    /// then the ones being learned, those with a layout.
     pub fn typing_languages(&self) -> Vec<String> {
         let s = self.lock();
         self.typing_languages_of(&s.settings)

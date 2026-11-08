@@ -46,10 +46,11 @@ class Control : ContentProvider() {
                 else -> error("no command called $method")
             }
             out.putString("out", b64(result))
-        } catch (e: KeysException) {
-            out.putString("error", b64(e.message ?: "failed"))
-        } catch (e: IllegalStateException) {
-            out.putString("error", b64(e.message ?: "failed"))
+        } catch (e: KeysException.Bad) {
+            out.putString("error", b64(e.v1))
+        } catch (e: Exception) {
+            app.log("error", "control", "method" to method, "error" to e.toString())
+            out.putString("error", b64(e.message ?: e.toString()))
         }
         return out
     }
