@@ -197,3 +197,12 @@ fn memory_per_language() {
     eprintln!("4 languages: {} MB", (after - before) / 1024);
     drop(e);
 }
+
+#[test]
+fn swiping_french_words() {
+    let e = engine(&["fr"]);
+    // The letters a finger passes on QWERTY for each word.
+    assert_eq!(e.swipe("fr".into(), "bvcxonjhgfdsoiuyr".into()).first().map(String::as_str), Some("bonjour"));
+    assert_eq!(e.swipe("fr".into(), "mjhgfdsaqsdfghijuytrezaasdfghjklmnbvcxwqsdfghjklmo".into()).len() <= 4, true);
+    assert_eq!(e.swipe("fr".into(), "mertcvbgfdsi".into()).first().map(String::as_str), Some("merci"));
+}

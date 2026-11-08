@@ -41,6 +41,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onLanguage(code: String)
         /** Delete held: the `count`th repeat. */
         fun onRepeat(key: Key, count: Int)
+        /** A swipe across the letters (the ones passed, in order). */
+        fun onSwipe(path: String)
     }
 
     var layout: Layout? = null
@@ -54,6 +56,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         set(v) { if (field != v) { field = v; invalidate() } }
     var showArrows = false
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** Swipe typing (Settings). */
+    var swipe = false
+    private var swiping = false
+    private val trail = android.graphics.Path()
+    private var swipePath = StringBuilder()
+
     /** The space bar's list: (code, flag), and the one in use. */
     var languages: List<Pair<String, String>> = emptyList()
     var language = ""
@@ -135,6 +143,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
             c.drawRoundRect(p.face, r, r, fill)
             drawLabel(c, p)
+        }
+        if (swiping) {
+            stroke.color = Colors.ACCENT
+            stroke.strokeWidth = 4 * dp
+            c.drawPath(trail, stroke)
+            stroke.strokeWidth = 1.7f * dp
         }
     }
 
@@ -219,6 +233,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var pressed: Placed? = null
     private var pointerId = -1
     private var downX = 0f
+    private var downY = 0f
     private var swiped = 0f
     private var popup: Popup? = null
     private var held = false
@@ -265,6 +280,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 pressed = p
                 pointerId = e.getPointerId(i)
                 downX = e.getX(i)
+                downY = e.getY(i)
                 swiped = 0f
                 held = false
                 listener.onPress(p.key)
@@ -282,6 +298,23 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val p = pressed
                 if (i >= 0 && p != null) {
                     val x = e.getX(i)
+                    val y = e.getY(i)
+                    if (swipe && popup == null && p.key.kind == KeyKind.CHAR && p.key.text.all { it.isLetter() }) {
+                        if (!swiping && kotlin.math.hypot(x - downX, y - downY) > p.cell.width() * 0.7f) {
+                            swiping = true
+                            handler.removeCallbacks(holdTask)
+                            swipePath = StringBuilder(p.key.text)
+                            trail.reset()
+                            trail.moveTo(downX, downY)
+                        }
+                        if (swiping) {
+                            trail.lineTo(x, y)
+                            val k = keyAt(x, y)?.key
+                            if (k != null && k.kind == KeyKind.CHAR && k.text.length == 1 && k.text[0].isLetter() && swipePath.last() != k.text[0]) swipePath.append(k.text)
+                            invalidate()
+                            return true
+                        }
+                    }
                     val pop = popup
                     if (pop != null) {
                         val w = pop.box.width() / pop.cols
@@ -315,6 +348,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun release(commit: Boolean) {
         handler.removeCallbacks(holdTask)
         handler.removeCallbacks(repeatTask)
+        if (swiping) {
+            swiping = false
+            pressed = null
+            pointerId = -1
+            trail.reset()
+            if (commit && swipePath.length >= 2) listener.onSwipe(swipePath.toString())
+            invalidate()
+            return
+        }
         val p = pressed
         val pop = popup
         pressed = null

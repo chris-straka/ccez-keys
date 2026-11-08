@@ -599,6 +599,7 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
             Triple(Icons.dot, "Double space .", "typing.double_space_period"),
             Triple(Icons.sound, "Sound", "typing.sound"),
             Triple(Icons.number, "Numbers", "typing.numbers"),
+            Triple(Icons.swipe, "Swipe", "typing.swipe"),
             Triple(Icons.size, "Size", ""),
         ),
         version,
@@ -871,6 +872,7 @@ internal object Icons {
     val tr = stroke("M3 5h9M7.5 3v2M5 5c.5 3 2.5 5.5 5.5 7M10 5c-.7 3.5-3 6-6 7.5", "M13 20l4-10 4 10M14.5 16.5h5")
     val spark = stroke("M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", "M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z")
     val book = stroke("M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z", "M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5")
+    val swipe = stroke("M3 15c3-6 5-8 7-5s3 4 5-1 4-3 6 0")
     val number = stroke("M5 9l2-1.5V16", "M10.5 9.5a2 2 0 0 1 4 .5c0 2-4 3.5-4 6h4", "M17.5 8h3l-2 3a2.5 2.5 0 1 1-1.5 4.5")
     val size = stroke("M4 9h16M4 15h16", "M12 3v4M12 17v4")
 }

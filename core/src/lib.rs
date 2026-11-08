@@ -10,6 +10,7 @@ pub mod layout;
 pub mod learn;
 pub mod log;
 pub mod settings;
+pub mod swipe;
 pub mod typing;
 pub mod words;
 
@@ -216,6 +217,12 @@ impl Engine {
             })
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(_, l)| l)
+    }
+
+    /// Words for a swipe over `path` (the letters passed, in order).
+    pub fn swipe(&self, lang: String, path: String) -> Vec<String> {
+        let s = self.lock();
+        s.langs.get(&lang).map(|l| swipe::decode(&l.lex, &path, 4)).unwrap_or_default()
     }
 
     /// Words that followed `prev` before.

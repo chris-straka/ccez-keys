@@ -173,6 +173,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (page == Page.LETTERS && engine.settingBool("typing.numbers")) layout = withNumbers(layout)
         view.layout = layout
         view.scale = (engine.setting("keyboard.height").toIntOrNull() ?: 100) / 100f
+        view.swipe = engine.settingBool("typing.swipe") && !converting()
         val langs = engine.typingLanguages()
         view.spaceLabel = uk.ccez.keys.ui.Langs.of(service, lang)?.own ?: lang
         view.showArrows = langs.size > 1
@@ -234,6 +235,25 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     override fun onChoice(text: String) = type(text)
 
+    /** The last swiped word, while a pick from the bar may still replace it. */
+    private var swiped: String? = null
+
+    override fun onSwipe(path: String) {
+        val words = engine.swipe(lang, path)
+        if (words.isEmpty()) return
+        val ic = ic ?: return
+        endWord(correct = true)
+        val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+        var w = words[0]
+        if (shift != Shift.OFF) w = w.replaceFirstChar { it.uppercase() }
+        ic.commitText((if (before.isNotEmpty() && !before[0].isWhitespace()) " " else "") + w + " ", 1)
+        if (!noLearn) engine.learn(lang, prevWord(0), w, false)
+        swiped = w
+        if (shift == Shift.ONCE) setShift(Shift.OFF)
+        ui.bar = Bar.Words(words.getOrNull(1), w, words.getOrNull(2), false, null)
+        autoSpace = true
+    }
+
     override fun onRepeat(key: Key, count: Int) {
         if (count > WORDS_AFTER) deleteWord() else backspace()
         if (count > 1) buzz(HapticFeedbackConstants.CLOCK_TICK)
@@ -264,6 +284,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     override fun onKey(key: Key) {
+        swiped = null
         if (key.kind != KeyKind.BACKSPACE) fix = null
         when (key.kind) {
             KeyKind.CHAR -> type(if (shift != Shift.OFF && key.alt.isNotEmpty()) key.alt else key.text)
@@ -549,6 +570,17 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /** A cell tapped: that word, then a space. */
     fun pick(text: String, isTyped: Boolean) {
         val ic = ic ?: return
+        // After a swipe: the bar's other words replace the one put in.
+        swiped?.let { w ->
+            swiped = null
+            val tail = "$w "
+            if (ic.getTextBeforeCursor(tail.length, 0)?.toString() == tail) {
+                ic.deleteSurroundingText(tail.length, 0)
+                ic.commitText("$text ", 1)
+                updateBar()
+                return
+            }
+        }
         val prev = prevWord(word.length)
         ic.commitText("$text ", 1)
         clearWord()
