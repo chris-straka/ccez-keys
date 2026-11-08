@@ -92,6 +92,27 @@ Known gaps: ML Kit's wording is literal ("free" → 無料); Muse should refine
 the strip once typing pauses. ccez-tube's implicit "known" (heard in two
 videos) stays in ccez-tube, so few words are grey yet.
 
+## Built since (2026-11-08, checked on the S24)
+
+- Muse: corrections while typing a learning language (ccez-llm's diff, Fix,
+  kept in `keys mistakes` for ccez-learn), Ask typed on the keyboard
+  itself (carry on in ccez-llm), the strip reworded by the AI on a pause,
+  casual or polite per app (hold 🔊). Key: Settings → AI → Paste, or
+  `keys key < file`. Needs the owner's key to be tried for real.
+- Noticing the language typed (two words), language per app.
+- Kaomoji offered in chat apps by the message's mood; clipboard history.
+- Dictation: tap (Android's recogniser; asks for a missing language pack),
+  hold (ccez-whisper; silence never sent).
+- Camera text (OCR, latest screenshot), Into message.
+- Layouts: 16 Latin languages, Cyrillic (ru uk bg), Greek, Arabic,
+  Persian, Hebrew, Armenian, Hindi, Thai, Korean (syllables), Japanese
+  (romaji → kana → words), Chinese (pinyin → characters); draw a Japanese
+  or Chinese character (hold ?123); swipe typing (off by default).
+- Updates: `scripts/release.sh` → GitHub release → the keyboard installs it.
+
+Not yet / ideas: a week's stats; searching the Add list; Telex for
+Vietnamese; Arabic digits; a Donate row (needs a link from the owner).
+
 ## Order
 
 1. Daily-usable keyboard: QWERTY, autocorrect + suggestions (en, fr),
