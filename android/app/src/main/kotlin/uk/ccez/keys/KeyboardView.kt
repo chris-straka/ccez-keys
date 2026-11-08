@@ -87,14 +87,17 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun placeKeys() {
         val l = layout ?: return
         if (width == 0) return
-        val unit = (width - 2 * side) / 10f
+        // Ten keys a row on QWERTY; scripts with 11 or 12 letters a row get narrower keys.
+        val widest = l.rows.filter { r -> r.keys.all { it.kind == KeyKind.CHAR } }.maxOfOrNull { r -> r.keys.sumOf { it.width.toDouble() } }?.toFloat() ?: 10f
+        val span = maxOf(10f, widest)
+        val unit = (width - 2 * side) / span
         val out = ArrayList<Placed>()
         l.rows.forEachIndexed { r, row ->
             val units = row.keys.sumOf { it.width.toDouble() }.toFloat()
             val onlyChars = row.keys.all { it.kind == KeyKind.CHAR }
             // A short row of letters sits centred; any row with other keys spans the width.
             val u = if (onlyChars) unit else (width - 2 * side) / units
-            var x = side + if (onlyChars) (10 - units) * unit / 2 else 0f
+            var x = side + if (onlyChars) (span - units) * unit / 2 else 0f
             val top = padTop + r * (rowH + rowGap)
             row.keys.forEach { k ->
                 val w = k.width * u
@@ -160,7 +163,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
             else -> {
                 val label = when (k.kind) {
-                    KeyKind.CHAR -> if (shift != Shift.OFF && k.label.length == 1) k.label.uppercase() else k.label
+                    KeyKind.CHAR -> if (shift != Shift.OFF && k.alt.isNotEmpty()) k.alt else if (shift != Shift.OFF && k.label.length == 1) k.label.uppercase() else k.label
                     KeyKind.SHIFT -> if (shift == Shift.LOCK) "⇪" else "⇧"
                     else -> k.label
                 }

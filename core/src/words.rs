@@ -16,9 +16,15 @@ use unicode_normalization::char::is_combining_mark;
 /// Lower case, accents off, ligatures and ß spelled out, curly apostrophes straight.
 pub fn fold(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
+    let mut base = ' ';
     for c in s.nfd() {
-        if is_combining_mark(c) {
+        // Accents off Latin, Greek and Cyrillic letters, short vowels off
+        // Arabic; but Devanagari and Thai vowel signs are letters there.
+        if is_combining_mark(c) && (accented_script(base) || ('\u{064B}'..='\u{065F}').contains(&c) || c == '\u{0670}') {
             continue;
+        }
+        if !is_combining_mark(c) {
+            base = c;
         }
         for l in c.to_lowercase() {
             match l {
@@ -31,6 +37,11 @@ pub fn fold(s: &str) -> String {
         }
     }
     out
+}
+
+/// Scripts whose combining marks are accents (dropped when folding).
+fn accented_script(c: char) -> bool {
+    c.is_ascii() || ('\u{00C0}'..='\u{024F}').contains(&c) || ('\u{0370}'..='\u{03FF}').contains(&c) || ('\u{0400}'..='\u{04FF}').contains(&c) || ('\u{1E00}'..='\u{1EFF}').contains(&c)
 }
 
 #[derive(Clone, Debug)]

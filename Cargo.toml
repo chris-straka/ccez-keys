@@ -1,3 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["core", "cli"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+# No strip: uniffi-bindgen reads the metadata symbols; AGP strips the
+# copies it packages.
+opt-level = "z"

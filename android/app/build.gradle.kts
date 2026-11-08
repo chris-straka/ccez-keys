@@ -12,6 +12,10 @@ val rustJniLibs = layout.buildDirectory.dir("rustJniLibs")
 val uniffiKotlin = layout.buildDirectory.dir("generated/uniffi")
 val coreInputs = listOf("src", "Cargo.toml", "uniffi.toml")
 // The workspace's target folder (../target), or CARGO_TARGET_DIR.
+// Processors to build for: the phone (arm64) always; the emulator (x86_64)
+// unless CCEZ_KEYS_ABIS says otherwise (scripts/build.sh ships arm64 only:
+// ML Kit's translator alone is 16 MB per processor).
+val abis = (System.getenv("CCEZ_KEYS_ABIS") ?: "arm64-v8a,x86_64").split(',').map { it.trim() }.filter { it.isNotEmpty() }
 val cargoTarget = System.getenv("CARGO_TARGET_DIR")?.let { file(it) } ?: rootProject.layout.projectDirectory.dir("../target").asFile
 
 val buildRustCore by tasks.registering(Exec::class) {
@@ -22,7 +26,7 @@ val buildRustCore by tasks.registering(Exec::class) {
     inputs.dir(dataDir.dir("layouts"))
     outputs.dir(rustJniLibs)
     commandLine(
-        "cargo", "ndk", "-t", "arm64-v8a", "-t", "x86_64", "--platform", "26",
+        "cargo", "ndk", *abis.flatMap { listOf("-t", it) }.toTypedArray(), "--platform", "26",
         "-o", rustJniLibs.get().asFile.absolutePath,
         "build", "--release", "--lib",
     )
@@ -53,7 +57,7 @@ android {
         targetSdk = 36
         versionCode = (System.getenv("CCEZ_KEYS_VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("CCEZ_KEYS_VERSION_NAME") ?: "0.1.0-dev"
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        ndk { abiFilters += abis }
     }
 
     signingConfigs {

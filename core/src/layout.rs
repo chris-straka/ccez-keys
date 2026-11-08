@@ -11,6 +11,12 @@ use crate::words::Neighbours;
 struct LayoutFile {
     languages: Vec<String>,
     letters: Vec<Vec<String>>,
+    /// The second layer, for scripts where ⇧ gives other letters (Hindi, Thai, Korean).
+    #[serde(default)]
+    letters_shift: Option<Vec<Vec<String>>>,
+    /// The comma key, where the script has its own (Arabic ،).
+    #[serde(default)]
+    comma: Option<String>,
     popups: HashMap<String, HashMap<String, Vec<String>>>,
     period: Vec<String>,
     symbols: Vec<Vec<String>>,
@@ -18,7 +24,20 @@ struct LayoutFile {
     symbol_popups: HashMap<String, Vec<String>>,
 }
 
-const FILES: &[&str] = &[include_str!("../../data/layouts/latin.json")];
+const FILES: &[&str] = &[
+    include_str!("../../data/layouts/latin.json"),
+    include_str!("../../data/layouts/russian.json"),
+    include_str!("../../data/layouts/ukrainian.json"),
+    include_str!("../../data/layouts/bulgarian.json"),
+    include_str!("../../data/layouts/greek.json"),
+    include_str!("../../data/layouts/arabic.json"),
+    include_str!("../../data/layouts/persian.json"),
+    include_str!("../../data/layouts/hebrew.json"),
+    include_str!("../../data/layouts/armenian.json"),
+    include_str!("../../data/layouts/hindi.json"),
+    include_str!("../../data/layouts/thai.json"),
+    include_str!("../../data/layouts/korean.json"),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum KeyKind {
@@ -43,6 +62,8 @@ pub struct Key {
     pub label: String,
     /// What a tap types (Char keys).
     pub text: String,
+    /// What it types with ⇧, where that isn't just a capital (Hindi, Thai, Korean).
+    pub alt: String,
     /// Small mark in the corner (the top row's digits).
     pub hint: String,
     /// What holding the key offers, first one preselected.
@@ -73,11 +94,11 @@ pub struct Layouts {
 }
 
 fn key(kind: KeyKind, label: &str, width: f32) -> Key {
-    Key { kind, label: label.into(), text: String::new(), hint: String::new(), popups: vec![], width }
+    Key { kind, label: label.into(), text: String::new(), alt: String::new(), hint: String::new(), popups: vec![], width }
 }
 
 fn ch(text: &str, popups: Vec<String>) -> Key {
-    Key { kind: KeyKind::Char, label: text.into(), text: text.into(), hint: String::new(), popups, width: 1.0 }
+    Key { kind: KeyKind::Char, label: text.into(), text: text.into(), alt: String::new(), hint: String::new(), popups, width: 1.0 }
 }
 
 impl Layouts {
@@ -122,6 +143,9 @@ impl Layouts {
                         }
                         let mut k = ch(c, popups);
                         k.hint = digit.unwrap_or_default();
+                        if let Some(alt) = f.letters_shift.as_ref().and_then(|s| s.get(r)).and_then(|row| row.get(i)) {
+                            k.alt = alt.clone();
+                        }
                         k
                     }
                     _ => ch(c, f.symbol_popups.get(c).cloned().unwrap_or_default()),
@@ -140,7 +164,7 @@ impl Layouts {
         }
         let mut period = ch(".", f.period.clone());
         period.width = 0.8;
-        let mut comma = ch(",", vec![]);
+        let mut comma = ch(f.comma.as_deref().unwrap_or(","), vec![]);
         comma.width = 0.8;
         let switch = match page {
             Page::Letters => key(KeyKind::Symbols, "?123", 1.3),

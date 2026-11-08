@@ -28,10 +28,3 @@ serde_json = "1"
 thiserror = "2"
 unicode-normalization = "0.1.26"
 uniffi = { version = "0.32" }
-
-[profile.release]
-lto = true
-codegen-units = 1
-# No strip: uniffi-bindgen reads the metadata symbols; AGP strips the
-# copies it packages.
-opt-level = "z"

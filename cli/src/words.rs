@@ -18,7 +18,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-const LANGS: &[&str] = &["en", "fr", "de", "es", "pt", "it", "pl", "cs", "tr", "id", "no", "vi", "ro", "hu", "nl", "sv"];
+const LANGS: &[&str] = &["en", "fr", "de", "es", "pt", "it", "pl", "cs", "tr", "id", "no", "vi", "ro", "hu", "nl", "sv", "ru", "uk", "bg", "el", "ar", "fa", "he", "hi", "ko"];
 
 const EN_CAPS: &[&str] = &[
     "i", "i'm", "i'll", "i've", "i'd", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january",

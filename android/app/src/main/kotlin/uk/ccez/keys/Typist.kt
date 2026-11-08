@@ -58,6 +58,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private var lang = engine.currentLanguage()
     private var page = Page.LETTERS
     private val word = StringBuilder()
+    /** Korean: the letters typed, which `word` shows joined into syllables. */
+    private val jamo = StringBuilder()
+
+    private fun clearWord() {
+        word.setLength(0)
+        jamo.setLength(0)
+    }
     private var shift = Shift.OFF
     private var lastShiftTap = 0L
     private var lastSpaceAt = 0L
@@ -79,7 +86,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         noLearn = password || info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         noCorrect = password || variation in ADDRESSES || info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0
         page = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE || cls == InputType.TYPE_CLASS_DATETIME) Page.SYMBOLS else Page.LETTERS
-        word.clear()
+        clearWord()
         fix = null
         autoSpace = false
         recent.clear()
@@ -93,7 +100,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     fun finish() {
-        word.clear()
+        clearWord()
         engine.save()
     }
 
@@ -176,7 +183,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         fix = null
         autoSpace = false
         if (word.isNotEmpty()) {
-            word.clear()
+            clearWord()
             ic.setComposingText("", 1)
         } else {
             val before = ic.getTextBeforeCursor(64, 0)?.toString().orEmpty()
@@ -197,7 +204,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     override fun onKey(key: Key) {
         if (key.kind != KeyKind.BACKSPACE) fix = null
         when (key.kind) {
-            KeyKind.CHAR -> type(key.text)
+            KeyKind.CHAR -> type(if (shift != Shift.OFF && key.alt.isNotEmpty()) key.alt else key.text)
             KeyKind.SHIFT -> {
                 val now = SystemClock.uptimeMillis()
                 shift = when {
@@ -256,6 +263,16 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             return
         }
         val ic = ic ?: return
+        if (text.length == 1 && Hangul.isJamo(text[0]) && !password) {
+            autoSpace = false
+            jamo.append(text)
+            word.setLength(0)
+            word.append(Hangul.compose(jamo))
+            ic.setComposingText(word, 1)
+            if (shift == Shift.ONCE) setShift(Shift.OFF)
+            updateBar()
+            return
+        }
         if (autoSpaceSwap(text, ic)) return
         if (text.length <= 2 && text.all(::isWordChar) && !password) {
             val t = if (shift != Shift.OFF) text.uppercase() else text
@@ -300,7 +317,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val out = fixed ?: typed
         ic.commitText(out, 1)
         fix = fixed?.let { typed to it }
-        word.clear()
+        clearWord()
         if (!noLearn) engine.learn(lang, prev, out, false)
         // What was typed tells the language, not what it became.
         noticeLanguage(typed)
@@ -367,6 +384,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 return
             }
         }
+        if (jamo.isNotEmpty()) {
+            jamo.setLength(jamo.length - 1)
+            word.setLength(0)
+            word.append(Hangul.compose(jamo))
+            ic.setComposingText(word, 1)
+            updateBar()
+            return
+        }
         if (word.isNotEmpty()) {
             word.setLength(word.offsetByCodePoints(word.length, -1))
             ic.setComposingText(word, 1)
@@ -416,7 +441,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val ic = ic ?: return
         val prev = prevWord(word.length)
         ic.commitText("$text ", 1)
-        word.clear()
+        clearWord()
         fix = null
         if (!noLearn) engine.learn(lang, prev, text, isTyped)
         autoSpace = true
@@ -509,7 +534,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (word.isNotEmpty() && (candEnd == -1 || newStart != candEnd || newEnd != candEnd)) {
             // The cursor moved away from the word: keep it as typed.
             ic?.finishComposingText()
-            word.clear()
+            clearWord()
             fix = null
             updateShift()
             updateBar()
@@ -537,7 +562,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val before = ic.getTextBeforeCursor(300, 0)?.toString().orEmpty()
         val at = before.lastIndexOf(s)
         if (at < 0) return
-        word.clear()
+        clearWord()
         ic.finishComposingText()
         ic.deleteSurroundingText(before.length - at, 0)
         ic.commitText(text + before.substring(at + s.length).takeWhile { it == ' ' }, 1)
@@ -609,7 +634,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
         /** SwiftKey's row of digits over the letters (Settings: Numbers). */
         private fun withNumbers(l: Layout): Layout {
-            val digits = "1234567890".map { d -> Key(KeyKind.CHAR, d.toString(), d.toString(), "", emptyList(), 1f) }
+            val digits = "1234567890".map { d -> Key(KeyKind.CHAR, d.toString(), d.toString(), "", "", emptyList(), 1f) }
             val top = l.rows.first().let { r -> r.copy(keys = r.keys.map { it.copy(hint = "", popups = it.popups.drop(1)) }) }
             return Layout(listOf(uk.ccez.keys.core.Row(digits), top) + l.rows.drop(1))
         }

@@ -11,6 +11,8 @@ export CCEZ_KEYS_KEYSTORE="$KEYDIR/release.jks"
 export CCEZ_KEYS_KEY_PASSWORD="$(cat "$KEYDIR/password")"
 export CCEZ_KEYS_VERSION_CODE="$(git rev-list --count HEAD)"
 export CCEZ_KEYS_VERSION_NAME="0.1.$CCEZ_KEYS_VERSION_CODE"
+# The phone only (an emulator build: CCEZ_KEYS_ABIS=arm64-v8a,x86_64).
+export CCEZ_KEYS_ABIS="${CCEZ_KEYS_ABIS:-arm64-v8a}"
 (cd android && ./gradlew --console=plain -q assembleRelease)
 APK=android/app/build/outputs/apk/release/app-release.apk
 echo "built $APK ($CCEZ_KEYS_VERSION_NAME)"
