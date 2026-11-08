@@ -11,6 +11,7 @@ pub mod learn;
 pub mod log;
 pub mod settings;
 pub mod swipe;
+pub mod telex;
 pub mod typing;
 pub mod words;
 
@@ -188,7 +189,8 @@ impl Engine {
     pub fn suggest(&self, lang: String, typed: String) -> Suggestions {
         let s = self.lock();
         let others_langs = self.typing_languages_of(&s.settings);
-        let auto = s.settings.bool("typing.autocorrect");
+        // Thai is written without spaces between words: suggestions, no corrections.
+        let auto = s.settings.bool("typing.autocorrect") && lang != "th";
         let Some(l) = s.langs.get(&lang) else {
             return Suggestions { words: vec![], correction: None, typed_known: false };
         };
@@ -353,6 +355,11 @@ impl Engine {
         self.converters.lock().unwrap_or_else(|e| e.into_inner()).remove(&lang);
         self.log.write("info", "converter", &serde_json::json!({"lang": lang, "keys": n}).to_string());
         Ok(n as u32)
+    }
+
+    /// Vietnamese typed with Telex ("Vieetj" → Việt).
+    pub fn telex(&self, raw: String) -> String {
+        telex::telex(&raw)
     }
 
     /// Romaji typed so far, as kana (`finish`: a last "n" counts as ん).

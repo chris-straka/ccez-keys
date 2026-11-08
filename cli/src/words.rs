@@ -12,6 +12,10 @@
 //! - English gets I, I'm and the days and months capitalised.
 //! data/words/<lang>-extra.txt (word, tab, rank) adds what the lists split
 //! apart, like French contractions (j'ai, c'est).
+//!
+//! `--fw <dir>`: languages wordfreq lacks (Thai, Armenian) from Hermit Dave's
+//! FrequencyWords (OpenSubtitles 2018, CC BY-SA 4.0): `<dir>/<lang>.txt`,
+//! "word count" lines, commonest first.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -36,6 +40,15 @@ fn main() {
     let out = Path::new(&args[2]);
     let de_dict = args.iter().position(|a| a == "--de-dict").and_then(|i| args.get(i + 1));
     let de_heads = de_dict.map(|p| headwords(Path::new(p))).unwrap_or_default();
+    if let Some(fw) = args.iter().position(|a| a == "--fw").and_then(|i| args.get(i + 1)) {
+        for lang in ["th", "hy"] {
+            let Ok(text) = fs::read_to_string(Path::new(fw).join(format!("{lang}.txt"))) else { continue };
+            let words: Vec<&str> = text.lines().filter_map(|l| l.split_whitespace().next()).filter(|w| w.chars().any(char::is_alphabetic)).take(30_000).collect();
+            let head = format!("# ccez-keys {lang} words, commonest first: FrequencyWords by Hermit Dave (OpenSubtitles 2018), CC BY-SA 4.0. Built by keys-words.\n");
+            fs::write(out.join(format!("{lang}.txt")), head + &words.join("\n") + "\n").expect("write");
+            println!("{lang}: {} words", words.len());
+        }
+    }
     for lang in LANGS {
         let text = fs::read_to_string(freq.join(format!("{lang}.txt"))).expect("freq list");
         let common: HashSet<String> = text.lines().take(5000).map(|l| l.trim().to_string()).collect();

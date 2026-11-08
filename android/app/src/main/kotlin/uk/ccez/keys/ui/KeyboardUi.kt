@@ -659,6 +659,7 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
             Triple(Icons.sound, "Sound", "typing.sound"),
             Triple(Icons.number, "Numbers", "typing.numbers"),
             Triple(Icons.swipe, "Swipe", "typing.swipe"),
+            Triple(Icons.capital, "Telex (Tiếng Việt)", "typing.telex"),
             Triple(Icons.size, "Size", ""),
         ),
         version,

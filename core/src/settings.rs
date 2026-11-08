@@ -50,6 +50,7 @@ pub const DEFS: &[Def] = &[
     Def { key: "typing.double_space_period", kind: Kind::Bool, default: || json!(true), about: "Two spaces type a period." },
     Def { key: "typing.vibrate", kind: Kind::Bool, default: || json!(true), about: "Vibrate on each key." },
     Def { key: "typing.sound", kind: Kind::Bool, default: || json!(false), about: "Click on each key." },
+    Def { key: "typing.telex", kind: Kind::Bool, default: || json!(true), about: "Vietnamese with Telex: aa → â, ow → ơ, dd → đ, s/f/r/x/j after the vowels for the tone." },
     Def { key: "typing.swipe", kind: Kind::Bool, default: || json!(false), about: "Swipe across the letters to type a word." },
     Def { key: "typing.numbers", kind: Kind::Bool, default: || json!(false), about: "A row of digits over the letters." },
     Def { key: "keyboard.height", kind: Kind::Int { min: 80, max: 130 }, default: || json!(100), about: "Key height, percent." },

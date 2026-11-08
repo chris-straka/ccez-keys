@@ -113,9 +113,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /** Korean: the letters typed, which `word` shows joined into syllables. */
     private val jamo = StringBuilder()
 
+    /** Vietnamese with Telex: the letters typed, which `word` shows as Telex writes them. */
+    private val telexRaw = StringBuilder()
+    private fun telexOn() = lang == "vi" && engine.settingBool("typing.telex")
+
     private fun clearWord() {
         word.setLength(0)
         jamo.setLength(0)
+        telexRaw.setLength(0)
         conv.setLength(0)
         romaji = ""
     }
@@ -398,6 +403,17 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             return
         }
         if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) commitConv()
+        if (telexOn() && !password && text.length == 1 && text[0].isLetter() && text[0].code < 128) {
+            autoSpace = false
+            if (telexRaw.isEmpty() && word.isNotEmpty()) telexRaw.append(word)
+            telexRaw.append(if (shift != Shift.OFF) text.uppercase() else text)
+            word.setLength(0)
+            word.append(engine.telex(telexRaw.toString()))
+            ic.setComposingText(word, 1)
+            if (shift == Shift.ONCE) setShift(Shift.OFF)
+            updateBar()
+            return
+        }
         if (text.length == 1 && Hangul.isJamo(text[0]) && !password) {
             autoSpace = false
             jamo.append(text)
@@ -528,6 +544,15 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 updateBar()
                 return
             }
+        }
+        if (telexRaw.isNotEmpty()) {
+            telexRaw.setLength(telexRaw.length - 1)
+            word.setLength(0)
+            word.append(engine.telex(telexRaw.toString()))
+            ic.setComposingText(word, 1)
+            if (word.isEmpty()) updateShift()
+            updateBar()
+            return
         }
         if (jamo.isNotEmpty()) {
             jamo.setLength(jamo.length - 1)
