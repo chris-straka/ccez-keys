@@ -21,7 +21,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import uk.ccez.keys.ui.KeyboardUi
 
-enum class Panel { KEYS, FACE, SETTINGS }
+enum class Panel { KEYS, FACE, SETTINGS, CLIPS }
 
 /** What the Compose parts draw from. */
 class UiState {
@@ -107,7 +107,8 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         val sensitive = Build.VERSION.SDK_INT >= 33 &&
             clip.description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
         if (sensitive || clip.itemCount == 0) { ui.clip = null; return }
-        val text = clip.getItemAt(0).coerceToText(this)?.toString()?.trim().orEmpty()
-        ui.clip = text.take(10_000).ifEmpty { null }
+        val text = clip.getItemAt(0).coerceToText(this)?.toString()?.trim().orEmpty().take(10_000)
+        ui.clip = text.ifEmpty { null }
+        if (text.isNotEmpty()) uk.ccez.keys.learn.Clips.add(this, text)
     }
 }

@@ -124,6 +124,7 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
                     )
                     Panel.FACE -> FacePanel(ui, typist)
                     Panel.SETTINGS -> SettingsPanel(ui, typist, version)
+                    Panel.CLIPS -> ClipsPanel(ui, typist)
                 }
             }
         }
@@ -163,7 +164,7 @@ private fun BarRow(ui: UiState, typist: Typist) {
         if (showClip && clip != null) {
             Row(
                 Modifier.weight(1f, fill = false).padding(start = 8.dp, end = 6.dp).height(34.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
-                    .combinedClickable(onClick = { typist.paste(clip); ui.clip = null }, onLongClick = { ui.clip = null })
+                    .combinedClickable(onClick = { typist.paste(clip); ui.clip = null }, onLongClick = { ui.panel = Panel.CLIPS })
                     .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -171,6 +172,13 @@ private fun BarRow(ui: UiState, typist: Typist) {
                 Spacer(Modifier.width(8.dp))
                 Text(clip.replace('\n', ' '), color = Colors.fg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        } else if (!ui.password && App.instance.engine.settingBool("buttons.clipboard")) {
+            val on = ui.panel == Panel.CLIPS
+            Box(
+                Modifier.padding(start = 8.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Colors.line else Color.Transparent)
+                    .combinedClickable(onClick = { if (on) typist.showKeys() else ui.panel = Panel.CLIPS }),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.clip, "Clipboard", tint = if (on) Colors.fg else Colors.muted, modifier = Modifier.size(20.dp)) }
         }
         val face = ui.face
         if (face != null && ui.panel == Panel.KEYS) {
@@ -351,6 +359,35 @@ private fun RowScope.PanelKey(label: String, weight: Float, bg: Color = Colors.m
 
 @OptIn(ExperimentalFoundationApi::class)
 private fun Modifier.combinedClickableCompat(onClick: () -> Unit) = this.combinedClickable(onClick = onClick)
+
+// --- clipboard history ---
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ClipsPanel(ui: UiState, typist: Typist) {
+    val ctx = LocalContext.current
+    var items by remember { mutableStateOf(uk.ccez.keys.learn.Clips.all(ctx)) }
+    Column(
+        Modifier.fillMaxWidth().height(ui.keysHeightDp.dp).verticalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        items.forEach { t ->
+            Text(
+                t.replace('\n', ' '),
+                color = Colors.fg,
+                fontSize = 13.5.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Colors.chip)
+                    .combinedClickable(
+                        onClick = { typist.paste(t); typist.showKeys() },
+                        onLongClick = { uk.ccez.keys.learn.Clips.remove(ctx, t); items = uk.ccez.keys.learn.Clips.all(ctx) },
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
 
 // --- settings ---
 
