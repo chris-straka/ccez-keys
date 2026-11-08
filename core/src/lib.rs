@@ -231,6 +231,26 @@ impl Engine {
             .map(|(_, l)| l)
     }
 
+    /// `typed` on another keyboard, when it's Japanese in romaji
+    /// ("konnichiha"): its kana (こんにちは). Only for a word of four letters
+    /// or more that is no word in any other language loaded, and whose kana
+    /// is a Japanese word. Needs Japanese among those typed, its words loaded.
+    pub fn romaji_word(&self, current: String, typed: String) -> Option<String> {
+        if current == "ja" || typed.chars().count() < 4 || !typed.chars().all(|c| c.is_ascii_alphabetic()) {
+            return None;
+        }
+        let s = self.lock();
+        if !self.typing_languages_of(&s.settings).iter().any(|l| l == "ja") {
+            return None;
+        }
+        let ja = s.langs.get("ja")?;
+        if s.langs.iter().any(|(l, x)| l != "ja" && typing::is_word(x, &typed)) {
+            return None;
+        }
+        let (kana, _) = convert::romaji(&typed, true);
+        (kana.chars().count() >= 3 && !kana.chars().any(|c| c.is_ascii()) && typing::is_word(ja, &kana)).then_some(kana)
+    }
+
     /// Words for a swipe over `path` (the letters passed, in order).
     pub fn swipe(&self, lang: String, path: String) -> Vec<String> {
         let s = self.lock();

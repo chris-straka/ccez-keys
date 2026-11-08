@@ -128,6 +128,11 @@ pub fn fit(lang: &Lang, words: &[String]) -> f32 {
     words.iter().map(|w| own_logf(lang, w).unwrap_or(-12.0)).sum()
 }
 
+/// Whether `w` is a word here, as written (case aside).
+pub fn is_word(lang: &Lang, w: &str) -> bool {
+    own_logf(lang, w).is_some()
+}
+
 /// How common the typed word is here as written (case aside), if it's a word.
 fn own_logf(lang: &Lang, typed: &str) -> Option<f32> {
     let lower = typed.to_lowercase();

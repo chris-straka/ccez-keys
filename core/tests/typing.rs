@@ -206,3 +206,17 @@ fn swiping_french_words() {
     assert_eq!(e.swipe("fr".into(), "mjhgfdsaqsdfghijuytrezaasdfghjklmnbvcxwqsdfghjklmo".into()).len() <= 4, true);
     assert_eq!(e.swipe("fr".into(), "mertcvbgfdsi".into()).first().map(String::as_str), Some("merci"));
 }
+
+#[test]
+fn japanese_in_romaji_is_noticed() {
+    let e = engine(&["en", "fr", "ja"]);
+    let r = |w: &str| e.romaji_word("en".into(), w.into());
+    assert_eq!(r("konnichiha").as_deref(), Some("こんにちは"));
+    assert_eq!(r("Arigatou").as_deref(), Some("ありがとう"));
+    assert_eq!(r("sugoi").as_deref(), Some("すごい"));
+    // English and French words, typos and short words stay.
+    for w in ["anime", "karate", "tsunami", "manger", "hello", "teh", "thx", "nani", "taken", "mine", "same"] {
+        assert_eq!(r(w), None, "{w}");
+    }
+    assert_eq!(e.romaji_word("ja".into(), "konnichiha".into()), None);
+}

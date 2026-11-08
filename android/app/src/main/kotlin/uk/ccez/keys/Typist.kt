@@ -176,6 +176,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val remembered = appLang(info.packageName)?.takeIf { it in engine.typingLanguages() }
         if (remembered != null && remembered != engine.currentLanguage()) engine.setCurrentLanguage(remembered)
         lang = engine.currentLanguage().also { l -> app.scope.launch { app.ensureWords(l) } }
+        // Japanese words, to notice Japanese typed in romaji on another keyboard.
+        if ("ja" in engine.typingLanguages()) app.scope.launch { app.ensureWords("ja") }
+        romajiSwitch = null
         ui.panel = Panel.KEYS
         ui.password = password
         ui.chatApp = info.packageName in engine.settingStrings("apps.chat")
@@ -360,6 +363,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     override fun onKey(key: Key) {
         acted()
         swiped = null
+        if (key.kind != KeyKind.BACKSPACE) romajiSwitch = null
         if (key.kind != KeyKind.BACKSPACE) fix = null
         when (key.kind) {
             KeyKind.CHAR -> type(if (shift != Shift.OFF && key.alt.isNotEmpty()) key.alt else key.text)
@@ -545,6 +549,43 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         return out
     }
 
+    /** Japanese noticed in romaji: the language before and the word as typed, while backspace can undo it. */
+    private var romajiSwitch: Pair<String, String>? = null
+
+    /** "konnichiha" typed on another keyboard: on to Japanese, the word as kana to convert. */
+    private fun toJapanese(kana: String, typed: String) {
+        val before = lang
+        clearWord()
+        lang = "ja"
+        engine.setCurrentLanguage("ja")
+        recent.clear()
+        view.auto = true
+        refresh()
+        conv.append(kana)
+        romajiSwitch = before to typed
+        showConv()
+        app.log("info", "romaji-noticed", "from" to before)
+    }
+
+    /** Backspace right after: back to the language before, the word as typed and kept. */
+    private fun undoJapanese(): Boolean {
+        val (before, typed) = romajiSwitch ?: return false
+        romajiSwitch = null
+        if (romaji.isNotEmpty() || conv.toString() != engine.romaji(typed, true).kana) return false
+        val ic = ic ?: return false
+        clearWord()
+        lang = before
+        engine.setCurrentLanguage(before)
+        view.auto = false
+        refresh()
+        word.append(typed)
+        ic.setComposingText(word, 1)
+        if (!noLearn) engine.learn(lang, prevWord(typed.length), typed, true)
+        buzz(HapticFeedbackConstants.CONTEXT_CLICK)
+        updateBar()
+        return true
+    }
+
     /** The last words typed in this field, for noticing their language. */
     private val recent = ArrayDeque<String>()
 
@@ -571,6 +612,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             return
         }
         val now = SystemClock.uptimeMillis()
+        if (word.isNotEmpty() && !noCorrect && !password) {
+            engine.romajiWord(lang, word.toString())?.let { kana -> toJapanese(kana, word.toString()); return }
+        }
         if (word.isNotEmpty()) {
             endWord(correct = true)
             ic.commitText(" ", 1)
@@ -594,6 +638,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun backspace() {
         ui.ask?.let { a -> if (a.input.isNotEmpty()) ui.ask = a.copy(input = a.input.substring(0, a.input.offsetByCodePoints(a.input.length, -1))); return }
         val ic = ic ?: return
+        if (undoJapanese()) return
         if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) {
             if (romaji.isNotEmpty()) romaji = romaji.dropLast(1) else conv.setLength(conv.length - 1)
             showConv()
