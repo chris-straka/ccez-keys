@@ -415,7 +415,11 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     fun insertFace(text: String) {
         endWord(correct = false)
-        ic?.commitText(text, 1)
+        val before = ic?.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+        // A kaomoji wants a space before it, an emoji doesn't.
+        val gap = if (text.length > 2 && before.isNotEmpty() && !before[0].isWhitespace()) " " else ""
+        ic?.commitText(gap + text, 1)
+        uk.ccez.keys.ui.Faces.used(service, text)
         updateBar()
     }
 
@@ -442,6 +446,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (password) { ui.bar = Bar.Buttons; ui.glosses = emptyList(); return }
         updateWords()
         strip.gloss((ui.bar as? Bar.Words)?.mid?.takeIf { word.isNotEmpty() }, lang)
+        ui.face = if (ui.chatApp && engine.settingBool("buttons.face")) uk.ccez.keys.learn.Kaomoji.suggest(service, sentence, uk.ccez.keys.ui.Faces.recent(service)) else null
     }
 
     private fun updateWords() {

@@ -1,0 +1,12 @@
+{
+  "comment": "Words that make a kaomoji worth offering in chat apps, per mood. The mood names match the order of data/faces.json's kaomoji tabs: joy, sad, love, angry, animals, shrug. Lower case; a phrase matches inside the sentence.",
+  "moods": ["joy", "sad", "love", "angry", "animals", "shrug"],
+  "words": {
+    "joy": ["lol", "lmao", "haha", "hahaha", "omg", "yay", "yess", "yesss", "congrats", "congratulations", "nice", "awesome", "amazing", "got the job", "mdr", "ptdr", "génial", "trop bien", "bravo", "super", "jaja", "jajaja", "genial", "qué bien", "toll", "super", "geil", "哈哈", "太好了", "笑", "やった", "すごい"],
+    "sad": ["sorry", "sad", "tired", "miss", "ugh no", "désolé", "désolée", "triste", "fatigué", "fatiguée", "lo siento", "triste", "cansado", "cansada", "traurig", "müde", "leider", "ごめん", "悲しい", "难过", "对不起"],
+    "love": ["love you", "love u", "<3", "❤", "cute", "xoxo", "je t'aime", "bisous", "mignon", "mignonne", "te quiero", "besos", "hab dich lieb", "süß", "大好き", "かわいい", "爱你", "可爱"],
+    "angry": ["wtf", "angry", "annoying", "grr", "ugh", "énervé", "énervée", "relou", "chiant", "enfadado", "qué rabia", "nervig", "sauer", "ムカつく", "生气"],
+    "animals": ["cat", "dog", "bear", "bunny", "chat", "chien", "ours", "gato", "perro", "katze", "hund", "猫", "犬", "狗"],
+    "shrug": ["idk", "dunno", "whatever", "no idea", "je sais pas", "chais pas", "bof", "aucune idée", "ni idea", "no sé", "keine ahnung", "egal", "わからない", "不知道"]
+  }
+}

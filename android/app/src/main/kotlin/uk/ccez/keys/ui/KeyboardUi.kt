@@ -154,14 +154,15 @@ private fun BarRow(ui: UiState, typist: Typist) {
             Divider()
             Cell(bar.mid, true, bar.typed, typist, 1.25f, ui.glosses)
             Divider()
-            Cell(bar.right, false, bar.typed, typist, 1f)
+            val face = ui.face
+            if (face != null) FaceCell(face, typist) else Cell(bar.right, false, bar.typed, typist, 1f)
             return@Row
         }
         val clip = ui.clip
         val showClip = clip != null && !ui.password && App.instance.engine.settingBool("buttons.clipboard")
         if (showClip && clip != null) {
             Row(
-                Modifier.weight(1f).padding(start = 8.dp, end = 6.dp).height(34.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
+                Modifier.weight(1f, fill = false).padding(start = 8.dp, end = 6.dp).height(34.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
                     .combinedClickable(onClick = { typist.paste(clip); ui.clip = null }, onLongClick = { ui.clip = null })
                     .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -170,9 +171,19 @@ private fun BarRow(ui: UiState, typist: Typist) {
                 Spacer(Modifier.width(8.dp))
                 Text(clip.replace('\n', ' '), color = Colors.fg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-        } else {
-            Spacer(Modifier.weight(1f))
         }
+        val face = ui.face
+        if (face != null && ui.panel == Panel.KEYS) {
+            Text(
+                face,
+                color = Colors.fg,
+                fontSize = 13.sp,
+                maxLines = 1,
+                modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
+                    .combinedClickable(onClick = { typist.insertFace(face) }).padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+        Spacer(Modifier.weight(1f))
         val on = ui.panel == Panel.SETTINGS
         Box(
             Modifier.padding(end = 8.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Colors.line else Color.Transparent)
@@ -220,6 +231,14 @@ private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: T
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RowScope.FaceCell(face: String, typist: Typist) {
+    Box(Modifier.weight(1f).fillMaxHeight().combinedClickable(onClick = { typist.insertFace(face) }), contentAlignment = Alignment.Center) {
+        Text(face, color = Colors.fg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
+    }
+}
+
 @Composable
 private fun Divider() = Box(Modifier.width(1.dp).height(22.dp).background(Colors.line))
 
@@ -246,7 +265,7 @@ private fun PopupOverlay(p: Popup) {
 
 // --- emoji and kaomoji ---
 
-private object Faces {
+internal object Faces {
     var kaomoji: List<List<String>> = emptyList()
     var emoji: List<List<String>> = emptyList()
 
@@ -305,7 +324,6 @@ private fun FacePanel(ui: UiState, typist: Typist) {
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (emoji) Color.Transparent else Colors.key)
                         .combinedClickableCompat {
                             typist.insertFace(f)
-                            Faces.used(ctx, f)
                             recent = Faces.recent(ctx)
                         }
                         .padding(horizontal = if (emoji) 4.dp else 9.dp, vertical = if (emoji) 2.dp else 8.dp),

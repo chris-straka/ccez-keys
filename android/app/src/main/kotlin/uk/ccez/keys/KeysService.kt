@@ -37,6 +37,8 @@ class UiState {
     var glosses by mutableStateOf<List<uk.ccez.keys.learn.Gloss>>(emptyList())
     var card by mutableStateOf<uk.ccez.keys.learn.CardView?>(null)
     var tip by mutableStateOf<uk.ccez.keys.learn.Tip?>(null)
+    /** A kaomoji worth offering (chat apps). */
+    var face by mutableStateOf<String?>(null)
     /** An Ask chat is open: the keys type into it. */
     var ask by mutableStateOf<uk.ccez.keys.learn.AskState?>(null)
 }
