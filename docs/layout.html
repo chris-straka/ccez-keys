@@ -104,10 +104,17 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .note { background: var(--k-aibg); border-bottom: 1px solid #2f2650; padding: 8px 10px 9px 12px; display: flex; gap: 10px; align-items: flex-start; }
 .note .body { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .note .big { font-size: 15px; color: #efe9ff; }
-.note .big s { color: #8b80aa; }
+.note .big s { color: #e09a9a; text-decoration-color: #e57373; }
+.note .big ins { text-decoration: none; color: #9be7b0; background: rgba(99,212,113,.14); border-radius: 3px; padding: 0 2px; }
 .note .big u { text-decoration-color: var(--k-ai); text-underline-offset: 3px; }
 .note .why { font-size: 11.5px; color: #a79fc0; }
 .note .fix { flex: none; font-size: 12.5px; color: #1a1430; background: var(--k-ai); border-radius: 14px; padding: 5px 12px; align-self: center; font-weight: 600; }
+/* kaomoji tray */
+.tray { background: var(--k-strip); padding: 6px 6px 8px; display: grid; gap: 6px; border-bottom: 1px solid #222; }
+.krow { display: flex; gap: 6px; overflow: hidden; }
+.krow span { flex: none; background: var(--k-key); border-radius: 8px; padding: 7px 9px; font-size: 13px; white-space: nowrap; }
+.key.face { background: #3a2a2a; color: var(--k-acc); }
+.key.face svg.i { width: 18px; height: 18px; }
 /* kaomoji panel */
 .kpanel { padding: 6px 6px 0; display: grid; gap: 8px; }
 .ktabs { display: flex; gap: 4px; overflow: hidden; font-size: 11px; color: var(--k-mut); }
@@ -135,12 +142,12 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .sugg i { font-style: normal; font-size: 9.5px; color: var(--k-mut); line-height: 11px; height: 11px; }
 .sugg.tall { height: 58px; }
 .comp { text-decoration: underline; text-decoration-color: var(--k-mut); text-underline-offset: 3px; }
-.strip .back { flex: 1; min-width: 0; font-size: 15px; color: var(--k-fg); }
+.strip .back { flex: 1; min-width: 0; font-size: 14px; line-height: 1.35; color: var(--k-fg); padding: 4px 0; }
 /* clipboard chip in the button row */
-.tools.clipr { justify-content: flex-start; gap: 4px; padding: 0 6px; }
-.chip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; background: #26262a; border-radius: 16px; padding: 6px 6px 6px 10px; color: var(--k-fg); font-size: 13px; }
+.tools.clipr { justify-content: flex-start; gap: 6px; padding: 0 8px; height: 54px; }
+.chip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; background: #26262a; border-radius: 14px; padding: 4px 4px 4px 10px; height: 34px; box-sizing: border-box; color: var(--k-fg); font-size: 13px; }
 .chip .tx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chip .ex { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--k-aibg); color: var(--k-ai); display: grid; place-items: center; }
+.chip .ex { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--k-aibg); color: var(--k-ai); display: grid; place-items: center; }
 .chip .ex svg.i { width: 15px; height: 15px; }
 .tools.clipr > span { flex: none; }
 /* Ask Muse panel */
@@ -162,7 +169,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
     <symbol id="smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></symbol>
     <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
     <symbol id="spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/></symbol>
-    <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+    <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
     <symbol id="tr" viewBox="0 0 24 24"><path d="M3 5h9M7.5 3v2M5 5c.5 3 2.5 5.5 5.5 7M10 5c-.7 3.5-3 6-6 7.5"/><path d="M13 20l4-10 4 10M14.5 16.5h5"/></symbol>
     <symbol id="kao" viewBox="0 0 24 24"><path d="M4 8c-1.5 2.5-1.5 5.5 0 8M20 8c1.5 2.5 1.5 5.5 0 8"/><path d="M8 10.5l1.5-1.5 1.5 1.5M13 10.5l1.5-1.5 1.5 1.5M10 15h4"/></symbol>
     <symbol id="gif" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M10 10H8v4h2v-2M13 10v4M16 14v-4h2M16 12h1.5"/></symbol>
@@ -268,7 +275,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
           <div class="note">
             <svg class="i" style="color:var(--k-ai);flex:none;margin-top:2px"><use href="#spark"/></svg>
             <div class="body">
-              <div class="big"><s>je suis hâte</s> → <u>j'ai hâte</u> de te voir</div>
+              <div class="big"><s>je suis</s> <ins>j'ai</ins> hâte de te voir demain</div>
               <div class="why">hâte is a noun: avoir hâte de, to look forward to</div>
             </div>
             <span class="fix">Fix</span>
@@ -281,7 +288,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
           <div class="keys" data-space="Français" data-auto="1"></div>
         </div>
       </div>
-      <figcaption><b>Typing French</b>It noticed French and switched the keys (the dot on the space bar). Muse checks what you write in a language you're learning and suggests a fix. Fix puts it in; otherwise it folds away when you keep typing.</figcaption>
+      <figcaption><b>Typing French</b>It noticed French and switched the keys (the dot on the space bar). Muse corrects what you write in a language you're learning, the same way ccez-llm does: crossed out what goes, green what comes in. Fix puts it in; otherwise it folds away when you keep typing.</figcaption>
     </figure>
 
     <!-- J: typing Japanese -->
@@ -309,45 +316,29 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
       <figcaption><b>Typing Japanese</b>Romaji in, kana and kanji out, as on SwiftKey. Each choice shows its reading and meaning. The strip shows what you wrote in English, so you can check it says what you meant.</figcaption>
     </figure>
 
-    <!-- D: kaomoji in TextNow -->
+    <!-- D: kaomoji in a chat app -->
     <figure>
       <div class="ph">
         <div class="app">
           <div class="appbar"><span class="av" style="background:#3a7a5a">J</span>Jess · TextNow</div>
           <div class="bub">soooo??? did they call</div>
-          <div class="field"><span class="t">omg i got the job <span class="caret"></span></span><span class="send"></span></div>
+          <div class="field"><span class="t">omg i got the job (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧ celebrating at Safe<span class="caret"></span></span><span class="send"></span></div>
         </div>
         <div class="kb">
-          <div class="strip">
-            <div class="flags"><span class="on">🇸🇦</span><span class="off">🇫🇷🇯🇵🇨🇳</span></div>
-            <div class="sent" dir="rtl">
-              <span class="w kn"><i></i><span>يا</span></span>
-              <span class="w kn"><i></i><span>إلهي،</span></span>
-              <span class="w ln"><i></i><span>حصلت</span></span>
-              <span class="w kn"><i></i><span>على</span></span>
-              <span class="w"><i></i><span>الوظيفة!</span></span>
-            </div>
-            <span class="spk"><svg class="i"><use href="#spk"/></svg></span>
+          <div class="tray">
+            <div class="ktabs"><span class="on">recent</span><span>(◕‿◕)</span><span>(╥﹏╥)</span><span>♡</span><span>(╬ Ò﹏Ó)</span><span>ʕ•ᴥ•ʔ</span><span>¯\_(ツ)_/¯</span></div>
+            <div class="krow"><span>(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧</span><span>٩(ˊᗜˋ*)و</span><span>(ᵔᴥᵔ)</span><span>(╥﹏╥)</span><span>¯\_(ツ)_/¯</span></div>
+            <div class="krow"><span>(っ˘ω˘ς)</span><span>(￣▽￣)ノ</span><span>( ˘ ³˘)♥</span><span>ʕ•ᴥ•ʔ</span><span>(｡•̀ᴗ-)✧</span><span>(•_•)</span></div>
           </div>
           <div class="sugg">
-            <div class="kao">٩(ˊᗜˋ*)و</div>
-            <div class="mid kao">(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧</div>
-            <div>!!</div>
+            <div>safe</div>
+            <div class="mid">Safeway</div>
+            <div>safety<small>🇯🇵 安全</small></div>
           </div>
-          <div class="kpanel">
-            <div class="ktabs"><span class="on">recent</span><span>(◕‿◕)</span><span>(╥﹏╥)</span><span>♡</span><span>(╬ Ò﹏Ó)</span><span>ʕ•ᴥ•ʔ</span><span>¯\_(ツ)_/¯</span></div>
-            <div class="kgrid">
-              <span>(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧</span><span>٩(ˊᗜˋ*)و</span><span>(ᵔᴥᵔ)</span>
-              <span>(╥﹏╥)</span><span>¯\_(ツ)_/¯</span><span>(っ˘ω˘ς)</span>
-              <span>(￣▽￣)ノ</span><span>( ˘ ³˘)♥</span><span>ʕ•ᴥ•ʔ</span>
-              <span>(⁠╯⁠°⁠□⁠°⁠)⁠╯⁠︵⁠ ⁠┻⁠━⁠┻</span><span>(｡•̀ᴗ-)✧</span>
-              <span>(•_•)</span><span>ᕦ(ò_óˇ)ᕤ</span><span>(✿◠‿◠)</span>
-            </div>
-            <div class="kbottom"><span class="key mod">ABC</span><span class="key mod" style="flex:1"><svg class="i"><use href="#smile"/></svg></span><span class="key space" style="flex:4"></span><span class="key mod">⌫</span></div>
-          </div>
+          <div class="keys" data-space="English" data-face="1"></div>
         </div>
       </div>
-      <figcaption><b>In a chat app</b>In TextNow, Messages, Discord, Telegram, WeChat, WhatsApp, Messenger and Instagram the face key opens kaomoji first, and a kaomoji is offered in the suggestions when the message fits one. Tap pastes. The strip is showing Arabic here; tap the flag or swipe the strip for the next language.</figcaption>
+      <figcaption><b>In a chat app</b>In TextNow, Messages, Discord, Telegram, WeChat, WhatsApp, Messenger and Instagram the comma key becomes the face key. It opens kaomoji above the keys: tap one and keep typing. The face key closes them and the learning strip comes back. Kaomoji also turn up in suggestions when a message fits one.</figcaption>
     </figure>
 
     <!-- F: just copied -->
@@ -433,7 +424,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
           </div>
         </div>
       </div>
-      <figcaption><b>Empty field: buttons</b>With nothing typed, the suggestion row becomes the button row. ⚙ opens settings in place of the keys; any button can be turned off there. Every setting can also be changed from the Mac with <code>keys</code>.</figcaption>
+      <figcaption><b>Empty field: buttons</b>With nothing typed, the suggestion row becomes the button row. ⚙ opens settings in place of the keys; any button can be turned off there. Drag the languages you're learning into the order the strip uses. Every setting can also be changed from the Mac with <code>keys</code>.</figcaption>
     </figure>
 
   </div>
@@ -447,6 +438,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
         <li>Two words in another language you type: it switches on its own (dot on the space bar).</li>
         <li>Tap a word in the strip: its card. Hold a word: Learning, no card.</li>
         <li>Tap the flag, or swipe the strip: next language you're learning. 🔊 reads it aloud.</li>
+        <li>Know every word in it? The strip shows it all grey for a moment, then moves to the next language on your list.</li>
         <li>Hold the strip: send the translation instead of what you typed.</li>
         <li>✦ on a tip, card or copied message: chat with Muse about it.</li>
         <li>Swipe a clipboard chip away to dismiss it; hold it for the history.</li>
@@ -492,7 +484,8 @@ document.querySelectorAll('.keys').forEach(k => {
   h += '<div class="row r2">' + [...rows[1]].map(c => `<span class="key">${c}</span>`).join('') + '</div>';
   h += '<div class="row"><span class="key mod">⇧</span>' + [...rows[2]].map(c => `<span class="key">${c}</span>`).join('') + '<span class="key mod">⌫</span></div>';
   const auto = k.dataset.auto ? '<span class="auto"></span>' : '';
-  h += `<div class="row"><span class="key mod">?123</span><span class="key mod" style="flex:1">,</span><span class="key space"><span class="lg"><em>‹</em><span>${k.dataset.space}${auto}</span><em>›</em></span></span><span class="key mod" style="flex:1">.</span><span class="key enter">↵</span></div>`;
+  const comma = k.dataset.face ? '<span class="key mod face" style="flex:1"><svg class="i"><use href="#smile"/></svg></span>' : '<span class="key mod" style="flex:1">,</span>';
+  h += `<div class="row"><span class="key mod">?123</span>${comma}<span class="key space"><span class="lg"><em>‹</em><span>${k.dataset.space}${auto}</span><em>›</em></span></span><span class="key mod" style="flex:1">.</span><span class="key enter">↵</span></div>`;
   k.innerHTML = h;
 });
 </script>

@@ -80,15 +80,22 @@ on the page.
   no timer (SwiftKey's chip vanished when it was needed).
 - Repo public.
 
-## Ideas offered to the owner (not yet chosen)
+- Corrections work like ccez-llm's correction mode (`src/lib/correction.ts`):
+  a word diff of the sentence, dropped words crossed out, added ones green.
+  Reuse its prompt.
+- Language per app: yes (LINE opens in Japanese, WeChat in Chinese).
+- Draw a character: Japanese and Chinese only, tucked away, no button.
+- Typing without accents: yes (deja → déjà, uber → über, pinyin tone numbers).
+- No-AI / no-learning is a setting (per app), not a one-tap toggle.
+- Drills don't belong in ccez-llm: a separate app later (ccez-learn).
+  The keyboard keeps a mistake log (accepted corrections) for it.
+- The shared language crate can be public. ccez-tube's card stays as is.
 
-- Mistake log: accepted Muse fixes collect into the owner's recurring
-  mistakes, for review here and drills in ccez-llm.
-- Per-app language: LINE opens in Japanese, WeChat in Chinese.
-- Formality in the strip: tu/vous, du/Sie, casual/polite Japanese.
-- Draw a kanji or hanzi you can't type (ML Kit Digital Ink, on device).
-- Typing without accents: deja → déjà, uber → über, tone numbers in pinyin.
-- One-tap private field: no AI, no learning, for this field only.
+## Still open
+
+- Formality in the strip (explained to the owner, waiting): whether the
+  strip's translation is casual or polite (tu/vous, du/Sie, だ/です) —
+  chosen per app, or a tap on the strip to flip it.
 - A week's stats: words typed per language, new words met.
 
 ## Future-proofing
