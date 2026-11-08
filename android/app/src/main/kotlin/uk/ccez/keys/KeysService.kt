@@ -31,6 +31,8 @@ class UiState {
     /** The newest copy, until it's pasted or something else is copied. */
     var clip by mutableStateOf<String?>(null)
     var chatApp by mutableStateOf(false)
+    /** The strip's translations are polite in this app. */
+    var polite by mutableStateOf(false)
     var password by mutableStateOf(false)
     var keysHeightDp by mutableFloatStateOf(212f)
     var strip by mutableStateOf<uk.ccez.keys.learn.StripView?>(null)

@@ -389,6 +389,39 @@ impl Engine {
         Ok(fix)
     }
 
+    /// `text` (written in `from`) said naturally in `to`, casual or polite.
+    /// Blocks: call off the main thread.
+    pub fn translate_ai(&self, text: String, from: String, to: String, polite: bool, key: String) -> Result<String, KeysError> {
+        let p = self.provider()?;
+        let name = |l: &str| ccez_lang_core::correction::language_name(l).to_string();
+        let system = format!(
+            "Translate the user's message from {} into {}, the way a native speaker would text it, {}. Reply with the translation only: no quotes, no notes.",
+            name(&from),
+            name(&to),
+            if polite { "politely (vous, Sie, usted, です/ます)" } else { "casually, as to a friend (tu, du, tú, plain form)" }
+        );
+        let m = vec![
+            ccez_lang_core::ai::Message { role: "system".into(), content: system },
+            ccez_lang_core::ai::Message { role: "user".into(), content: text },
+        ];
+        let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |_| {}));
+        r.map(|t| t.trim().trim_matches('"').to_string()).map_err(|e| KeysError::Bad(e.to_string()))
+    }
+
+    /// A correction the owner took (for review later, in ccez-learn).
+    pub fn note_mistake(&self, lang: String, written: String, fixed: String, why: String) {
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let line = serde_json::json!({"t": t, "lang": lang, "written": written, "fixed": fixed, "why": why}).to_string();
+        if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(self.dir.join("mistakes.jsonl")) {
+            use std::io::Write;
+            let _ = writeln!(f, "{line}");
+        }
+    }
+
+    pub fn mistakes(&self) -> String {
+        fs::read_to_string(self.dir.join("mistakes.jsonl")).unwrap_or_default()
+    }
+
     /// The first messages of an Ask chat about what was typed.
     pub fn ask_start(&self, typed: String, question: String) -> Vec<ChatMessage> {
         ai::ask_start(&typed, &question)

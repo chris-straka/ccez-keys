@@ -53,7 +53,15 @@ class Strip(private val ui: UiState) {
         else learning.filter { it != typing && Translator.supports(it) }
     }
 
-    fun update(sentence: String, typingLang: String, allowed: Boolean) {
+    private var polite = false
+    private var refineJob: Job? = null
+    /** AI wordings already fetched: (from, to, polite, text) → translation. */
+    private val refined = object : LinkedHashMap<String, String>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 64
+    }
+
+    fun update(sentence: String, typingLang: String, allowed: Boolean, polite: Boolean = false) {
+        this.polite = polite
         if (!allowed || !engine.settingBool("learning.strip") || sentence.isBlank() || !Translator.supports(typingLang)) {
             if (sentence.isBlank()) index = 0
             job?.cancel()
@@ -85,7 +93,9 @@ class Strip(private val ui: UiState) {
         val lang = all[index]
         // A dictionary that arrives now brings readings and statuses: redraw.
         app.scope.launch { if (Dictionaries.ensure(lang) && ui.strip?.lang == lang) redraw() }
-        val text = Translator.translate(source, typing, lang) ?: return
+        val key = "$typing|$lang|$polite|$source"
+        val text = synchronized(refined) { refined[key] } ?: Translator.translate(source, typing, lang) ?: return
+        refine(key, source, typing, lang)
         val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }
         val next = (1..minOf(3, all.size - 1)).map { flags[(index + it) % all.size] }
@@ -95,6 +105,25 @@ class Strip(private val ui: UiState) {
             delay(1500)
             index = (index + 1) % all.size
             show(autoSteps + 1)
+        }
+    }
+
+    /**
+     * Once typing pauses, the AI's wording (natural, in the app's register)
+     * replaces ML Kit's literal one.
+     */
+    private fun refine(key: String, source: String, from: String, to: String) {
+        refineJob?.cancel()
+        if (!engine.settingBool("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return
+        val aiKey = Secrets.get(app) ?: return
+        val polite = polite
+        refineJob = app.scope.launch {
+            delay(1200)
+            val t = runCatching { engine.translateAi(source, from, to, polite, aiKey) }
+                .onFailure { app.log("warn", "refine-failed", "error" to it.message) }
+                .getOrNull()?.takeIf { it.isNotBlank() } ?: return@launch
+            synchronized(refined) { refined[key] = t }
+            if (ui.strip?.lang == to && this@Strip.source == source) redraw()
         }
     }
 

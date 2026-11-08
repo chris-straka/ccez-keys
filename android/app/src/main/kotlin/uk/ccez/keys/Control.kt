@@ -42,6 +42,8 @@ class Control : ContentProvider() {
                     engine.setSetting(key, value).also { app.settingsChanged() }
                 }
                 "schema" -> engine.settingsSchema()
+                // Corrections the owner took, as JSON lines (their own writing: for ccez-learn).
+                "mistakes" -> engine.mistakes()
                 // The language typed in, as if picked from the space bar.
                 "use" -> {
                     val lang = arg ?: error("use needs a language code")

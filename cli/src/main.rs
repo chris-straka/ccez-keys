@@ -5,6 +5,7 @@
 //!     keys set <key> <value>       true, 105, '["fr","ja"]' or a word
 //!     keys schema                  every setting with its kind and default
 //!     keys use <lang>              type in this language now (fr, ja…)
+//!     keys mistakes                corrections taken, JSON lines
 //!     keys log [-n 50]             the keyboard's events and errors
 //!     keys key < file              the AI key, from stdin (empty removes it);
 //!                                  it never appears on a command line
@@ -25,6 +26,7 @@ fn main() {
         ["set", key, value] => ("set", Some(key.to_string()), Some(value.to_string())),
         ["schema"] => ("schema", None, None),
         ["use", lang] => ("use", Some(lang.to_string()), None),
+        ["mistakes"] => ("mistakes", None, None),
         ["log"] => ("log", Some("50".to_string()), None),
         ["log", "-n", n] => ("log", Some(n.to_string()), None),
         ["key"] => {

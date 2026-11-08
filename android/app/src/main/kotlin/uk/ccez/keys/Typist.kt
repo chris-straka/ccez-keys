@@ -142,16 +142,21 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         fix = null
         autoSpace = false
         recent.clear()
+        // The language last typed in this app, else the current one.
+        val remembered = appLang(info.packageName)?.takeIf { it in engine.typingLanguages() }
+        if (remembered != null && remembered != engine.currentLanguage()) engine.setCurrentLanguage(remembered)
         lang = engine.currentLanguage().also { l -> app.scope.launch { app.ensureWords(l) } }
         ui.panel = Panel.KEYS
         ui.password = password
         ui.chatApp = info.packageName in engine.settingStrings("apps.chat")
+        ui.polite = info.packageName in engine.settingStrings("apps.polite")
         refresh()
         updateShift()
         updateBar()
     }
 
     fun finish() {
+        rememberLang()
         clearWord()
         engine.save()
     }
@@ -283,6 +288,27 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             KeyKind.SPACE -> space()
             KeyKind.ENTER -> enter()
         }
+    }
+
+    private fun appLang(pkg: String?): String? =
+        pkg?.let { service.getSharedPreferences("app-languages", android.content.Context.MODE_PRIVATE).getString(it, null) }
+
+    private fun rememberLang() {
+        val pkg = editor?.packageName ?: return
+        service.getSharedPreferences("app-languages", android.content.Context.MODE_PRIVATE).edit().putString(pkg, lang).apply()
+    }
+
+    fun polite() = editor?.packageName in engine.settingStrings("apps.polite")
+
+    /** Hold 🔊: this app's translations switch between casual and polite. */
+    fun flipRegister() {
+        val pkg = editor?.packageName ?: return
+        val l = engine.settingStrings("apps.polite")
+        val next = if (pkg in l) l - pkg else l + pkg
+        engine.setSetting("apps.polite", org.json.JSONArray(next).toString())
+        buzz(HapticFeedbackConstants.CONTEXT_CLICK)
+        ui.polite = pkg in next
+        updateBar()
     }
 
     override fun onLanguage(code: String) {
@@ -576,7 +602,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         ui.card = null
         if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) { showConv(); return }
         val sentence = if (password) "" else sentence()
-        strip.update(sentence, lang, allowed = !password)
+        strip.update(sentence, lang, allowed = !password, polite = polite())
         tips.update(sentence, lang, allowed = !password, ended = sentence.trimEnd().lastOrNull()?.let { it in ".!?。！？" } == true)
         if (password) { ui.bar = Bar.Buttons; ui.glosses = emptyList(); return }
         updateWords()
@@ -660,6 +686,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     fun applyTip() {
         val t = ui.tip ?: return
         ui.tip = null
+        if (!noLearn) engine.noteMistake(t.lang, t.sentence, t.fix.text, t.fix.why)
         replaceSentence(t.fix.text)
     }
 

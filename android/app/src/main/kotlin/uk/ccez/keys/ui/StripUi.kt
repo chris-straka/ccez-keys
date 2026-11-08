@@ -88,10 +88,12 @@ fun StripRow(s: StripView, typist: Typist) {
                 s.words.forEach { w -> Word(w, s.lang, typist) }
             }
         }
+        // Tap: hear it. Hold: this app's translations polite or casual (lit when polite).
         Box(
-            Modifier.size(34.dp).clip(RoundedCornerShape(17.dp)).combinedClickable(onClick = { Speaker.say(ctx, s.text, s.lang) }),
+            Modifier.size(34.dp).clip(RoundedCornerShape(17.dp))
+                .combinedClickable(onClick = { Speaker.say(ctx, s.text, s.lang) }, onLongClick = { typist.flipRegister() }),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.sound, "Listen", tint = Colors.muted, modifier = Modifier.size(19.dp)) }
+        ) { Icon(Icons.sound, "Listen", tint = if (typist.polite()) Colors.accent else Colors.muted, modifier = Modifier.size(19.dp)) }
     }
 }
 
