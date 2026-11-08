@@ -94,7 +94,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         // The keyboard just closed: a good moment for an update.
-        Updater.closed(this)
+        Updater.closed(this) { !isInputViewShown }
         typist.voice.close()
         typist.finish()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)

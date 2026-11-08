@@ -27,13 +27,17 @@ object Updater {
     @Volatile private var busy = false
 
     /** The keyboard closed: tell the owner's update service (it installs over adb), or update itself if set to. */
-    fun closed(ctx: Context) {
+    fun closed(ctx: Context, stillHidden: () -> Boolean = { true }) {
         val e = App.instance.engine
         val server = e.setting("updates.server").trim('"').trimEnd('/')
         val prefs = ctx.getSharedPreferences("updates", Context.MODE_PRIVATE)
-        if (server.isNotEmpty() && System.currentTimeMillis() - prefs.getLong("pinged", 0) > 10 * 60_000) {
+        if (server.isNotEmpty() && System.currentTimeMillis() - prefs.getLong("pinged", 0) > 30_000) {
             prefs.edit().putLong("pinged", System.currentTimeMillis()).apply()
             App.instance.scope.launch {
+                // Android still counts the keyboard as shown while it slides away;
+                // ask once it's gone, or the service sees it in use and waits.
+                kotlinx.coroutines.delay(1500)
+                if (!kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { stillHidden() }) return@launch
                 runCatching { get("$server/idle").apply { requestMethod = "GET" }.responseCode }
                     .onFailure { App.instance.log("info", "update-service-unreachable", "error" to it.javaClass.simpleName) }
             }

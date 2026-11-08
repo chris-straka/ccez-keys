@@ -141,6 +141,10 @@ class Strip(private val ui: UiState) {
     private fun refine(key: String, source: String, from: String, to: String): Boolean {
         refineJob?.cancel()
         if (!engine.settingBool("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return false
+        // Sentences only: a word or two gets ML Kit's plain translation (owner, 2026-11-08:
+        // "worth" became a whole phrase).
+        if (source.split(Regex("\\s+")).count { it.isNotBlank() } < 3 && source.none { it in '\u3040'..'\u9fff' }) return false
+        if (source.none { it.isWhitespace() } && source.length < 6) return false
         val aiKey = Secrets.get(app) ?: return false
         val polite = polite
         refineJob = app.scope.launch {
