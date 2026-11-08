@@ -5,6 +5,8 @@
 //!     keys set <key> <value>       true, 105, '["fr","ja"]' or a word
 //!     keys schema                  every setting with its kind and default
 //!     keys log [-n 50]             the keyboard's events and errors
+//!     keys key < file              the AI key, from stdin (empty removes it);
+//!                                  it never appears on a command line
 //!
 //! The phone: $KEYS_SERIAL, else the only device adb sees. Output is
 //! JSON (except log, JSON lines). Errors are plain words, exit code 1.
@@ -23,8 +25,18 @@ fn main() {
         ["schema"] => ("schema", None, None),
         ["log"] => ("log", Some("50".to_string()), None),
         ["log", "-n", n] => ("log", Some(n.to_string()), None),
+        ["key"] => {
+            match send_key() {
+                Ok(out) => println!("{out}"),
+                Err(e) => {
+                    eprintln!("{e}");
+                    exit(1);
+                }
+            }
+            return;
+        }
         _ => {
-            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | log [-n N]");
+            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | log [-n N] | key < file");
             exit(2);
         }
     };
@@ -80,6 +92,29 @@ fn call(method: &str, arg: Option<&str>, value: Option<&str>) -> Result<String, 
         return Err(e);
     }
     pick("out").ok_or_else(|| format!("unexpected answer from the phone: {}", text.trim()))
+}
+
+/// The key goes through stdin to the phone's shell (`read`), so it is on
+/// no command line on the Mac.
+fn send_key() -> Result<String, String> {
+    use std::io::{Read, Write};
+    let mut key = String::new();
+    std::io::stdin().read_to_string(&mut key).map_err(|e| format!("couldn't read the key: {e}"))?;
+    let serial = serial()?;
+    let script = format!("read -r k; content call --uri {URI} --method key --extra value:s:\"$k\"");
+    let mut child = Command::new("adb")
+        .args(["-s", &serial, "shell", &script])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("adb didn't run: {e}"))?;
+    let encoded = if key.trim().is_empty() { b64(" ") } else { b64(key.trim()) };
+    child.stdin.take().ok_or("no stdin")?.write_all(format!("{encoded}\n").as_bytes()).map_err(|e| e.to_string())?;
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let at = text.find("out=").ok_or_else(|| format!("unexpected answer from the phone: {}", text.trim()))? + 4;
+    let rest = &text[at..];
+    unb64(rest[..rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len())].trim()).ok_or_else(|| "bad answer".into())
 }
 
 fn quote(s: &str) -> String {

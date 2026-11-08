@@ -70,6 +70,8 @@ pub const DEFS: &[Def] = &[
         default: || json!(""),
         about: "The ccez-words server (word statuses shared with ccez-tube, ccez-lang, ccez-llm). Empty: statuses stay on the phone.",
     },
+    Def { key: "ai.provider", kind: Kind::Text, default: || json!("muse"), about: "muse, deepseek or zen (the key is set with `keys key`, or pasted in Settings)." },
+    Def { key: "ai.tips", kind: Kind::Bool, default: || json!(true), about: "Corrections while typing in a language being learned (needs the AI key)." },
     Def { key: "apps.chat", kind: Kind::List, default: || json!(CHAT_APPS), about: "Apps where the face key opens kaomoji first." },
 ];
 

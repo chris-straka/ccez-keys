@@ -35,6 +35,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private val engine get() = app.engine
     val view: KeyboardView = KeyboardView(service, this)
     val strip = uk.ccez.keys.learn.Strip(ui)
+    val tips = uk.ccez.keys.learn.Tips(ui)
+    val ask = uk.ccez.keys.learn.Ask(ui)
 
     private var lang = engine.currentLanguage()
     private var page = Page.LETTERS
@@ -230,6 +232,12 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     fun type(text: String) {
+        ui.ask?.let { a ->
+            val t = if (shift != Shift.OFF) text.uppercase() else text
+            ui.ask = a.copy(input = a.input + t)
+            if (shift == Shift.ONCE) setShift(Shift.OFF)
+            return
+        }
         val ic = ic ?: return
         if (autoSpaceSwap(text, ic)) return
         if (text.length <= 2 && text.all(::isWordChar) && !password) {
@@ -299,6 +307,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     private fun space() {
+        ui.ask?.let { a -> ui.ask = a.copy(input = a.input + " "); return }
         val ic = ic ?: return
         val now = SystemClock.uptimeMillis()
         if (word.isNotEmpty()) {
@@ -322,6 +331,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     private fun backspace() {
+        ui.ask?.let { a -> if (a.input.isNotEmpty()) ui.ask = a.copy(input = a.input.substring(0, a.input.offsetByCodePoints(a.input.length, -1))); return }
         val ic = ic ?: return
         autoSpace = false
         val f = fix
@@ -365,6 +375,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     private fun enter() {
+        if (ui.ask != null) { ask.send(); return }
         val ic = ic ?: return
         endWord(correct = false)
         val info = editor
@@ -425,7 +436,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     private fun updateBar() {
         ui.card = null
-        strip.update(if (password) "" else sentence(), lang, allowed = !password)
+        val sentence = if (password) "" else sentence()
+        strip.update(sentence, lang, allowed = !password)
+        tips.update(sentence, lang, allowed = !password, ended = sentence.trimEnd().lastOrNull()?.let { it in ".!?。！？" } == true)
         if (password) { ui.bar = Bar.Buttons; ui.glosses = emptyList(); return }
         updateWords()
         strip.gloss((ui.bar as? Bar.Words)?.mid?.takeIf { word.isNotEmpty() }, lang)
@@ -501,6 +514,24 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         updateShift()
         updateBar()
+    }
+
+    /** The tip's fix put in place of the sentence. */
+    fun applyTip() {
+        val t = ui.tip ?: return
+        ui.tip = null
+        replaceSentence(t.fix.text)
+    }
+
+    fun openAsk(about: String) {
+        ui.card = null
+        endWord(correct = false)
+        ask.open(about)
+    }
+
+    fun closeAsk() {
+        ask.close()
+        updateShift()
     }
 
     fun markLearning(lang: String, word: String) {

@@ -36,6 +36,9 @@ class UiState {
     var strip by mutableStateOf<uk.ccez.keys.learn.StripView?>(null)
     var glosses by mutableStateOf<List<uk.ccez.keys.learn.Gloss>>(emptyList())
     var card by mutableStateOf<uk.ccez.keys.learn.CardView?>(null)
+    var tip by mutableStateOf<uk.ccez.keys.learn.Tip?>(null)
+    /** An Ask chat is open: the keys type into it. */
+    var ask by mutableStateOf<uk.ccez.keys.learn.AskState?>(null)
 }
 
 /** The keyboard. Compose needs a lifecycle, which an input method doesn't have, so it gets one. */

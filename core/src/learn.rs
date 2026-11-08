@@ -128,6 +128,10 @@ impl Learn {
         })
     }
 
+    pub fn block_on<F: std::future::Future>(&self, f: F) -> F::Output {
+        self.rt.block_on(f)
+    }
+
     /// Pulls and pushes statuses; returns how many came down.
     pub fn sync(&self, server: &str, from: &str) -> Result<u32, String> {
         self.rt.block_on(self.statuses.sync(server, from)).map(|v| v.len() as u32).map_err(|e| e.to_string())

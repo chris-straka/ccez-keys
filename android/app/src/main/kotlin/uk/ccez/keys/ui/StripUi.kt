@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -36,6 +37,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -192,6 +194,11 @@ fun BoxScope.CardOverlay(c: CardView, ui: UiState, typist: Typist) {
                     typist.setStatus(c.lang, key, if (status == WordStatus.KNOWN) WordStatus.NEW else WordStatus.KNOWN)
                     ui.card = null
                 }
+                Box(
+                    Modifier.width(44.dp).height(36.dp).clip(RoundedCornerShape(8.dp)).background(VIOLET_BG)
+                        .combinedClickable(onClick = { typist.openAsk("$key (${ui.strip?.text ?: c.word})") }),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.spark, "Ask", tint = VIOLET, modifier = Modifier.size(17.dp)) }
             }
         }
     }
@@ -206,3 +213,108 @@ private fun androidx.compose.foundation.layout.RowScope.StatusButton(label: Stri
         contentAlignment = Alignment.Center,
     ) { Text(label, color = if (on) Colors.accent else Colors.fg, fontSize = 13.sp) }
 }
+
+private val VIOLET = Color(0xFFB9A4FF)
+private val VIOLET_BG = Color(0xFF221B38)
+
+/** A correction, as ccez-llm shows one: crossed out what goes, green what comes in; why under it. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun TipNote(t: uk.ccez.keys.learn.Tip, typist: Typist) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 50.dp).background(VIOLET_BG).padding(start = 12.dp, end = 8.dp, top = 7.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.spark, null, tint = VIOLET, modifier = Modifier.size(18.dp).combinedClickable(onClick = { typist.openAsk(t.sentence) }))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            val text = androidx.compose.ui.text.buildAnnotatedString {
+                t.fix.parts.forEach { p ->
+                    when (p.kind) {
+                        uk.ccez.keys.core.FixKind.SAME -> append(p.text)
+                        uk.ccez.keys.core.FixKind.DEL -> withStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFFE09A9A), textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)) { append(p.text) }
+                        uk.ccez.keys.core.FixKind.INS -> withStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFF9BE7B0), background = Color(0x2463D471))) { append(p.text) }
+                    }
+                }
+            }
+            Text(text, color = Color(0xFFEFE9FF), fontSize = 15.sp, maxLines = 3)
+            if (t.fix.why.isNotEmpty()) Text(t.fix.why, color = Color(0xFFA79FC0), fontSize = 11.5.sp, maxLines = 2)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "Fix",
+            color = Color(0xFF1A1430),
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(VIOLET).combinedClickable(onClick = { typist.applyTip() }).padding(horizontal = 12.dp, vertical = 5.dp),
+        )
+    }
+}
+
+/** Ask: the chat above the keys; the keys type into it until it's closed. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AskPanel(a: uk.ccez.keys.learn.AskState, typist: Typist) {
+    val ctx = LocalContext.current
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    androidx.compose.runtime.LaunchedEffect(a.lines.size, a.lines.lastOrNull()?.text?.length) { scroll.animateScrollTo(scroll.maxValue) }
+    Column(Modifier.fillMaxWidth().background(Color(0xFF141218)).padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.spark, null, tint = VIOLET, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                a.about,
+                color = Color(0xFFCFC8E6),
+                fontSize = 12.sp,
+                maxLines = 1,
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(Color(0xFF221F2B)).padding(horizontal = 9.dp, vertical = 3.dp),
+            )
+            // Carry on in ccez-llm.
+            Box(
+                Modifier.padding(start = 6.dp).size(30.dp).clip(RoundedCornerShape(15.dp)).combinedClickable(onClick = {
+                    runCatching {
+                        ctx.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").setPackage("studio.ccez.app")
+                                .putExtra(android.content.Intent.EXTRA_TEXT, typist.ask.transcript()).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                }),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.book, "ccez-llm", tint = Colors.muted, modifier = Modifier.size(18.dp)) }
+            Box(
+                Modifier.size(30.dp).clip(RoundedCornerShape(15.dp)).combinedClickable(onClick = { typist.closeAsk() }),
+                contentAlignment = Alignment.Center,
+            ) { Text("✕", color = Colors.muted, fontSize = 15.sp) }
+        }
+        Column(Modifier.fillMaxWidth().heightIn(max = 190.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            a.lines.forEach { l ->
+                if (l.role == "user") {
+                    Text(
+                        l.text,
+                        color = Colors.fg,
+                        fontSize = 13.sp,
+                        modifier = Modifier.align(Alignment.End).clip(RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp)).background(Color(0xFF3B4C7A)).padding(horizontal = 11.dp, vertical = 6.dp),
+                    )
+                } else {
+                    Text(
+                        l.text.ifEmpty { "…" },
+                        color = Color(0xFFE9E3FF),
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(VIOLET_BG).padding(horizontal = 11.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF1E1C24)).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(a.input, color = Colors.fg, fontSize = 13.5.sp, maxLines = 3)
+            Box(Modifier.width(1.5.dp).height(16.dp).background(Colors.accent))
+            Spacer(Modifier.weight(1f))
+            Text("↵", color = if (a.input.isBlank() || a.busy) Colors.dim else VIOLET, fontSize = 18.sp)
+        }
+    }
+}
+

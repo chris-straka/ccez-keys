@@ -99,14 +99,23 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
     // which on Samsung is taller than the navigation bar it reports.
     val bottom = with(d) { maxOf(nav, tap).toDp() }
     Column(Modifier.fillMaxWidth().background(Colors.bg).padding(bottom = bottom)) {
-        AnimatedVisibility(ui.strip != null && ui.panel == Panel.KEYS, enter = expandVertically(tween(140)) + fadeIn(tween(140)), exit = shrinkVertically(tween(120)) + fadeOut(tween(90))) {
+        val ask = ui.ask
+        if (ask != null) {
+            AskPanel(ask, typist)
+        }
+        AnimatedVisibility(ask == null && ui.tip != null && ui.panel == Panel.KEYS, enter = expandVertically(tween(140)) + fadeIn(tween(140)), exit = shrinkVertically(tween(120)) + fadeOut(tween(90))) {
+            var last by remember { mutableStateOf<uk.ccez.keys.learn.Tip?>(null) }
+            ui.tip?.let { last = it }
+            last?.let { TipNote(it, typist) }
+        }
+        AnimatedVisibility(ask == null && ui.tip == null && ui.strip != null && ui.panel == Panel.KEYS, enter = expandVertically(tween(140)) + fadeIn(tween(140)), exit = shrinkVertically(tween(120)) + fadeOut(tween(90))) {
             var last by remember { mutableStateOf<StripView?>(null) }
             ui.strip?.let { last = it }
             last?.let { StripRow(it, typist) }
         }
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
-            Crossfade(ui.bar is Bar.Words && ui.panel == Panel.KEYS, animationSpec = tween(90), label = "bar") { _ -> BarRow(ui, typist) }
+            if (ui.ask == null) Crossfade(ui.bar is Bar.Words && ui.panel == Panel.KEYS, animationSpec = tween(90), label = "bar") { _ -> BarRow(ui, typist) }
             AnimatedContent(ui.panel, transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(90)) }, label = "panel") { panel ->
                 when (panel) {
                     Panel.KEYS -> AndroidView(
@@ -435,6 +444,8 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
         Spacer(Modifier.weight(1f))
         Text("›", color = Colors.muted, fontSize = 20.sp)
     }
+    Heading("AI")
+    AiSettings(version)
     Heading("About")
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat { go(Page.LICENCES) }.padding(vertical = 12.dp),
@@ -443,6 +454,39 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
         Text("Licences", color = Colors.fg, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Text("›", color = Colors.muted, fontSize = 20.sp)
     }
+}
+
+@Composable
+private fun AiSettings(version: Int) {
+    val ctx = LocalContext.current
+    val e = App.instance.engine
+    val provider = remember(version) { e.setting("ai.provider").trim('"') }
+    var hint by remember(version) { mutableStateOf(uk.ccez.keys.learn.Secrets.hint(ctx)) }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("muse" to "Muse", "deepseek" to "DeepSeek", "zen" to "Zen").forEach { (id, label) ->
+            Text(
+                label,
+                color = if (id == provider) Colors.accent else Colors.fg,
+                fontSize = 12.5.sp,
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (id == provider) Colors.faceOn else Colors.chip)
+                    .combinedClickableCompat { set("ai.provider", "\"$id\"") }.padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(hint ?: "Key", color = if (hint == null) Colors.dim else Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+        // The key from the clipboard: copied wherever it lives, pasted here.
+        Action("Paste") {
+            val clip = ctx.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
+            val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim()
+            if (!text.isNullOrEmpty() && !text.contains(' ')) {
+                uk.ccez.keys.learn.Secrets.set(ctx, text)
+                hint = uk.ccez.keys.learn.Secrets.hint(ctx)
+            }
+        }
+        if (hint != null) Action("Remove") { uk.ccez.keys.learn.Secrets.set(ctx, null); hint = null }
+    }
+    TwoColumns(listOf(Triple(Icons.spark, "Corrections", "ai.tips")), version)
 }
 
 /** The learning order as numbered flags, five a row, + last; tap a flag to move or remove it. */
@@ -650,6 +694,8 @@ internal object Icons {
     val dot = stroke("M4 17h3M10 17h3", "M18 17h.01")
     val vibrate = stroke("M10 4h4a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1 -1.5 1.5h-4a1.5 1.5 0 0 1 -1.5 -1.5v-13a1.5 1.5 0 0 1 1.5 -1.5z", "M4 9v6M20 9v6")
     val sound = stroke("M4 9h4l5-4v14l-5-4H4z", "M16.5 8.5a5 5 0 0 1 0 7")
+    val spark = stroke("M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", "M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z")
+    val book = stroke("M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z", "M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5")
     val number = stroke("M5 9l2-1.5V16", "M10.5 9.5a2 2 0 0 1 4 .5c0 2-4 3.5-4 6h4", "M17.5 8h3l-2 3a2.5 2.5 0 1 1-1.5 4.5")
     val size = stroke("M4 9h16M4 15h16", "M12 3v4M12 17v4")
 }

@@ -3,11 +3,16 @@
 # KEYS_SERIAL=<serial> scripts/phone-type.py "deja " (" " space, "<" backspace, "~" next language, "!" pause)
 import os, subprocess, sys, re, time
 S = os.environ["KEYS_SERIAL"]
-def sh(c): return subprocess.run(["adb", "-s", S, "shell", c], capture_output=True, text=True).stdout
 d = 3.0
-frame = re.search(r"InputMethod, frame=\[Rect\(0, (\d+) - 1080, (\d+)\)", sh("dumpsys window InputMethod"))
-top = int(frame.group(1)) + 46 * d
-row_y = lambda r: top + 6 * d + r * (44 * d + 8 * d) + 22 * d
+def sh(c): return subprocess.run(["adb", "-s", S, "shell", c], capture_output=True, text=True).stdout
+# From the bottom: the keys sit on the system's tappable strip (48dp on the
+# S24), whatever is above them (strip, bar, Ask). Key size from keyboard.height.
+H = int(re.search(r"Physical size: \d+x(\d+)", sh("wm size")).group(1))
+scale = int(subprocess.run(["cargo", "run", "-q", "--release", "-p", "ccez-keys-cli", "--bin", "keys", "--", "get", "keyboard.height"],
+                           capture_output=True, text=True, env={**os.environ, "KEYS_SERIAL": S}).stdout.strip() or 100) / 100
+row_h = 44 * d * scale
+bottom = H - 48 * d - 6 * d
+row_y = lambda r: bottom - (3 - r) * (row_h + 8 * d) - row_h / 2
 u = (1080 - 6 * d) / 10
 side = 3 * d
 rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]

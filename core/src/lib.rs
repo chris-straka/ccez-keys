@@ -4,6 +4,7 @@
 //! (`log`). The keyboard service draws and handles touch; everything it
 //! decides about text, it asks here.
 
+pub mod ai;
 pub mod layout;
 pub mod learn;
 pub mod log;
@@ -17,6 +18,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub use layout::{Key, KeyKind, Layout, Page, Row};
+pub use ai::{AnswerSink, ChatMessage, Fix, FixKind, FixPart};
 pub use learn::{Card, Ruby, StripWord, WordStatus};
 pub use typing::Suggestions;
 
@@ -65,6 +67,11 @@ impl Engine {
             out.push("en".into());
         }
         out
+    }
+
+    fn provider(&self) -> Result<ai::Provider, KeysError> {
+        let id = self.lock().settings.get("ai.provider").and_then(|v| v.as_str()).unwrap_or("muse").to_string();
+        ai::provider(&id).ok_or_else(|| KeysError::Bad(format!("no AI provider called {id}")))
     }
 
     fn save_settings(&self, s: &settings::Settings) {
@@ -291,6 +298,43 @@ impl Engine {
             return Err(KeysError::Bad("no words.server set".into()));
         }
         self.learn.sync(&server, &from).map_err(KeysError::Bad)
+    }
+
+    // --- AI ---
+
+    /// `text`, written in the learning language `lang`, corrected; None when
+    /// it needs nothing. Blocks: call off the main thread.
+    pub fn correct(&self, lang: String, text: String, key: String) -> Result<Option<Fix>, KeysError> {
+        let p = self.provider()?;
+        let explain = self.lock().settings.get("languages.default").and_then(|v| v.as_str()).unwrap_or("en").to_string();
+        let messages = ai::correction_messages(&lang, &text, &explain);
+        let started = std::time::Instant::now();
+        let answer = self
+            .learn
+            .block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &messages, p.thinking.as_deref(), |_| {}))
+            .map_err(|e| KeysError::Bad(e.to_string()))?;
+        let fix = ai::to_fix(&text, &answer);
+        self.log.write("info", "correction", &serde_json::json!({"lang": lang, "changed": fix.is_some(), "ms": started.elapsed().as_millis() as u64}).to_string());
+        Ok(fix)
+    }
+
+    /// The first messages of an Ask chat about what was typed.
+    pub fn ask_start(&self, typed: String, question: String) -> Vec<ChatMessage> {
+        ai::ask_start(&typed, &question)
+    }
+
+    /// The assistant's next answer to `messages`, streamed into `sink`;
+    /// returns the whole answer. Blocks: call off the main thread.
+    pub fn ask(&self, messages: Vec<ChatMessage>, key: String, sink: Box<dyn AnswerSink>) -> Result<String, KeysError> {
+        let p = self.provider()?;
+        let m = ai::to_messages(&messages);
+        let mut so_far = String::new();
+        let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |t| {
+            so_far.push_str(t);
+            sink.text(so_far.clone());
+        }));
+        self.log.write("info", "ask", &serde_json::json!({"ok": r.is_ok(), "turns": messages.len()}).to_string());
+        r.map_err(|e| KeysError::Bad(e.to_string()))
     }
 
     /// `ctx` is JSON. Never typed text.

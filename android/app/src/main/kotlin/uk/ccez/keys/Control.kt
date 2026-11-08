@@ -42,6 +42,13 @@ class Control : ContentProvider() {
                     engine.setSetting(key, value).also { app.settingsChanged() }
                 }
                 "schema" -> engine.settingsSchema()
+                // The AI key: from `keys key` (stdin on the Mac, read on the phone's shell).
+                "key" -> {
+                    val value = extras?.getString("value")?.let { String(Base64.decode(it, Base64.DEFAULT)) } ?: error("key needs a value")
+                    uk.ccez.keys.learn.Secrets.set(app, value.trim().ifEmpty { null })
+                    app.log("info", "ai-key", "set" to value.isNotBlank())
+                    if (value.isBlank()) "removed" else "saved"
+                }
                 "log" -> engine.logTail((arg?.toIntOrNull() ?: 50).toUInt())
                 else -> error("no command called $method")
             }
@@ -67,6 +74,7 @@ class Control : ContentProvider() {
         return o
             .put("typing", JSONArray(e.typingLanguages()))
             .put("current", e.currentLanguage())
+            .put("ai_key", uk.ccez.keys.learn.Secrets.get(app) != null)
             .put("words_loaded", JSONArray(e.typingLanguages().filter { e.loaded(it) }))
             .toString(2)
     }
