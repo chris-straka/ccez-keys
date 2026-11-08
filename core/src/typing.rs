@@ -117,6 +117,17 @@ const COMMON: f32 = -8.5;
 /// A spelling this much commoner (e^2.5 ≈ 12×) wins over a rare one.
 const MUCH_COMMONER: f32 = 2.5;
 
+/// Among the language's 10000 commonest words (case aside).
+pub fn common(lang: &Lang, word: &str) -> bool {
+    own_logf(lang, word).is_some_and(|f| f > -(10_000f32).ln())
+}
+
+/// How likely these words are in this language, summed (a missing word
+/// counts as rarer than any in the lists).
+pub fn fit(lang: &Lang, words: &[String]) -> f32 {
+    words.iter().map(|w| own_logf(lang, w).unwrap_or(-12.0)).sum()
+}
+
 /// How common the typed word is here as written (case aside), if it's a word.
 fn own_logf(lang: &Lang, typed: &str) -> Option<f32> {
     let lower = typed.to_lowercase();
@@ -125,11 +136,14 @@ fn own_logf(lang: &Lang, typed: &str) -> Option<f32> {
 
 /// `other`: how common the word is, as typed, in another language typed
 /// in. A word common there ("the" while on French) changes only to a
-/// spelling at least as common here ("deja" → déjà, though "deja" is
-/// Spanish too).
+/// spelling about as common here or more ("deja" → déjà, though "deja"
+/// is Spanish too).
 fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: &[Scored]) -> Option<String> {
     let pick = |w: &str| Some(with_case(typed, w)).filter(|w| w != typed);
-    let blocked = |logf: f32| other.is_some_and(|o| o > COMMON && logf < o + 1.0);
+    // Blocked only when the other language's word is clearly the commoner
+    // ("the" over "thé"); near-equal ones go to the language being typed
+    // ("tres" → très on French, though "tres" is Spanish).
+    let blocked = |logf: f32| other.is_some_and(|o| o > COMMON && logf + 1.0 < o);
     let mid_word = scored.first().is_some_and(|c| c.completion);
     match own {
         // A word as typed: only its capitals, accents or apostrophe can

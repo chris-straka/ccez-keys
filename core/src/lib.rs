@@ -163,6 +163,28 @@ impl Engine {
         typing::suggest(l, &others, &typed, keys, auto)
     }
 
+    /// The language the last words were written in, when it isn't
+    /// `current`: all of them common there, and together far likelier
+    /// there than here ("ich bin": German, though "bin" is English too).
+    pub fn detect_language(&self, current: String, words: Vec<String>) -> Option<String> {
+        if words.len() < 2 {
+            return None;
+        }
+        let s = self.lock();
+        let here = typing::fit(s.langs.get(&current)?, &words);
+        self.typing_languages_of(&s.settings)
+            .into_iter()
+            .filter(|l| *l != current)
+            .filter_map(|l| {
+                let x = s.langs.get(&l)?;
+                let all_common = words.iter().all(|w| typing::common(x, w));
+                let there = typing::fit(x, &words);
+                (all_common && there - here >= 4.0).then_some((there, l))
+            })
+            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(_, l)| l)
+    }
+
     /// Words that followed `prev` before.
     pub fn predict(&self, lang: String, prev: String) -> Vec<String> {
         let s = self.lock();

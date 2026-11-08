@@ -49,6 +49,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         set(v) { if (field != v) { field = v; invalidate() } }
     var spaceLabel = ""
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** The language was picked by what was typed: a dot after its name. */
+    var auto = false
+        set(v) { if (field != v) { field = v; invalidate() } }
     var showArrows = false
         set(v) { if (field != v) { field = v; invalidate() } }
     /** The space bar's list: (code, flag), and the one in use. */
@@ -143,6 +146,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 text.color = Colors.MUTED
                 text.textSize = 13 * sp
                 c.drawText(spaceLabel, cx, baseline(cy), text)
+                if (auto) {
+                    fill.color = Colors.ACCENT
+                    c.drawCircle(cx + text.measureText(spaceLabel) / 2 + 6 * dp, cy - 3 * dp, 2.5f * dp, fill)
+                }
                 if (showArrows) {
                     text.color = Colors.DIM
                     text.textSize = 12 * sp

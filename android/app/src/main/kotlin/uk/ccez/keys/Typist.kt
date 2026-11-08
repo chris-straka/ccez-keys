@@ -63,6 +63,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         word.clear()
         fix = null
         autoSpace = false
+        recent.clear()
         lang = engine.currentLanguage().also { l -> app.scope.launch { app.ensureWords(l) } }
         ui.panel = Panel.KEYS
         ui.password = password
@@ -202,6 +203,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     override fun onLanguage(code: String) {
+        view.auto = false
         if (code == lang) return
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         endWord(correct = false)
@@ -213,6 +215,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     override fun onSpaceSwipe(step: Int) {
+        view.auto = false
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         endWord(correct = false)
         lang = engine.stepLanguage(step)
@@ -274,7 +277,25 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         fix = fixed?.let { typed to it }
         word.clear()
         if (!noLearn) engine.learn(lang, prev, out, false)
+        noticeLanguage(out)
         return out
+    }
+
+    /** The last words typed in this field, for noticing their language. */
+    private val recent = ArrayDeque<String>()
+
+    private fun noticeLanguage(w: String) {
+        if (password || !w.any { it.isLetter() }) return
+        recent.addLast(w)
+        while (recent.size > 2) recent.removeFirst()
+        val to = engine.detectLanguage(lang, recent.toList()) ?: return
+        lang = to
+        engine.setCurrentLanguage(to)
+        app.scope.launch { app.ensureWords(to) }
+        recent.clear()
+        view.auto = true
+        refresh()
+        app.log("info", "language-noticed", "to" to to)
     }
 
     private fun space() {

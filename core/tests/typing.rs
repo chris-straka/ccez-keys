@@ -58,7 +58,10 @@ fn french_wins_when_its_spelling_is_commoner() {
     // "deja" is Spanish too, but déjà is far commoner in French.
     let e = engine(&["fr", "es", "en"]);
     assert_eq!(fix(&e, "fr", "deja").as_deref(), Some("déjà"));
+    assert_eq!(fix(&e, "fr", "tres").as_deref(), Some("très"));
     assert_eq!(fix(&e, "fr", "the"), None);
+    assert_eq!(fix(&e, "fr", "you"), None);
+    assert_eq!(fix(&e, "es", "tres"), None);
     assert_eq!(fix(&e, "es", "deja"), None);
 }
 
@@ -156,4 +159,17 @@ fn fast_enough_for_each_key() {
     let each = t.elapsed() / (50 * words.len() as u32);
     eprintln!("load 4 languages: {load:?}; one suggestion: {each:?}");
     assert!(each < std::time::Duration::from_millis(4), "{each:?}");
+}
+
+#[test]
+fn notices_the_language_typed() {
+    let e = engine(&["en", "fr", "de", "es"]);
+    let d = |cur: &str, ws: &[&str]| e.detect_language(cur.into(), ws.iter().map(|w| w.to_string()).collect());
+    assert_eq!(d("en", &["je", "suis"]).as_deref(), Some("fr"));
+    assert_eq!(d("en", &["ich", "bin"]).as_deref(), Some("de"));
+    assert_eq!(d("fr", &["estoy", "cansado"]).as_deref(), Some("es"));
+    // English words while on English, names, one word: stay.
+    assert_eq!(d("en", &["see", "you"]), None);
+    assert_eq!(d("en", &["Tchoupi", "Doudou"]), None);
+    assert_eq!(d("en", &["bonjour"]), None);
 }
