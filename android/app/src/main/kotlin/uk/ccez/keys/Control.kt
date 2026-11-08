@@ -42,6 +42,12 @@ class Control : ContentProvider() {
                     engine.setSetting(key, value).also { app.settingsChanged() }
                 }
                 "schema" -> engine.settingsSchema()
+                // Look for an update now.
+                "update" -> {
+                    app.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("checked", 0).apply()
+                    Updater.maybe(app)
+                    "checking"
+                }
                 // Corrections the owner took, as JSON lines (their own writing: for ccez-learn).
                 "mistakes" -> engine.mistakes()
                 // The language typed in, as if picked from the space bar.
