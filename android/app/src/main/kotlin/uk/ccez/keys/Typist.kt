@@ -283,9 +283,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         autoSpace = true
     }
 
-    override fun onRepeat(key: Key, count: Int) {
-        if (count > WORDS_AFTER) deleteWord() else backspace()
-        if (count > 1) buzz(HapticFeedbackConstants.CLOCK_TICK)
+    override fun onRepeat(key: Key, heldMs: Long) {
+        if (heldMs > WORDS_AFTER_MS) deleteWord() else backspace()
+        buzz(HapticFeedbackConstants.CLOCK_TICK)
     }
 
     /** Back to the start of the word (or the run of marks) before the cursor. */

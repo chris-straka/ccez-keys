@@ -18,8 +18,8 @@ import kotlin.math.min
 
 enum class Shift { OFF, ONCE, LOCK }
 
-/** Repeats of a held delete before it takes whole words. */
-const val WORDS_AFTER = 12
+/** How long delete is held before it takes whole words (ms). */
+const val WORDS_AFTER_MS = 700L
 
 /** A held key's choices, in this view's coordinates. */
 data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int, val codes: List<String> = emptyList(), val cols: Int = choices.size)
@@ -39,8 +39,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onPopup(popup: Popup?)
         /** A language picked from the space bar's list. */
         fun onLanguage(code: String)
-        /** Delete held: the `count`th repeat. */
-        fun onRepeat(key: Key, count: Int)
+        /** Delete held, for `heldMs` so far. */
+        fun onRepeat(key: Key, heldMs: Long)
         /** ?123 held (Japanese, Chinese: draw a character). */
         fun onHoldSymbols()
         /** A swipe across the letters (the ones passed, in order). */
@@ -234,6 +234,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val handler = Handler(Looper.getMainLooper())
     private var pressed: Placed? = null
     private var pointerId = -1
+    private var downAt = 0L
     private var downX = 0f
     private var downY = 0f
     private var swiped = 0f
@@ -255,9 +256,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             val p = pressed ?: return
             if (p.key.kind == KeyKind.BACKSPACE) {
                 repeats += 1
-                listener.onRepeat(p.key, repeats)
-                // Letters quickly, then (after about a second) whole words, slower.
-                handler.postDelayed(this, if (repeats > WORDS_AFTER) 140 else 50)
+                val held = android.os.SystemClock.uptimeMillis() - downAt
+                listener.onRepeat(p.key, held)
+                // Letters quickly, then (once held a moment) whole words, slower.
+                handler.postDelayed(this, if (held > WORDS_AFTER_MS) 140 else 50)
             }
         }
     }
@@ -284,6 +286,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 pointerId = e.getPointerId(i)
                 downX = e.getX(i)
                 downY = e.getY(i)
+                downAt = android.os.SystemClock.uptimeMillis()
                 swiped = 0f
                 held = false
                 listener.onPress(p.key)
