@@ -37,6 +37,23 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     val strip = uk.ccez.keys.learn.Strip(ui)
     val tips = uk.ccez.keys.learn.Tips(ui)
     val ask = uk.ccez.keys.learn.Ask(ui)
+    val voice = uk.ccez.keys.learn.Voice(
+        service,
+        onState = { v -> ui.voice = v; ui.panel = if (v != null) Panel.VOICE else if (ui.panel == Panel.VOICE) Panel.KEYS else ui.panel },
+        onText = { t -> dictated(t) },
+    )
+
+    /** Dictated text, spaced and capitalised like typed text. */
+    private fun dictated(text: String) {
+        val ic = ic ?: return
+        endWord(correct = false)
+        val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+        var t = text.trim()
+        if (shift != Shift.OFF && t.isNotEmpty()) t = t[0].uppercase() + t.substring(1)
+        ic.commitText((if (before.isNotEmpty() && !before[0].isWhitespace()) " " else "") + t + " ", 1)
+        updateShift()
+        updateBar()
+    }
 
     private var lang = engine.currentLanguage()
     private var page = Page.LETTERS
@@ -422,6 +439,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         uk.ccez.keys.ui.Faces.used(service, text)
         updateBar()
     }
+
+    fun currentLanguage() = lang
 
     /** For the face panel's own bottom row. */
     fun press(kind: KeyKind) {

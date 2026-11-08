@@ -35,6 +35,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Dictation needs the microphone; a keyboard can't ask, so the app does, once.
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 1)
+        }
         setContent {
             var text by remember { mutableStateOf("") }
             val buttons = ButtonDefaults.buttonColors(containerColor = Colors.key, contentColor = Colors.fg)

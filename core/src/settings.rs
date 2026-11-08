@@ -43,6 +43,7 @@ pub const CHAT_APPS: &[&str] = &[
 pub const DEFS: &[Def] = &[
     Def { key: "buttons.clipboard", kind: Kind::Bool, default: || json!(true), about: "The clipboard chip in the button row." },
     Def { key: "buttons.face", kind: Kind::Bool, default: || json!(true), about: "The face key (emoji and kaomoji)." },
+    Def { key: "buttons.mic", kind: Kind::Bool, default: || json!(true), about: "Dictation: tap to talk, hold for ccez-whisper." },
     Def { key: "typing.autocorrect", kind: Kind::Bool, default: || json!(true), about: "Correct the word on space." },
     Def { key: "typing.capitals", kind: Kind::Bool, default: || json!(true), about: "Capital at the start of a sentence." },
     Def { key: "typing.double_space_period", kind: Kind::Bool, default: || json!(true), about: "Two spaces type a period." },

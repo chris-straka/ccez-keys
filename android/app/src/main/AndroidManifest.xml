@@ -4,6 +4,17 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Dictionaries and translation models on first use; ccez-words; the AI. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Dictation. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <queries>
+        <!-- ccez-whisper hears held dictation; Android's recogniser hears the rest. -->
+        <package android:name="uk.ccez.whisper" />
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <package android:name="studio.ccez.app" />
+    </queries>
 
     <application
         android:name=".App"

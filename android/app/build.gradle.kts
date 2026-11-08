@@ -82,6 +82,8 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        // ccez-whisper's interface (src/main/aidl, a copy of that repo's).
+        aidl = true
     }
 
     sourceSets.getByName("main") {

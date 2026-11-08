@@ -58,6 +58,10 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -125,6 +129,7 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
                     Panel.FACE -> FacePanel(ui, typist)
                     Panel.SETTINGS -> SettingsPanel(ui, typist, version)
                     Panel.CLIPS -> ClipsPanel(ui, typist)
+                    Panel.VOICE -> VoicePanel(ui, typist)
                 }
             }
         }
@@ -192,6 +197,7 @@ private fun BarRow(ui: UiState, typist: Typist) {
             )
         }
         Spacer(Modifier.weight(1f))
+        if (!ui.password && App.instance.engine.settingBool("buttons.mic")) MicButton(typist)
         val on = ui.panel == Panel.SETTINGS
         Box(
             Modifier.padding(end = 8.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Colors.line else Color.Transparent)
@@ -360,6 +366,78 @@ private fun RowScope.PanelKey(label: String, weight: Float, bg: Color = Colors.m
 @OptIn(ExperimentalFoundationApi::class)
 private fun Modifier.combinedClickableCompat(onClick: () -> Unit) = this.combinedClickable(onClick = onClick)
 
+// --- dictation ---
+
+/** Tap: Android's recogniser, live. Hold: recorded, ccez-whisper hears it when let go. */
+@Composable
+private fun MicButton(typist: Typist) {
+    Box(
+        Modifier.padding(end = 4.dp).size(36.dp).clip(RoundedCornerShape(8.dp))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { typist.voice.start(typist.currentLanguage()) },
+                    onLongPress = { typist.voice.record(typist.currentLanguage()) },
+                    onPress = {
+                        tryAwaitRelease()
+                        typist.voice.release()
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) { Icon(Icons.mic, "Dictation", tint = Colors.muted, modifier = Modifier.size(20.dp)) }
+}
+
+@Composable
+private fun VoicePanel(ui: UiState, typist: Typist) {
+    val v = ui.voice ?: return
+    val ctx = LocalContext.current
+    val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "mic").animateFloat(
+        initialValue = 1f,
+        targetValue = 1.12f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(tween(700), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "pulse",
+    )
+    Column(
+        Modifier.fillMaxWidth().height(ui.keysHeightDp.dp).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(Langs.of(ctx, v.lang)?.flag ?: v.lang, fontSize = 20.sp)
+            if (v.whisper) Text("  Whisper", color = Colors.muted, fontSize = 12.sp)
+        }
+        Text(
+            when (v.problem) {
+                "mic" -> "Allow the microphone"
+                "none" -> "Didn't catch that"
+                "whisper" -> "ccez-whisper isn't ready"
+                "download" -> "Downloading"
+                "error" -> "Couldn't listen"
+                else -> v.heard
+            },
+            color = if (v.problem != null) Colors.muted else Colors.fg,
+            fontSize = 17.sp,
+            maxLines = 3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.combinedClickableCompat {
+                if (v.problem == "mic") ctx.startActivity(android.content.Intent(ctx, uk.ccez.keys.MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            },
+        )
+        Box(
+            Modifier.size(64.dp).let { if (v.listening) it.graphicsLayer { scaleX = pulse; scaleY = pulse } else it }
+                .clip(RoundedCornerShape(32.dp)).background(if (v.listening) Colors.accent else Colors.key)
+                .combinedClickableCompat {
+                    when {
+                        v.listening && !v.whisper -> typist.voice.stopListening()
+                        v.problem != null && v.problem != "mic" -> typist.voice.start(v.lang)
+                        else -> typist.voice.close()
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.mic, "Stop", tint = if (v.listening) Color(0xFF1A1A1A) else Colors.fg, modifier = Modifier.size(28.dp)) }
+    }
+}
+
 // --- clipboard history ---
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -472,7 +550,15 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
     val ctx = LocalContext.current
     val e = App.instance.engine
     Heading("Buttons")
-    TwoColumns(listOf(Triple(Icons.clip, "Clipboard", "buttons.clipboard"), Triple(Icons.face, "Face key", "buttons.face")), version)
+    TwoColumns(
+        listOf(
+            Triple(Icons.clip, "Clipboard", "buttons.clipboard"),
+            Triple(Icons.face, "Face key", "buttons.face"),
+            Triple(Icons.mic, "Dictation", "buttons.mic"),
+            Triple(Icons.tr, "Translate", "learning.strip"),
+        ),
+        version,
+    )
     Heading("Typing")
     TwoColumns(
         listOf(
@@ -749,6 +835,8 @@ internal object Icons {
     val dot = stroke("M4 17h3M10 17h3", "M18 17h.01")
     val vibrate = stroke("M10 4h4a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1 -1.5 1.5h-4a1.5 1.5 0 0 1 -1.5 -1.5v-13a1.5 1.5 0 0 1 1.5 -1.5z", "M4 9v6M20 9v6")
     val sound = stroke("M4 9h4l5-4v14l-5-4H4z", "M16.5 8.5a5 5 0 0 1 0 7")
+    val mic = stroke("M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1 -6 0z", "M5 11a7 7 0 0 0 14 0M12 18v3")
+    val tr = stroke("M3 5h9M7.5 3v2M5 5c.5 3 2.5 5.5 5.5 7M10 5c-.7 3.5-3 6-6 7.5", "M13 20l4-10 4 10M14.5 16.5h5")
     val spark = stroke("M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", "M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z")
     val book = stroke("M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z", "M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5")
     val number = stroke("M5 9l2-1.5V16", "M10.5 9.5a2 2 0 0 1 4 .5c0 2-4 3.5-4 6h4", "M17.5 8h3l-2 3a2.5 2.5 0 1 1-1.5 4.5")

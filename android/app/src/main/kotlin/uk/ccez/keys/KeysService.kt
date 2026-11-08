@@ -21,7 +21,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import uk.ccez.keys.ui.KeyboardUi
 
-enum class Panel { KEYS, FACE, SETTINGS, CLIPS }
+enum class Panel { KEYS, FACE, SETTINGS, CLIPS, VOICE }
 
 /** What the Compose parts draw from. */
 class UiState {
@@ -39,6 +39,7 @@ class UiState {
     var tip by mutableStateOf<uk.ccez.keys.learn.Tip?>(null)
     /** A kaomoji worth offering (chat apps). */
     var face by mutableStateOf<String?>(null)
+    var voice by mutableStateOf<uk.ccez.keys.learn.VoiceState?>(null)
     /** An Ask chat is open: the keys type into it. */
     var ask by mutableStateOf<uk.ccez.keys.learn.AskState?>(null)
 }
@@ -86,6 +87,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        typist.voice.close()
         typist.finish()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     }
