@@ -58,6 +58,9 @@ android {
         versionCode = (System.getenv("CCEZ_KEYS_VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("CCEZ_KEYS_VERSION_NAME") ?: "0.1.0-dev"
         ndk { abiFilters += abis }
+        // A Play Store build (CCEZ_KEYS_STORE=1) shows Donate (CCEZ_KEYS_DONATE_URL); the owner's own build doesn't.
+        buildConfigField("boolean", "STORE", (System.getenv("CCEZ_KEYS_STORE") == "1").toString())
+        buildConfigField("String", "DONATE_URL", "\"${System.getenv("CCEZ_KEYS_DONATE_URL") ?: ""}\"")
     }
 
     signingConfigs {

@@ -56,9 +56,8 @@ class Control : ContentProvider() {
                 }
                 // Look for an update now.
                 "update" -> {
-                    app.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("checked", 0).apply()
-                    Updater.maybe(app)
-                    "checking"
+                    app.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("checked", 0).putLong("pinged", 0).apply()
+                    if (engine.setting("updates.server").trim('"').isNotEmpty()) { Updater.closed(app); "asked the update service" } else { Updater.maybe(app); "checking" }
                 }
                 // Corrections the owner took, as JSON lines (their own writing: for ccez-learn).
                 "mistakes" -> engine.mistakes()

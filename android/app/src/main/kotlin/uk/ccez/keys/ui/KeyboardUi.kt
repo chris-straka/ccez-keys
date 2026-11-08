@@ -671,6 +671,17 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
     Heading("AI")
     AiSettings(version)
     Heading("About")
+    if (uk.ccez.keys.BuildConfig.STORE && uk.ccez.keys.BuildConfig.DONATE_URL.isNotEmpty()) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat {
+                ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uk.ccez.keys.BuildConfig.DONATE_URL)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Donate", color = Colors.fg, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text("›", color = Colors.muted, fontSize = 20.sp)
+        }
+    }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat { go(Page.LICENCES) }.padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

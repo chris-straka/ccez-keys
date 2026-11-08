@@ -26,6 +26,21 @@ object Updater {
     private const val EVERY = 6 * 60 * 60 * 1000L
     @Volatile private var busy = false
 
+    /** The keyboard closed: tell the owner's update service (it installs over adb), or update itself if set to. */
+    fun closed(ctx: Context) {
+        val e = App.instance.engine
+        val server = e.setting("updates.server").trim('"').trimEnd('/')
+        val prefs = ctx.getSharedPreferences("updates", Context.MODE_PRIVATE)
+        if (server.isNotEmpty() && System.currentTimeMillis() - prefs.getLong("pinged", 0) > 10 * 60_000) {
+            prefs.edit().putLong("pinged", System.currentTimeMillis()).apply()
+            App.instance.scope.launch {
+                runCatching { get("$server/idle").apply { requestMethod = "GET" }.responseCode }
+                    .onFailure { App.instance.log("info", "update-service-unreachable", "error" to it.javaClass.simpleName) }
+            }
+        }
+        if (e.settingBool("updates.self")) maybe(ctx)
+    }
+
     fun maybe(ctx: Context) {
         val prefs = ctx.getSharedPreferences("updates", Context.MODE_PRIVATE)
         if (busy || System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY) return

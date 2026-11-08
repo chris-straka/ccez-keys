@@ -77,6 +77,13 @@ pub const DEFS: &[Def] = &[
     Def { key: "ai.tips", kind: Kind::Bool, default: || json!(true), about: "Corrections while typing in a language being learned (needs the AI key)." },
     Def { key: "apps.polite", kind: Kind::List, default: || json!([]), about: "Apps where the strip's translation is polite (tu→vous, だ→です); elsewhere casual. Hold 🔊 to switch." },
     Def { key: "learning.refine", kind: Kind::Bool, default: || json!(true), about: "When typing pauses, the AI rewords the strip's translation (needs the AI key)." },
+    Def {
+        key: "updates.server",
+        kind: Kind::Text,
+        default: || json!(""),
+        about: "The owner's update service (it installs new releases over adb when the keyboard is closed). Empty: none.",
+    },
+    Def { key: "updates.self", kind: Kind::Bool, default: || json!(false), about: "The keyboard installs releases itself (Android's Play Protect may ask each time)." },
     Def { key: "apps.chat", kind: Kind::List, default: || json!(CHAT_APPS), about: "Apps where the face key opens kaomoji first." },
 ];
 
