@@ -34,6 +34,7 @@ class App : Application() {
             previous?.uncaughtException(t, e)
         }
         log("info", "start", "version" to BuildConfig.VERSION_NAME)
+        keepMainThreadAlive()
         loadLanguages()
     }
 
@@ -73,6 +74,32 @@ class App : Application() {
         settingsVersion.value += 1
         loadLanguages()
     }
+
+    /**
+     * A keyboard that crashes leaves the phone with none: an error on the
+     * main thread is logged (`keys log`, event "recovered") and the main
+     * loop carries on. Three in ten seconds: let it crash, something's stuck.
+     */
+    private fun keepMainThreadAlive() {
+        val recent = ArrayDeque<Long>()
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            while (true) {
+                try {
+                    android.os.Looper.loop()
+                } catch (e: Throwable) {
+                    val now = System.currentTimeMillis()
+                    recent.addLast(now)
+                    while (recent.isNotEmpty() && now - recent.first() > 10_000) recent.removeFirst()
+                    runCatching { log("error", "recovered", "error" to e.toString(), "at" to e.stackTrace.take(8).joinToString(" < ")) }
+                    if (recent.size >= 3) throw e
+                    onRecovered?.invoke()
+                }
+            }
+        }
+    }
+
+    /** The keyboard resets its typing state after a recovered error. */
+    @Volatile var onRecovered: (() -> Unit)? = null
 
     /** Never pass typed text here. */
     fun log(level: String, event: String, vararg ctx: Pair<String, Any?>) {

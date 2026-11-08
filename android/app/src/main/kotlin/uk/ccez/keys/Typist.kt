@@ -162,6 +162,15 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         updateBar()
     }
 
+    /** After a recovered error: the word as typed so far, and a clean slate. */
+    fun recover() {
+        runCatching { ic?.finishComposingText() }
+        clearWord()
+        fix = null
+        autoSpace = false
+        runCatching { refresh(); updateShift(); updateBar() }
+    }
+
     fun finish() {
         rememberLang()
         clearWord()

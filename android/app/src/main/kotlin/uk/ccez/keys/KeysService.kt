@@ -64,6 +64,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         savedState.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         typist = Typist(this, ui)
+        App.instance.onRecovered = { runCatching { ui.panel = Panel.KEYS; ui.popup = null; typist.recover() } }
         clipboard = getSystemService(ClipboardManager::class.java)?.also { it.addPrimaryClipChangedListener(onClip) }
         App.instance.log("info", "keyboard-created")
     }
