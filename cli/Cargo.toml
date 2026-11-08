@@ -1,0 +1,19 @@
+[package]
+name = "ccez-keys-cli"
+version = "0.1.0"
+description = "keys: the ccez-keys keyboard from the Mac (settings, languages, log) over adb; and keys-words, which builds the word lists"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "keys"
+path = "src/main.rs"
+
+[[bin]]
+name = "keys-words"
+path = "src/words.rs"
+
+[dependencies]
+flate2 = "1"
+serde_json = "1"

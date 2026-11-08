@@ -1,0 +1,7 @@
+target/
+.gradle/
+build/
+local.properties
+*.keystore
+*.jks
+.DS_Store

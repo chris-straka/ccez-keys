@@ -1,0 +1,203 @@
+//! What to suggest while a word is typed, when to correct it on space,
+//! and what the owner's own typing teaches (new words, next words).
+//! Nothing here is logged: typed text never leaves this module except as
+//! suggestions back to the keyboard.
+
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::words::{Lexicon, Neighbours, fold, with_case};
+
+/// Times a word the lists lack must be typed (and kept) before it's trusted.
+pub const ACCEPT: u32 = 2;
+/// One whole edit costs as much as this many e-folds of frequency.
+const EDIT_WEIGHT: f32 = 3.0;
+const COMPLETION_PENALTY: f32 = 0.4;
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct UserWords {
+    /// Words typed that the lists lack, with how often they were kept.
+    pub words: HashMap<String, u32>,
+    /// Folded previous word → next word → times.
+    pub next: HashMap<String, HashMap<String, u32>>,
+}
+
+pub struct Lang {
+    pub lex: Lexicon,
+    pub user: UserWords,
+}
+
+impl Lang {
+    pub fn new(lex: Lexicon, user: UserWords) -> Self {
+        let mut lang = Lang { lex, user };
+        let trusted: Vec<(String, u32)> = lang.user.words.iter().filter(|(_, n)| **n >= ACCEPT).map(|(w, n)| (w.clone(), *n)).collect();
+        for (w, n) in trusted {
+            lang.lex.insert(&w, user_logf(n));
+        }
+        lang
+    }
+
+    pub fn knows(&self, word: &str) -> bool {
+        self.lex.knows(word)
+    }
+}
+
+fn user_logf(n: u32) -> f32 {
+    // Typed twice ≈ the 1500th commonest word; more often, commoner.
+    -((3000.0 / n as f32).max(50.0)).ln()
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct Suggestions {
+    /// Best first, each in the typed word's capitals.
+    pub words: Vec<String>,
+    /// What space will turn the typed word into, if anything.
+    pub correction: Option<String>,
+    /// The typed word is a word as it stands (in any of the languages).
+    pub typed_known: bool,
+}
+
+/// Words that look like addresses, numbers or names with inner capitals
+/// (iPhone) are left as typed.
+fn leave_alone(typed: &str) -> bool {
+    typed.chars().any(|c| c.is_ascii_digit() || "@/._#:".contains(c))
+        || typed.chars().skip(1).any(|c| c.is_uppercase()) && !typed.chars().all(|c| !c.is_lowercase())
+}
+
+/// `others` are the other languages typed in: a word known in any of
+/// them is never corrected.
+pub fn suggest(lang: &Lang, others: &[&Lang], typed: &str, keys: &Neighbours, autocorrect: bool) -> Suggestions {
+    let n = typed.chars().count();
+    let max = match n {
+        0 => return Suggestions { words: vec![], correction: None, typed_known: false },
+        1..=2 => 1.0,
+        3..=4 => 1.3,
+        _ => 2.0,
+    };
+    let own = own_logf(lang, typed);
+    // Common in another language typed in ("the" while on French): never touched.
+    let other_common = others.iter().any(|o| own_logf(o, typed).is_some_and(|f| f > COMMON));
+    let typed_known = own.is_some() || others.iter().any(|o| o.knows(typed));
+    let mut scored: Vec<Scored> = lang
+        .lex
+        .search(typed, max, 4, keys)
+        .into_iter()
+        .map(|c| {
+            let e = &lang.lex.entries[c.id as usize];
+            let score = e.logf - EDIT_WEIGHT * c.cost - if c.completion { COMPLETION_PENALTY } else { 0.0 };
+            Scored { score, logf: e.logf, cost: c.cost, completion: c.completion, word: e.word.as_str() }
+        })
+        .collect();
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    let mut words: Vec<String> = Vec::new();
+    for c in &scored {
+        let w = with_case(typed, c.word);
+        if !words.iter().any(|x| x.to_lowercase() == w.to_lowercase()) {
+            words.push(w);
+        }
+        if words.len() == 4 {
+            break;
+        }
+    }
+    let correction = if autocorrect && !leave_alone(typed) { correct(typed, n, own, other_common, &scored) } else { None };
+    Suggestions { words, correction, typed_known }
+}
+
+struct Scored<'a> {
+    score: f32,
+    logf: f32,
+    cost: f32,
+    completion: bool,
+    word: &'a str,
+}
+
+/// About the 5000th commonest word.
+const COMMON: f32 = -8.5;
+/// A spelling this much commoner (e^2.5 ≈ 12×) wins over a rare one.
+const MUCH_COMMONER: f32 = 2.5;
+
+/// How common the typed word is here as written (case aside), if it's a word.
+fn own_logf(lang: &Lang, typed: &str) -> Option<f32> {
+    let lower = typed.to_lowercase();
+    lang.lex.same_folded(typed).filter(|e| e.word.to_lowercase() == lower).map(|e| e.logf).reduce(f32::max)
+}
+
+/// `other_common`: the word is common in another language typed in, so
+/// only its capitals may change here.
+fn correct(typed: &str, n: usize, own: Option<f32>, other_common: bool, scored: &[Scored]) -> Option<String> {
+    let pick = |w: &str| Some(with_case(typed, w)).filter(|w| w != typed);
+    let mid_word = scored.first().is_some_and(|c| c.completion);
+    match own {
+        // A word as typed: only its capitals, accents or apostrophe can
+        // change, and only to a spelling far commoner ("deja" → déjà,
+        // "jai" → j'ai, "i" → I, "haus" → Haus).
+        Some(own) => {
+            let lower = typed.to_lowercase();
+            let near = scored.iter().filter(|c| !c.completion && c.cost <= 0.3).max_by(|a, b| a.logf.partial_cmp(&b.logf).unwrap_or(std::cmp::Ordering::Equal))?;
+            let only_capitals = near.word.to_lowercase() == lower && near.word.chars().any(char::is_uppercase) && !scored.iter().any(|c| c.word == lower);
+            if only_capitals {
+                return pick(near.word);
+            }
+            if other_common {
+                return None;
+            }
+            if near.logf >= own + MUCH_COMMONER {
+                return pick(near.word);
+            }
+            // A rare word one slip or swap from a far commoner one ("teh").
+            let slip = scored.iter().find(|c| !c.completion && c.cost > 0.0 && c.cost <= 0.7)?;
+            if own < COMMON && slip.logf >= own + 5.5 { pick(slip.word) } else { None }
+        }
+        None => {
+            // Mid-word ("bonj"): a longer word is likelier than a fix.
+            if mid_word || other_common {
+                return None;
+            }
+            let best = scored.first()?;
+            let limit = match n {
+                1..=2 => 0.3,
+                3..=4 => 1.0,
+                _ => 1.6,
+            };
+            let clear = scored.iter().filter(|c| c.word != best.word).find(|c| !c.completion).is_none_or(|c2| best.score - c2.score >= 0.5);
+            if best.cost <= limit && clear { pick(best.word) } else { None }
+        }
+    }
+}
+
+/// A word the owner kept. `strong` when they undid a correction to keep
+/// it: trusted at once.
+pub fn learn(lang: &mut Lang, prev: &str, word: &str, strong: bool) {
+    if !word.chars().any(|c| c.is_alphabetic()) || word.chars().count() > 40 {
+        return;
+    }
+    if !lang.knows(word) || lang.user.words.contains_key(word) {
+        let n = lang.user.words.entry(word.to_string()).or_insert(0);
+        *n = if strong { (*n).max(ACCEPT) } else { *n + 1 };
+        let n = *n;
+        if n >= ACCEPT {
+            lang.lex.insert(word, user_logf(n));
+        }
+    }
+    let prev = fold(prev);
+    if !prev.is_empty() {
+        let next = lang.user.next.entry(prev).or_default();
+        *next.entry(word.to_string()).or_insert(0) += 1;
+        if next.len() > 64 {
+            // Keep the 48 most used.
+            let mut v: Vec<(String, u32)> = next.drain().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            v.truncate(48);
+            next.extend(v);
+        }
+    }
+}
+
+/// Next words after `prev`, from what the owner has typed after it.
+pub fn predict(lang: &Lang, prev: &str) -> Vec<String> {
+    let Some(next) = lang.user.next.get(&fold(prev)) else { return vec![] };
+    let mut v: Vec<(&String, &u32)> = next.iter().collect();
+    v.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+    v.into_iter().take(3).map(|(w, _)| w.clone()).collect()
+}
