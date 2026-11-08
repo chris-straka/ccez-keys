@@ -21,6 +21,10 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
   over adb; `keys log` holds its events and errors (never typed text).
 - `scripts/phone-type.py "deja "` types on the phone by tapping keys, for
   checks; screenshot with `adb exec-out screencap -p`.
+- Before a check on the owner's phone note `keys status` (current language)
+  and put it back after (`keys use <lang>`); reset any word status you
+  changed (`keys word <lang> <word> new`): statuses sync to all their apps.
+  If the owner is typing (`dumpsys input_method` mInputShown=true), only look.
 - Never `am force-stop uk.ccez.keys` while it's the chosen keyboard:
   Android falls back to Samsung Keyboard. Put the owner's keyboard back
   after a check (`ime set com.touchtype.swiftkey/com.touchtype.KeyboardService`).

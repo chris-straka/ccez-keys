@@ -20,6 +20,10 @@ data class StripView(
     val next: List<String>,
     val words: List<StripWord>,
     val text: String,
+    /** The AI's wording (else ML Kit's quick one). */
+    val refined: Boolean = false,
+    /** The AI is rewording it now. */
+    val pending: Boolean = false,
 )
 
 /** A word under a suggestion, in a language being learned. */
@@ -69,12 +73,25 @@ class Strip(private val ui: UiState) {
             return
         }
         source = sentence
-        typing = typingLang
         job?.cancel()
         job = app.scope.launch {
             delay(180)
+            // The sentence's own language (the keyboard may be on another):
+            // English typed on Français still shows the learning languages.
+            typing = written(sentence, typingLang)
             show(autoSteps = 0)
         }
+    }
+
+    /** The language `sentence` is in, among those typed; the keyboard's when unsure. */
+    private suspend fun written(sentence: String, keyboard: String): String {
+        if (sentence.length < 4) return keyboard
+        val typed = engine.typingLanguages()
+        val found = runCatching {
+            com.google.mlkit.nl.languageid.LanguageIdentification.getClient().identifyPossibleLanguages(sentence).await()
+        }.getOrNull().orEmpty()
+        val best = found.filter { it.languageTag in typed }.maxByOrNull { it.confidence } ?: return keyboard
+        return if (best.languageTag != keyboard && best.confidence >= 0.6f) best.languageTag else keyboard
     }
 
     /** The next (1) or previous (-1) language. */
@@ -94,12 +111,20 @@ class Strip(private val ui: UiState) {
         // A dictionary that arrives now brings readings and statuses: redraw.
         app.scope.launch { if (Dictionaries.ensure(lang) && ui.strip?.lang == lang) redraw() }
         val key = "$typing|$lang|$polite|$source"
-        val text = synchronized(refined) { refined[key] } ?: Translator.translate(source, typing, lang) ?: return
-        refine(key, source, typing, lang)
+        val better = synchronized(refined) { refined[key] }
+        val text = better ?: Translator.translate(source, typing, lang) ?: return
+        val pending = better == null && refine(key, source, typing, lang)
         val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }
-        val next = (1..minOf(3, all.size - 1)).map { flags[(index + it) % all.size] }
-        withContext(Dispatchers.Main) { ui.strip = StripView(lang, flags[index], next, words, text) }
+        val next = emptyList<String>()
+        withContext(Dispatchers.Main) { ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false) }
+        if (pending) {
+            // Shown as pending once the pause has come and the AI is asked.
+            app.scope.launch {
+                delay(1200)
+                withContext(Dispatchers.Main) { ui.strip?.takeIf { it.text == text && !it.refined }?.let { ui.strip = it.copy(pending = true) } }
+            }
+        }
         val known = words.filter { it.word }
         if (known.isNotEmpty() && known.all { it.status == WordStatus.KNOWN } && autoSteps < all.size - 1) {
             delay(1500)
@@ -112,10 +137,11 @@ class Strip(private val ui: UiState) {
      * Once typing pauses, the AI's wording (natural, in the app's register)
      * replaces ML Kit's literal one.
      */
-    private fun refine(key: String, source: String, from: String, to: String) {
+    /** True when the AI will be asked. */
+    private fun refine(key: String, source: String, from: String, to: String): Boolean {
         refineJob?.cancel()
-        if (!engine.settingBool("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return
-        val aiKey = Secrets.get(app) ?: return
+        if (!engine.settingBool("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return false
+        val aiKey = Secrets.get(app) ?: return false
         val polite = polite
         refineJob = app.scope.launch {
             delay(1200)
@@ -125,6 +151,7 @@ class Strip(private val ui: UiState) {
             synchronized(refined) { refined[key] = t }
             if (ui.strip?.lang == to && this@Strip.source == source) redraw()
         }
+        return true
     }
 
     /** The bold suggestion in up to two languages being learned, skipping ones where it's known. */

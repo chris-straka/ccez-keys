@@ -86,7 +86,8 @@ impl Engine {
     }
 
     fn converter_path(&self, lang: &str) -> PathBuf {
-        self.dir.join(format!("convert-{lang}.tsv"))
+        // v2: each word carries its frequency (for cutting input into words).
+        self.dir.join(format!("convert-{lang}.v2.tsv"))
     }
 
     fn save_settings(&self, s: &settings::Settings) {
@@ -437,7 +438,11 @@ impl Engine {
     /// The assistant's next answer to `messages`, streamed into `sink`;
     /// returns the whole answer. Blocks: call off the main thread.
     pub fn ask(&self, messages: Vec<ChatMessage>, key: String, sink: Box<dyn AnswerSink>) -> Result<String, KeysError> {
-        let p = self.provider()?;
+        let mut p = self.provider()?;
+        // Explanations get the provider's usual thinking (Muse: medium);
+        // corrections and the strip stay on the least, for speed.
+        let id = self.lock().settings.get("ai.provider").and_then(|v| v.as_str()).unwrap_or("muse").to_string();
+        p.thinking = ccez_lang_core::ai::provider(&id).and_then(|x| x.default_thinking).map(String::from).or(p.thinking);
         let m = ai::to_messages(&messages);
         let mut so_far = String::new();
         let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |t| {

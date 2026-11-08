@@ -78,6 +78,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             return
         }
         ic.setComposingText(shown, 1)
+        // No converter yet (or an old one): fetch and build it; kana meanwhile.
+        if (!engine.hasConverter(lang)) app.scope.launch { if (uk.ccez.keys.learn.Dictionaries.ensure(lang)) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { if (conv.isNotEmpty()) showConv() } }
         val words = engine.convert(lang, convInput())
         ui.bar = if (words.isEmpty()) Bar.Buttons else Bar.Convert(words)
     }
@@ -392,7 +394,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 conv.append(text.lowercase())
             }
             if (shift == Shift.ONCE) setShift(Shift.OFF)
-            showConv()
+            updateBar()
             return
         }
         if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) commitConv()
@@ -645,7 +647,12 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     private fun updateBar() {
         ui.card = null
-        if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) { showConv(); return }
+        if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) {
+            // The strip too, while Japanese or Chinese is still being converted.
+            strip.update(if (password) "" else sentence(), lang, allowed = !password, polite = polite())
+            showConv()
+            return
+        }
         val sentence = if (password) "" else sentence()
         strip.update(sentence, lang, allowed = !password, polite = polite())
         tips.update(sentence, lang, allowed = !password, ended = sentence.trimEnd().lastOrNull()?.let { it in ".!?。！？" } == true)

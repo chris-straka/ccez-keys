@@ -144,10 +144,10 @@ pub struct Conversion {
     pub consumed: u32,
 }
 
-/// reading → (word, reading to show), commonest first.
+/// reading → (word, reading to show, ln frequency), commonest first.
 #[derive(Default)]
 pub struct Index {
-    map: HashMap<String, Vec<(String, String)>>,
+    map: HashMap<String, Vec<(String, String, f32)>>,
     /// Longest key, to bound prefix search.
     longest: usize,
 }
@@ -222,17 +222,19 @@ fn write_index(all: HashMap<String, Vec<(usize, String)>>, out: &Path) -> std::i
         v.sort_by_key(|(s, _)| *s);
         let mut seen: Vec<&str> = Vec::new();
         let mut words: Vec<&str> = Vec::new();
-        for (_, w) in &v {
+        let mut ranked: Vec<String> = Vec::new();
+        for (rank, w) in &v {
             let word = w.split('\u{1}').next().unwrap_or(w);
             if !seen.contains(&word) {
                 seen.push(word);
                 words.push(w);
+                ranked.push(format!("{w}\u{2}{rank}"));
             }
             if words.len() == PER_KEY {
                 break;
             }
         }
-        writeln!(f, "{key}\t{}", words.join("\t"))?;
+        writeln!(f, "{key}\t{}", ranked.join("\t"))?;
         n += 1;
     }
     Ok(n)
@@ -246,10 +248,14 @@ impl Index {
         for line in text.lines() {
             let mut parts = line.split('\t');
             let Some(key) = parts.next() else { continue };
-            let words: Vec<(String, String)> = parts
-                .map(|w| match w.split_once('\u{1}') {
-                    Some((word, shown)) => (word.to_string(), shown.to_string()),
-                    None => (w.to_string(), key.to_string()),
+            let words: Vec<(String, String, f32)> = parts
+                .map(|w| {
+                    let (w, rank) = w.split_once('\u{2}').map(|(a, r)| (a, r.parse::<f32>().unwrap_or(1e6))).unwrap_or((w, 1e6));
+                    let logf = -rank.max(1.0).ln();
+                    match w.split_once('\u{1}') {
+                        Some((word, shown)) => (word.to_string(), shown.to_string(), logf),
+                        None => (w.to_string(), key.to_string(), logf),
+                    }
                 })
                 .collect();
             longest = longest.max(key.chars().count());
@@ -258,7 +264,38 @@ impl Index {
         Some(Index { map, longest })
     }
 
-    /// Words for `input`: the whole of it first, then its longest starts.
+    /// The likeliest way to cut `chars` into words (each piece's frequency,
+    /// less a cost per piece): the length of the first piece, if any.
+    fn best_first(&self, chars: &[char]) -> Option<usize> {
+        const PIECE: f32 = 4.0;
+        const UNKNOWN: f32 = -14.0;
+        let n = chars.len();
+        let mut best = vec![f32::NEG_INFINITY; n + 1];
+        let mut first = vec![0usize; n + 1];
+        best[0] = 0.0;
+        for i in 0..n {
+            if best[i] == f32::NEG_INFINITY {
+                continue;
+            }
+            for len in 1..=(n - i).min(self.longest) {
+                let key: String = chars[i..i + len].iter().collect();
+                let score = match self.map.get(&key).and_then(|w| w.first()) {
+                    Some((_, _, logf)) => *logf - PIECE,
+                    None if len == 1 => UNKNOWN,
+                    None => continue,
+                };
+                let total = best[i] + score;
+                if total > best[i + len] {
+                    best[i + len] = total;
+                    first[i + len] = if i == 0 { len } else { first[i] };
+                }
+            }
+        }
+        (best[n] > f32::NEG_INFINITY && first[n] > 0).then_some(first[n])
+    }
+
+    /// Words for `input`: the whole of it first, then the start the likeliest
+    /// reading of all of it begins with, then the other starts, longest first.
     pub fn convert(&self, input: &str, japanese: bool) -> Vec<Conversion> {
         let chars: Vec<char> = input.chars().collect();
         let n = chars.len();
@@ -268,11 +305,25 @@ impl Index {
                 out.push(Conversion { text: text.into(), reading: reading.into(), consumed: consumed as u32 });
             }
         };
-        for len in (1..=n.min(self.longest)).rev() {
+        let whole: String = chars.iter().collect();
+        if let Some(words) = self.map.get(&whole) {
+            for (w, shown, _) in words.iter().take(PER_KEY) {
+                push(&mut out, w, shown, n);
+            }
+        }
+        // "がすき": が + 好き reads better than ガス + き, so が leads.
+        if let Some(len) = self.best_first(&chars).filter(|&l| l < n) {
             let key: String = chars[..len].iter().collect();
             if let Some(words) = self.map.get(&key) {
-                let take = if len == n { PER_KEY } else { 3 };
-                for (w, shown) in words.iter().take(take) {
+                for (w, shown, _) in words.iter().take(3) {
+                    push(&mut out, w, shown, len);
+                }
+            }
+        }
+        for len in (1..n.min(self.longest + 1)).rev() {
+            let key: String = chars[..len].iter().collect();
+            if let Some(words) = self.map.get(&key) {
+                for (w, shown, _) in words.iter().take(3) {
                     push(&mut out, w, shown, len);
                 }
             }

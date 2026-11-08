@@ -38,6 +38,9 @@ fn japanese_words_from_kana() {
     assert_eq!(top("がっこう"), "学校");
     assert_eq!(top("たべる"), "食べる");
     // A start of the input: 今日 for きょう, the rest left for later.
+    // The likeliest reading of the whole leads: が + 好き, not ガス + き.
+    assert_eq!(top("がすき"), "が");
+    assert_eq!(top("わたしはがくせいです"), "私");
     let c = i.convert("きょうは", true);
     assert!(c.iter().any(|x| x.text == "今日" && x.consumed == 3), "{c:?}");
 }
@@ -55,6 +58,7 @@ fn chinese_words_from_pinyin() {
     assert_eq!(top("nihao"), "你好");
     assert_eq!(top("xiexie"), "谢谢");
     assert_eq!(top("zhongguo"), "中国");
+    assert_eq!(top("wohenhao"), "我");
     let c = i.convert("wohenhao", false);
     assert!(c.iter().any(|x| x.text == "我" && x.consumed == 2), "{c:?}");
     assert!(c.first().is_some_and(|x| !x.reading.is_empty()), "pinyin shown with tone marks: {c:?}");

@@ -90,6 +90,8 @@ import uk.ccez.keys.learn.Speaker
 import uk.ccez.keys.learn.StripView
 
 private val BAR_H = 46.dp
+/** The learning strip's band, always this tall. */
+val STRIP_H = 58.dp
 
 @Composable
 fun KeyboardUi(ui: UiState, typist: Typist) {
@@ -109,15 +111,21 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
         if (ask != null) {
             AskPanel(ask, typist)
         }
-        AnimatedVisibility(ask == null && ui.tip != null && ui.panel == Panel.KEYS, enter = expandVertically(tween(140)) + fadeIn(tween(140)), exit = shrinkVertically(tween(120)) + fadeOut(tween(90))) {
-            var last by remember { mutableStateOf<uk.ccez.keys.learn.Tip?>(null) }
-            ui.tip?.let { last = it }
-            last?.let { TipNote(it, typist) }
-        }
-        AnimatedVisibility(ask == null && ui.tip == null && ui.strip != null && ui.panel == Panel.KEYS, enter = expandVertically(tween(140)) + fadeIn(tween(140)), exit = shrinkVertically(tween(120)) + fadeOut(tween(90))) {
-            var last by remember { mutableStateOf<StripView?>(null) }
-            ui.strip?.let { last = it }
-            last?.let { StripRow(it, typist) }
+        // The strip's room is always there (while the strip is on): a band that
+        // came and went resized the keyboard window, which Android redraws a
+        // beat late, so the keys jumped (owner, 2026-11-08). Only what's in it changes.
+        if (ask == null && ui.panel == Panel.KEYS && !ui.password && App.instance.engine.settingBool("learning.strip")) {
+            Box(Modifier.fillMaxWidth().height(STRIP_H).background(Color(0xFF181818))) {
+                val tip = ui.tip
+                val strip = ui.strip
+                Crossfade(if (tip != null) 2 else if (strip != null) 1 else 0, animationSpec = tween(120), label = "strip") { which ->
+                    when (which) {
+                        2 -> tip?.let { TipNote(it, typist) }
+                        1 -> strip?.let { StripRow(it, typist) }
+                        else -> Box(Modifier.fillMaxSize())
+                    }
+                }
+            }
         }
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {

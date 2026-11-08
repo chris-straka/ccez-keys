@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -13,11 +14,13 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -25,12 +28,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -64,29 +70,56 @@ fun StripRow(s: StripView, typist: Typist) {
     val ctx = LocalContext.current
     var drag by remember { mutableFloatStateOf(0f) }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 50.dp).background(STRIP_BG)
+        Modifier.fillMaxSize().background(STRIP_BG)
             .pointerInput(s.lang) {
                 detectHorizontalDragGestures(
                     onDragEnd = { if (drag > 60f) typist.strip.step(-1) else if (drag < -60f) typist.strip.step(1); drag = 0f },
                     onDragCancel = { drag = 0f },
                 ) { _, d -> drag += d }
             }
-            .padding(start = 6.dp, end = 4.dp, top = 5.dp, bottom = 5.dp),
+            .padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            Modifier.width(34.dp).clip(RoundedCornerShape(6.dp))
+        // The flag, muted (owner, 2026-11-08: it drew the eye; no flags for what's next).
+        Box(
+            Modifier.width(30.dp).clip(RoundedCornerShape(6.dp))
                 .combinedClickable(onClick = { typist.strip.step(1) }, onLongClick = { typist.replaceSentence(s.text) }),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            contentAlignment = Alignment.Center,
         ) {
-            Text(s.flag, fontSize = 19.sp)
-            if (s.next.isNotEmpty()) Text(s.next.joinToString(""), fontSize = 8.sp, color = Colors.muted.copy(alpha = 0.6f))
+            Text(
+                s.flag,
+                fontSize = 15.sp,
+                modifier = Modifier.graphicsLayer {
+                    alpha = 0.55f
+                    if (android.os.Build.VERSION.SDK_INT >= 31) {
+                        renderEffect = android.graphics.RenderEffect.createColorFilterEffect(
+                            android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.25f) }),
+                        ).asComposeRenderEffect()
+                    }
+                },
+            )
         }
         Spacer(Modifier.width(6.dp))
+        // One line, kept scrolled to its end: the words being typed now show.
+        val scroll = androidx.compose.foundation.rememberScrollState()
+        androidx.compose.runtime.LaunchedEffect(s.text) { scroll.scrollTo(scroll.maxValue) }
         CompositionLocalProvider(LocalLayoutDirection provides if (s.lang in RTL) LayoutDirection.Rtl else LayoutDirection.Ltr) {
-            FlowRow(Modifier.weight(1f), verticalArrangement = Arrangement.Bottom, maxLines = 2) {
-                s.words.forEach { w -> Word(w, s.lang, typist) }
+            Row(Modifier.weight(1f).horizontalScroll(scroll, reverseScrolling = false), verticalAlignment = Alignment.CenterVertically) {
+                // Room for furigana or pinyin only when a word has some, so
+                // plain words sit level with the flag.
+                val readings = s.words.any { w -> w.ruby.any { it.rt.isNotEmpty() } }
+                s.words.forEach { w -> Word(w, s.lang, typist, readings) }
             }
+        }
+        // The AI at work (a soft violet pulse) or its wording in place (✦);
+        // nothing: ML Kit's quick translation.
+        if (s.pending) {
+            val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "ai").animateFloat(
+                0.25f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(600), androidx.compose.animation.core.RepeatMode.Reverse), label = "ai",
+            )
+            Box(Modifier.padding(horizontal = 6.dp).size(6.dp).graphicsLayer { alpha = pulse }.clip(RoundedCornerShape(3.dp)).background(VIOLET))
+        } else if (s.refined) {
+            Icon(Icons.spark, "Muse", tint = VIOLET.copy(alpha = 0.8f), modifier = Modifier.padding(horizontal = 4.dp).size(13.dp))
         }
         // Tap: hear it. Hold: this app's translations polite or casual (lit when polite).
         Box(
@@ -99,7 +132,7 @@ fun StripRow(s: StripView, typist: Typist) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Word(w: StripWord, lang: String, typist: Typist) {
+private fun Word(w: StripWord, lang: String, typist: Typist, readings: Boolean) {
     if (!w.word && w.text.isBlank()) {
         Spacer(Modifier.width(4.dp))
         return
@@ -122,7 +155,7 @@ private fun Word(w: StripWord, lang: String, typist: Typist) {
         w.ruby.forEach { r ->
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 // The same room over every word, so lines stay level.
-                Text(r.rt, fontSize = 9.5.sp, lineHeight = 11.sp, color = if (w.status == WordStatus.KNOWN) Color(0xFF555555) else Colors.muted, modifier = Modifier.height(12.dp))
+                if (readings) Text(r.rt, fontSize = 9.5.sp, lineHeight = 11.sp, color = if (w.status == WordStatus.KNOWN) Color(0xFF555555) else Colors.muted, modifier = Modifier.height(12.dp))
                 Text(
                     r.text,
                     fontSize = 15.5.sp,
@@ -224,7 +257,7 @@ private val VIOLET_BG = Color(0xFF221B38)
 @Composable
 fun TipNote(t: uk.ccez.keys.learn.Tip, typist: Typist) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 50.dp).background(VIOLET_BG).padding(start = 12.dp, end = 8.dp, top = 7.dp, bottom = 8.dp),
+        Modifier.fillMaxSize().background(VIOLET_BG).padding(start = 12.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.spark, null, tint = VIOLET, modifier = Modifier.size(18.dp).combinedClickable(onClick = { typist.openAsk(t.sentence) }))
@@ -239,8 +272,8 @@ fun TipNote(t: uk.ccez.keys.learn.Tip, typist: Typist) {
                     }
                 }
             }
-            Text(text, color = Color(0xFFEFE9FF), fontSize = 15.sp, maxLines = 3)
-            if (t.fix.why.isNotEmpty()) Text(t.fix.why, color = Color(0xFFA79FC0), fontSize = 11.5.sp, maxLines = 2)
+            Text(text, color = Color(0xFFEFE9FF), fontSize = 14.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if (t.fix.why.isNotEmpty()) Text(t.fix.why, color = Color(0xFFA79FC0), fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(8.dp))
         Text(
