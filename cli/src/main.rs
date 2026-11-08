@@ -7,6 +7,7 @@
 //!     keys use <lang>              type in this language now (fr, ja…)
 //!     keys mistakes                corrections taken, JSON lines
 //!     keys update                  look for a new release now
+//!     keys word <lang> <word> [new|learning|known]   a word's status (set: synced to ccez-words)
 //!     keys log [-n 50]             the keyboard's events and errors
 //!     keys key < file              the AI key, from stdin (empty removes it);
 //!                                  it never appears on a command line
@@ -29,6 +30,8 @@ fn main() {
         ["use", lang] => ("use", Some(lang.to_string()), None),
         ["mistakes"] => ("mistakes", None, None),
         ["update"] => ("update", None, None),
+        ["word", lang, word] => ("word", Some(format!("{lang} {word}")), None),
+        ["word", lang, word, status] => ("word", Some(format!("{lang} {word} {status}")), None),
         ["log"] => ("log", Some("50".to_string()), None),
         ["log", "-n", n] => ("log", Some(n.to_string()), None),
         ["key"] => {

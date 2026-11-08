@@ -42,6 +42,18 @@ class Control : ContentProvider() {
                     engine.setSetting(key, value).also { app.settingsChanged() }
                 }
                 "schema" -> engine.settingsSchema()
+                // A word's status: `keys word fr libre` reads it, `keys word fr libre new|learning|known` sets it (and syncs).
+                "word" -> {
+                    val parts = (arg ?: error("word needs: lang word [status]")).split(' ')
+                    if (parts.size < 2) error("word needs: lang word [status]")
+                    val (lang, w) = parts
+                    if (parts.size > 2) {
+                        val st = when (parts[2]) { "new" -> uk.ccez.keys.core.WordStatus.NEW; "learning" -> uk.ccez.keys.core.WordStatus.LEARNING; "known" -> uk.ccez.keys.core.WordStatus.KNOWN; else -> error("status is new, learning or known") }
+                        engine.setWordStatus(lang, w, st)
+                        uk.ccez.keys.learn.WordSync.soon(500)
+                    }
+                    engine.wordStatus(lang, w).name.lowercase()
+                }
                 // Look for an update now.
                 "update" -> {
                     app.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("checked", 0).apply()

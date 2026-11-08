@@ -53,6 +53,8 @@ object Updater {
         val release = JSONObject(get(LATEST).inputStream.bufferedReader().readText())
         val code = release.getString("tag_name").substringAfterLast('.').toLongOrNull() ?: return
         if (code <= BuildConfig.VERSION_CODE) return
+        // Declined once (Play Protect, the owner): not offered again.
+        if (ctx.getSharedPreferences("updates", Context.MODE_PRIVATE).getLong("declined", 0) >= code) return
         val assets = release.getJSONArray("assets")
         fun url(suffix: String) = (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.getString("name").endsWith(suffix) }?.getString("browser_download_url")
         val apkUrl = url(".apk") ?: return
@@ -63,6 +65,7 @@ object Updater {
         if (got != sum) { apk.delete(); error("checksum") }
         if (!sameSigner(ctx, apk)) { apk.delete(); error("signed by another key") }
         App.instance.log("info", "update", "to" to code)
+        ctx.getSharedPreferences("updates", Context.MODE_PRIVATE).edit().putLong("offered", code).apply()
         install(ctx, apk)
     }
 
@@ -83,7 +86,7 @@ object Updater {
         val id = installer.createSession(params)
         installer.openSession(id).use { s ->
             s.openWrite("base.apk", 0, apk.length()).use { out -> apk.inputStream().use { it.copyTo(out) }; s.fsync(out) }
-            val intent = Intent(ctx, Done::class.java)
+            val intent = Intent(ctx, Done::class.java).putExtra("code", BuildConfig.VERSION_CODE.toLong()).putExtra("to", apk.name)
             val pi = PendingIntent.getBroadcast(ctx, id, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             s.commit(pi.intentSender)
         }
@@ -97,6 +100,10 @@ object Updater {
                 @Suppress("DEPRECATION")
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
                 confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { runCatching { ctx.startActivity(it) } }
+            } else if (status == PackageInstaller.STATUS_FAILURE_ABORTED || status == PackageInstaller.STATUS_FAILURE_BLOCKED) {
+                val latest = ctx.getSharedPreferences("updates", Context.MODE_PRIVATE)
+                latest.edit().putLong("declined", latest.getLong("offered", 0)).apply()
+                App.instance.log("info", "update-declined", "status" to status)
             } else if (status != PackageInstaller.STATUS_SUCCESS) {
                 App.instance.log("warn", "update-install", "status" to status, "message" to intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
             }
