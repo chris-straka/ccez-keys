@@ -91,11 +91,37 @@ on the page.
   The keyboard keeps a mistake log (accepted corrections) for it.
 - The shared language crate can be public. ccez-tube's card stays as is.
 
+- Formality: the strip's translation is casual or polite (tu/vous,
+  du/Sie, だ/です); each app remembers its own, chat apps start casual,
+  hold the flag to flip.
+- Camera text (OCR) button: yes, on by default, removable. Reads the
+  camera or the latest screenshot; words coloured by status. Owner uses
+  Circle to Search today; this ties into their word lists.
+- Kaomoji: the face key swaps the keys for a kaomoji panel of the same
+  height (owner: don't crowd the message); ABC in the same spot swaps back.
+- The owner may sell it (2026-11-08). See Selling.
+
+## Selling (owner may monetize)
+
+- Licence: MIT was picked when the repo went public; MIT lets anyone
+  resell it. Owner to decide before outside contributions arrive.
+- Owner-only parts must be optional: ccez-words on the tailnet, the
+  update mirror, the owner's Muse key. A buyer needs word lists stored
+  on the phone (and maybe a sync service), their own AI key or a paid
+  proxy.
+- Data licences allow selling with attribution: JMdict, CC-CEDICT,
+  Wiktionary (kaikki), wordfreq, Kanjium are CC-BY-SA; ML Kit is free.
+- Play Store: a keyboard that sends typed text to a server needs a clear
+  privacy policy and an in-app disclosure; Android itself warns about
+  keyboards collecting what you type.
+- Anki: send saved words to AnkiDroid (its content-provider API, with
+  the sentence you typed, reading, meaning, audio; ccez-lang's
+  `src/core/anki.ts` has the card format), and read Anki's mature cards
+  back as Known so the strip skips them (to verify: what AnkiDroid's API
+  lets an app read).
+
 ## Still open
 
-- Formality in the strip (explained to the owner, waiting): whether the
-  strip's translation is casual or polite (tu/vous, du/Sie, だ/です) —
-  chosen per app, or a tap on the strip to flip it.
 - A week's stats: words typed per language, new words met.
 
 ## Future-proofing
