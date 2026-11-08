@@ -20,7 +20,11 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
 - `keys status | get | set | schema | log` (cli/) talks to the keyboard
   over adb; `keys log` holds its events and errors (never typed text).
 - `scripts/phone-type.py "deja "` types on the phone by tapping keys, for
-  checks; screenshot with `adb exec-out screencap -p`.
+  checks; screenshot with `adb exec-out screencap -p`. The test field is
+  in the app's own screen (`am start -n uk.ccez.keys/.MainActivity`, field
+  at about 540,570). Don't tap above it: "Choose" opens Android's keyboard
+  picker, and the next tap can switch the phone to another keyboard. After
+  a check, `settings get secure default_input_method` must still be ccez-keys.
 - Before a check on the owner's phone note `keys status` (current language)
   and put it back after (`keys use <lang>`); reset any word status you
   changed (`keys word <lang> <word> new`): statuses sync to all their apps.
