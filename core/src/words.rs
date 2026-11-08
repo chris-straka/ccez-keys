@@ -35,18 +35,141 @@ pub fn fold(s: &str) -> String {
 
 #[derive(Clone, Debug)]
 pub struct Entry {
-    pub word: String,
-    pub folded: String,
+    pub word: Box<str>,
+    /// Letters in the folded spelling (for telling completions apart).
+    pub folded_len: u16,
     /// ln of the word's relative frequency (0 for the commonest word).
     pub logf: f32,
 }
 
+/// A trie node while building (and for words added later).
 #[derive(Default)]
 struct Node {
     kids: Vec<(char, u32)>,
     ends: Vec<u32>,
     /// Highest `logf` of any word at or under this node.
     best: f32,
+}
+
+/// The read-only part of a trie, as the search needs it.
+trait Trie {
+    fn kids(&self, n: usize) -> &[(char, u32)];
+    fn ends(&self, n: usize) -> &[u32];
+    fn best(&self, n: usize) -> f32;
+    fn has_root(&self) -> bool;
+}
+
+/// Built nodes: a growable trie (words added after loading).
+#[derive(Default)]
+struct Loose {
+    nodes: Vec<Node>,
+}
+
+impl Trie for Loose {
+    fn kids(&self, n: usize) -> &[(char, u32)] {
+        &self.nodes[n].kids
+    }
+    fn ends(&self, n: usize) -> &[u32] {
+        &self.nodes[n].ends
+    }
+    fn best(&self, n: usize) -> f32 {
+        self.nodes[n].best
+    }
+    fn has_root(&self) -> bool {
+        !self.nodes.is_empty()
+    }
+}
+
+impl Loose {
+    fn add(&mut self, folded: &str, id: u32, logf: f32) {
+        if self.nodes.is_empty() {
+            self.nodes.push(Node { best: f32::MIN, ..Default::default() });
+        }
+        let mut n = 0usize;
+        self.nodes[0].best = self.nodes[0].best.max(logf);
+        for c in folded.chars() {
+            let next = match self.nodes[n].kids.iter().find(|(k, _)| *k == c) {
+                Some(&(_, i)) => i as usize,
+                None => {
+                    self.nodes.push(Node { best: f32::MIN, ..Default::default() });
+                    let i = self.nodes.len() - 1;
+                    self.nodes[n].kids.push((c, i as u32));
+                    i
+                }
+            };
+            n = next;
+            self.nodes[n].best = self.nodes[n].best.max(logf);
+        }
+        self.nodes[n].ends.push(id);
+    }
+}
+
+/// The loaded word list, packed into flat arrays (a few bytes a node
+/// instead of two small lists each): a keyboard keeps many languages.
+#[derive(Default)]
+struct Packed {
+    nodes: Vec<PNode>,
+    kids: Vec<(char, u32)>,
+    ends: Vec<u32>,
+}
+
+#[derive(Clone, Copy)]
+struct PNode {
+    kid_start: u32,
+    kid_len: u32,
+    end_start: u32,
+    end_len: u32,
+    best: f32,
+}
+
+impl Trie for Packed {
+    fn kids(&self, n: usize) -> &[(char, u32)] {
+        let p = self.nodes[n];
+        &self.kids[p.kid_start as usize..(p.kid_start + p.kid_len) as usize]
+    }
+    fn ends(&self, n: usize) -> &[u32] {
+        let p = self.nodes[n];
+        &self.ends[p.end_start as usize..(p.end_start + p.end_len) as usize]
+    }
+    fn best(&self, n: usize) -> f32 {
+        self.nodes[n].best
+    }
+    fn has_root(&self) -> bool {
+        !self.nodes.is_empty()
+    }
+}
+
+impl Packed {
+    fn from(l: Loose) -> Self {
+        let mut p = Packed { nodes: Vec::with_capacity(l.nodes.len()), kids: Vec::new(), ends: Vec::new() };
+        let total_kids: usize = l.nodes.iter().map(|n| n.kids.len()).sum();
+        let total_ends: usize = l.nodes.iter().map(|n| n.ends.len()).sum();
+        p.kids.reserve_exact(total_kids);
+        p.ends.reserve_exact(total_ends);
+        for n in &l.nodes {
+            p.nodes.push(PNode {
+                kid_start: p.kids.len() as u32,
+                kid_len: n.kids.len() as u32,
+                end_start: p.ends.len() as u32,
+                end_len: n.ends.len() as u32,
+                best: n.best,
+            });
+            p.kids.extend_from_slice(&n.kids);
+            p.ends.extend_from_slice(&n.ends);
+        }
+        p
+    }
+}
+
+fn walk_to<T: Trie>(t: &T, folded: &str) -> Option<usize> {
+    if !t.has_root() {
+        return None;
+    }
+    let mut n = 0usize;
+    for c in folded.chars() {
+        n = t.kids(n).iter().find(|(k, _)| *k == c)?.1 as usize;
+    }
+    Some(n)
 }
 
 /// Which keys sit next to which, from a layout's letter rows.
@@ -100,8 +223,8 @@ pub struct Cand {
 #[derive(Default)]
 pub struct Lexicon {
     pub entries: Vec<Entry>,
-    nodes: Vec<Node>,
-    by_folded: HashMap<String, Vec<u32>>,
+    packed: Packed,
+    extra: Loose,
 }
 
 impl Lexicon {
@@ -109,7 +232,9 @@ impl Lexicon {
     /// A line may carry its own rank after a tab, for words the list
     /// lacks (French contractions).
     pub fn from_ranked(text: &str) -> Self {
-        let mut lex = Lexicon { nodes: vec![Node { best: f32::MIN, ..Default::default() }], ..Default::default() };
+        let mut lex = Lexicon::default();
+        let mut build = Loose::default();
+        let mut seen: HashMap<Box<str>, u32> = HashMap::new();
         let mut rank = 0u32;
         for line in text.lines() {
             let line = line.trim();
@@ -121,8 +246,23 @@ impl Lexicon {
                 Some((w, r)) => (w, r.trim().parse().unwrap_or(rank)),
                 None => (line, rank),
             };
-            lex.insert(word, -(r.max(1) as f32).ln());
+            let logf = -(r.max(1) as f32).ln();
+            if let Some(&id) = seen.get(word) {
+                let e = &mut lex.entries[id as usize];
+                e.logf = e.logf.max(logf);
+                continue;
+            }
+            let folded = fold(word);
+            if folded.is_empty() {
+                continue;
+            }
+            let id = lex.entries.len() as u32;
+            lex.entries.push(Entry { word: word.into(), folded_len: folded.chars().count() as u16, logf });
+            seen.insert(word.into(), id);
+            build.add(&folded, id, logf);
         }
+        lex.entries.shrink_to_fit();
+        lex.packed = Packed::from(build);
         lex
     }
 
@@ -130,57 +270,41 @@ impl Lexicon {
         self.entries.len()
     }
 
+    fn ids_folded(&self, folded: &str) -> Vec<u32> {
+        let mut v: Vec<u32> = walk_to(&self.packed, folded).map(|n| self.packed.ends(n).to_vec()).unwrap_or_default();
+        if let Some(n) = walk_to(&self.extra, folded) {
+            v.extend_from_slice(self.extra.ends(n));
+        }
+        v
+    }
+
+    /// A word (the owner's own): added, or made commoner if it's there.
     pub fn insert(&mut self, word: &str, logf: f32) {
         let folded = fold(word);
         if folded.is_empty() {
             return;
         }
-        if let Some(ids) = self.by_folded.get(&folded) {
-            if let Some(&id) = ids.iter().find(|&&id| self.entries[id as usize].word == word) {
-                let e = &mut self.entries[id as usize];
-                if logf > e.logf {
-                    e.logf = logf;
-                    self.raise(&folded, logf);
-                }
-                return;
+        if let Some(id) = self.ids_folded(&folded).into_iter().find(|&id| &*self.entries[id as usize].word == word) {
+            let e = &mut self.entries[id as usize];
+            if logf > e.logf {
+                e.logf = logf;
+                // Its subtree's best may now be low in the packed trie: also
+                // index it in the small one, where completions find it.
+                self.extra.add(&folded, id, logf);
             }
+            return;
         }
         let id = self.entries.len() as u32;
-        self.entries.push(Entry { word: word.to_string(), folded: folded.clone(), logf });
-        self.by_folded.entry(folded.clone()).or_default().push(id);
-        let mut n = 0usize;
-        self.nodes[0].best = self.nodes[0].best.max(logf);
-        for c in folded.chars() {
-            let next = match self.nodes[n].kids.iter().find(|(k, _)| *k == c) {
-                Some(&(_, i)) => i as usize,
-                None => {
-                    self.nodes.push(Node { best: f32::MIN, ..Default::default() });
-                    let i = self.nodes.len() - 1;
-                    self.nodes[n].kids.push((c, i as u32));
-                    i
-                }
-            };
-            n = next;
-            self.nodes[n].best = self.nodes[n].best.max(logf);
-        }
-        self.nodes[n].ends.push(id);
-    }
-
-    fn raise(&mut self, folded: &str, logf: f32) {
-        let mut n = 0usize;
-        self.nodes[0].best = self.nodes[0].best.max(logf);
-        for c in folded.chars() {
-            match self.nodes[n].kids.iter().find(|(k, _)| *k == c) {
-                Some(&(_, i)) => n = i as usize,
-                None => return,
-            }
-            self.nodes[n].best = self.nodes[n].best.max(logf);
-        }
+        self.entries.push(Entry { word: word.into(), folded_len: folded.chars().count() as u16, logf });
+        self.extra.add(&folded, id, logf);
     }
 
     /// Entries spelled like `word` once folded ("deja" → déjà).
     pub fn same_folded(&self, word: &str) -> impl Iterator<Item = &Entry> {
-        self.by_folded.get(&fold(word)).into_iter().flatten().map(|&id| &self.entries[id as usize])
+        let mut ids = self.ids_folded(&fold(word));
+        ids.sort_unstable();
+        ids.dedup();
+        ids.into_iter().map(|id| &self.entries[id as usize])
     }
 
     /// Is this exactly a word here (case aside)?
@@ -199,18 +323,23 @@ impl Lexicon {
         }
         let comp_max = if n <= 3 { 0.0 } else { SLIP };
         let mut found: HashMap<u32, Cand> = HashMap::new();
-        let first: Vec<f32> = (0..=n).map(|j| j as f32).collect();
-        let mut rows: Vec<Vec<f32>> = vec![first];
-        let mut path: Vec<char> = Vec::new();
-        let mut walk = Walk { lex: self, t: &t, max, comp_max, completions, keys, found: &mut found };
-        walk.visit(0, &mut rows, &mut path, f32::INFINITY);
+        for trie in [&self.packed as &dyn TrieDyn, &self.extra as &dyn TrieDyn] {
+            if !trie.root() {
+                continue;
+            }
+            let first: Vec<f32> = (0..=n).map(|j| j as f32).collect();
+            let mut rows: Vec<Vec<f32>> = vec![first];
+            let mut path: Vec<char> = Vec::new();
+            let mut walk = Walk { lex: self, trie, t: &t, max, comp_max, completions, keys, found: &mut found };
+            walk.visit(0, &mut rows, &mut path, f32::INFINITY);
+        }
         let mut out: Vec<Cand> = found.into_values().collect();
         out.sort_by(|a, b| a.cost.partial_cmp(&b.cost).unwrap_or(Ordering::Equal));
         out
     }
 
-    /// The `k` commonest words under node `n`.
-    fn top_under(&self, n: usize, k: usize) -> Vec<u32> {
+    /// The `k` commonest words under node `n` of `trie`.
+    fn top_under(&self, trie: &dyn TrieDyn, n: usize, k: usize) -> Vec<u32> {
         #[derive(PartialEq)]
         struct Item(f32, usize);
         impl Eq for Item {}
@@ -225,7 +354,7 @@ impl Lexicon {
             }
         }
         let mut heap = BinaryHeap::new();
-        heap.push(Item(self.nodes[n].best, n));
+        heap.push(Item(trie.best_of(n), n));
         let mut ends: Vec<u32> = Vec::new();
         while let Some(Item(best, i)) = heap.pop() {
             if ends.len() >= k {
@@ -234,23 +363,47 @@ impl Lexicon {
                     break;
                 }
             }
-            for &id in &self.nodes[i].ends {
+            for &id in trie.ends_of(i) {
                 ends.push(id);
             }
             if ends.len() > k {
                 ends.sort_by(|a, b| self.entries[*b as usize].logf.partial_cmp(&self.entries[*a as usize].logf).unwrap_or(Ordering::Equal));
                 ends.truncate(k);
             }
-            for &(_, kid) in &self.nodes[i].kids {
-                heap.push(Item(self.nodes[kid as usize].best, kid as usize));
+            for &(_, kid) in trie.kids_of(i) {
+                heap.push(Item(trie.best_of(kid as usize), kid as usize));
             }
         }
         ends
     }
 }
 
+/// The trie methods the search uses, object-safe.
+trait TrieDyn {
+    fn kids_of(&self, n: usize) -> &[(char, u32)];
+    fn ends_of(&self, n: usize) -> &[u32];
+    fn best_of(&self, n: usize) -> f32;
+    fn root(&self) -> bool;
+}
+
+impl<T: Trie> TrieDyn for T {
+    fn kids_of(&self, n: usize) -> &[(char, u32)] {
+        self.kids(n)
+    }
+    fn ends_of(&self, n: usize) -> &[u32] {
+        self.ends(n)
+    }
+    fn best_of(&self, n: usize) -> f32 {
+        self.best(n)
+    }
+    fn root(&self) -> bool {
+        self.has_root()
+    }
+}
+
 struct Walk<'a> {
     lex: &'a Lexicon,
+    trie: &'a dyn TrieDyn,
     t: &'a [char],
     max: f32,
     comp_max: f32,
@@ -273,7 +426,7 @@ impl Walk<'_> {
         let row = rows.last().unwrap().clone();
         let whole = row[n];
         if whole <= self.max {
-            for &id in &self.lex.nodes[node].ends {
+            for &id in self.trie.ends_of(node) {
                 self.keep(Cand { id, cost: whole, completion: false });
             }
         }
@@ -282,8 +435,8 @@ impl Walk<'_> {
         let mut best_prefix = best_prefix;
         if self.completions > 0 && whole <= self.comp_max && whole < best_prefix && !path.is_empty() {
             best_prefix = whole;
-            for id in self.lex.top_under(node, self.completions) {
-                if self.lex.entries[id as usize].folded.chars().count() > n {
+            for id in self.lex.top_under(self.trie, node, self.completions) {
+                if self.lex.entries[id as usize].folded_len as usize > n {
                     self.keep(Cand { id, cost: whole, completion: true });
                 }
             }
@@ -291,8 +444,8 @@ impl Walk<'_> {
         if row.iter().cloned().fold(f32::INFINITY, f32::min) > self.max {
             return;
         }
-        let kids = self.lex.nodes[node].kids.clone();
-        for (c, kid) in kids {
+        let trie = self.trie;
+        for &(c, kid) in trie.kids_of(node) {
             let i = path.len() + 1;
             let mut next = vec![0f32; n + 1];
             next[0] = row[0] + self.insert_cost(c);

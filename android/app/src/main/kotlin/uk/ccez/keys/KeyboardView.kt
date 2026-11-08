@@ -22,7 +22,7 @@ enum class Shift { OFF, ONCE, LOCK }
 const val WORDS_AFTER = 12
 
 /** A held key's choices, in this view's coordinates. */
-data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int, val codes: List<String> = emptyList())
+data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int, val codes: List<String> = emptyList(), val cols: Int = choices.size)
 
 /**
  * The keys, drawn on one canvas so a press shows in the same frame. All
@@ -281,8 +281,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     val x = e.getX(i)
                     val pop = popup
                     if (pop != null) {
-                        val w = pop.box.width() / pop.choices.size
-                        val sel = ((x - pop.box.left) / w).toInt().coerceIn(0, pop.choices.size - 1)
+                        val w = pop.box.width() / pop.cols
+                        val rows = (pop.choices.size + pop.cols - 1) / pop.cols
+                        val h = pop.box.height() / rows
+                        val col = ((x - pop.box.left) / w).toInt().coerceIn(0, pop.cols - 1)
+                        // Rows count up from the one nearest the key.
+                        val row = ((pop.box.bottom - e.getY(i)) / h).toInt().coerceIn(0, rows - 1)
+                        val sel = (row * pop.cols + col).coerceIn(0, pop.choices.size - 1)
                         if (sel != pop.selected) { popup = pop.copy(selected = sel); listener.onPopup(popup) }
                     } else if (p.key.kind == KeyKind.SPACE) {
                         val step = 48 * dp
@@ -326,21 +331,27 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private fun openLanguages(p: Placed) {
         val w = 46 * dp
-        val boxW = w * languages.size
+        val cols = min(languages.size, 7)
+        val rows = (languages.size + cols - 1) / cols
+        val boxW = w * cols
         val left = max(side, min(p.face.centerX() - boxW / 2, width - side - boxW))
-        val top = p.face.top - rowH - 6 * dp
+        val top = p.face.top - rows * rowH - 6 * dp
         val at = languages.indexOfFirst { it.first == language }.coerceAtLeast(0)
-        popup = Popup(RectF(p.face), RectF(left, top, left + boxW, top + rowH), languages.map { it.second }, at, languages.map { it.first })
+        popup = Popup(RectF(p.face), RectF(left, top, left + boxW, top + rows * rowH), languages.map { it.second }, at, languages.map { it.first }, cols)
         listener.onPopup(popup)
     }
 
     private fun openPopup(p: Placed) {
         val choices = p.key.popups.map { if (shift != Shift.OFF && it.length == 1) it.uppercase() else it }
-        val w = min(p.face.width(), 40 * dp).coerceAtLeast(34 * dp)
-        val boxW = w * choices.size
+        // Long lists (Vietnamese vowels) wrap into two rows at most, the
+        // first nearest the key: more above the keys would leave the window.
+        val cols = min(choices.size, max(8, (choices.size + 1) / 2))
+        val w = min(min(p.face.width(), 40 * dp).coerceAtLeast(34 * dp), (width - 2 * side) / cols)
+        val rows = (choices.size + cols - 1) / cols
+        val boxW = w * cols
         val left = max(side, min(p.face.centerX() - w / 2, width - side - boxW))
-        val top = p.face.top - rowH - 6 * dp
-        popup = Popup(RectF(p.face), RectF(left, top, left + boxW, top + rowH), choices, 0)
+        val top = p.face.top - rows * rowH - 6 * dp
+        popup = Popup(RectF(p.face), RectF(left, top, left + boxW, top + rows * rowH), choices, 0, cols = cols)
         listener.onPopup(popup)
     }
 }

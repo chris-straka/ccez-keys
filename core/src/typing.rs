@@ -86,7 +86,7 @@ pub fn suggest(lang: &Lang, others: &[&Lang], typed: &str, keys: &Neighbours, au
         .map(|c| {
             let e = &lang.lex.entries[c.id as usize];
             let score = e.logf - EDIT_WEIGHT * c.cost - if c.completion { COMPLETION_PENALTY } else { 0.0 };
-            Scored { score, logf: e.logf, cost: c.cost, completion: c.completion, word: e.word.as_str() }
+            Scored { score, logf: e.logf, cost: c.cost, completion: c.completion, word: &e.word }
         })
         .collect();
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));

@@ -267,17 +267,24 @@ private fun Divider() = Box(Modifier.width(1.dp).height(22.dp).background(Colors
 @Composable
 private fun PopupOverlay(p: Popup) {
     val d = LocalDensity.current
+    val rows = (p.choices.size + p.cols - 1) / p.cols
     with(d) {
-        Row(
+        Column(
             Modifier.offset(x = p.box.left.toDp(), y = BAR_H + p.box.top.toDp())
                 .width(p.box.width().toDp()).height(p.box.height().toDp())
                 .clip(RoundedCornerShape(8.dp)).background(Colors.popup),
         ) {
-            p.choices.forEachIndexed { i, c ->
-                Box(
-                    Modifier.weight(1f).fillMaxHeight().background(if (i == p.selected) Colors.popupSel else Color.Transparent),
-                    contentAlignment = Alignment.Center,
-                ) { Text(c, color = Colors.fg, fontSize = 20.sp) }
+            // The first row sits nearest the key, at the bottom.
+            for (r in rows - 1 downTo 0) {
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    for (c in 0 until p.cols) {
+                        val i = r * p.cols + c
+                        Box(
+                            Modifier.weight(1f).fillMaxHeight().background(if (i == p.selected) Colors.popupSel else Color.Transparent),
+                            contentAlignment = Alignment.Center,
+                        ) { if (i < p.choices.size) Text(p.choices[i], color = Colors.fg, fontSize = 20.sp) }
+                    }
+                }
             }
         }
     }

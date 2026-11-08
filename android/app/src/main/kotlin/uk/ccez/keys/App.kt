@@ -37,12 +37,26 @@ class App : Application() {
         loadLanguages()
     }
 
-    /** Loads every typing language's words, off the main thread. */
-    fun loadLanguages() = scope.launch { engine.typingLanguages().forEach { ensureWords(it) } }
+    /** Loads the languages most likely typed: the default, the current one, the first learning ones. */
+    fun loadLanguages() = scope.launch {
+        val langs = engine.typingLanguages()
+        (listOf(engine.currentLanguage()) + langs.take(4)).distinct().forEach { ensureWords(it) }
+    }
+
+    /** Languages with words in memory, least recently used first. */
+    private val loaded = LinkedHashSet<String>()
 
     /** A language's word list, once. Safe from any thread. */
     @Synchronized
     fun ensureWords(lang: String) {
+        loaded.remove(lang)
+        loaded.add(lang)
+        // At most six word lists (about 6 MB each): the oldest goes.
+        while (loaded.size > 6) {
+            val old = loaded.first { it != lang && it != engine.currentLanguage() }
+            loaded.remove(old)
+            engine.unload(old)
+        }
         if (engine.loaded(lang)) return
         val started = System.nanoTime()
         val text = runCatching { assets.open("words/$lang.txt").bufferedReader().readText() }.getOrNull()

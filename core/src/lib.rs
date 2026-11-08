@@ -121,6 +121,17 @@ impl Engine {
         n
     }
 
+    /// Frees a language's words (saving the owner's own first).
+    pub fn unload(&self, lang: String) {
+        let mut s = self.lock();
+        if let Some(l) = s.langs.remove(&lang) {
+            if let Ok(t) = serde_json::to_string(&l.user) {
+                let _ = fs::write(self.user_path(&lang), t);
+            }
+        }
+        s.keys.remove(&lang);
+    }
+
     pub fn loaded(&self, lang: String) -> bool {
         self.lock().langs.contains_key(&lang)
     }

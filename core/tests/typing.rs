@@ -183,3 +183,17 @@ fn notices_the_language_typed() {
     assert_eq!(d("en", &["Tchoupi", "Doudou"]), None);
     assert_eq!(d("en", &["bonjour"]), None);
 }
+
+#[test]
+#[ignore]
+fn memory_per_language() {
+    fn rss() -> u64 {
+        let out = std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
+    }
+    let before = rss();
+    let e = engine(&["fr", "de", "es", "en"]);
+    let after = rss();
+    eprintln!("4 languages: {} MB", (after - before) / 1024);
+    drop(e);
+}
