@@ -20,3 +20,13 @@ echo "built $APK ($CCEZ_KEYS_VERSION_NAME)"
 SERIAL="${KEYS_SERIAL:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}"
 [ -z "$SERIAL" ] && { echo "no phone connected; not installed"; exit 0; }
 adb -s "$SERIAL" install -r "$APK" >/dev/null && echo "installed on $SERIAL"
+# It must start: a crash on launch would leave the phone without a keyboard.
+adb -s "$SERIAL" logcat -c
+adb -s "$SERIAL" shell am start -n uk.ccez.keys/.MainActivity >/dev/null
+sleep 3
+if adb -s "$SERIAL" logcat -d | grep -q "FATAL EXCEPTION.*" && adb -s "$SERIAL" logcat -d | grep -A3 "FATAL EXCEPTION" | grep -q "uk.ccez.keys"; then
+  echo "CRASHED on start; switching the phone to SwiftKey" >&2
+  adb -s "$SERIAL" shell ime set com.touchtype.swiftkey/com.touchtype.KeyboardService >/dev/null
+  exit 1
+fi
+echo "starts"

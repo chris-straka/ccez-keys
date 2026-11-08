@@ -124,6 +124,8 @@ dependencies {
     implementation(libs.mlkit.text.chinese)
     implementation(libs.mlkit.text.japanese)
     implementation(libs.mlkit.text.korean)
+    // Drawing a character you can't type (Japanese, Chinese).
+    implementation(libs.mlkit.ink)
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)

@@ -41,6 +41,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onLanguage(code: String)
         /** Delete held: the `count`th repeat. */
         fun onRepeat(key: Key, count: Int)
+        /** ?123 held (Japanese, Chinese: draw a character). */
+        fun onHoldSymbols()
         /** A swipe across the letters (the ones passed, in order). */
         fun onSwipe(path: String)
     }
@@ -243,6 +245,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         when (p.key.kind) {
             KeyKind.BACKSPACE -> { repeats = 0; held = true; repeatTask.run() }
             KeyKind.SPACE -> if (languages.size > 1) openLanguages(p)
+            KeyKind.SYMBOLS -> { held = true; listener.onHoldSymbols() }
             else -> if (p.key.popups.isNotEmpty()) openPopup(p)
         }
     }

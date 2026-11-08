@@ -235,6 +235,19 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     override fun onChoice(text: String) = type(text)
 
+    override fun onHoldSymbols() {
+        if (lang != "ja" && lang != "zh") return
+        buzz(HapticFeedbackConstants.LONG_PRESS)
+        if (conv.isNotEmpty() || romaji.isNotEmpty()) commitConv()
+        ui.panel = Panel.DRAW
+    }
+
+    /** A drawn character picked: in it goes. */
+    fun putDrawn(text: String) {
+        ic?.commitText(text, 1)
+        updateBar()
+    }
+
     /** The last swiped word, while a pick from the bar may still replace it. */
     private var swiped: String? = null
 

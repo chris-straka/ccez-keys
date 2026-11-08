@@ -21,7 +21,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import uk.ccez.keys.ui.KeyboardUi
 
-enum class Panel { KEYS, FACE, SETTINGS, CLIPS, VOICE }
+enum class Panel { KEYS, FACE, SETTINGS, CLIPS, VOICE, DRAW }
 
 /** What the Compose parts draw from. */
 class UiState {

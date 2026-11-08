@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloat
@@ -131,6 +132,7 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
                     Panel.SETTINGS -> SettingsPanel(ui, typist, version)
                     Panel.CLIPS -> ClipsPanel(ui, typist)
                     Panel.VOICE -> VoicePanel(ui, typist)
+                    Panel.DRAW -> DrawPanel(ui, typist)
                 }
             }
         }
@@ -465,6 +467,55 @@ private fun VoicePanel(ui: UiState, typist: Typist) {
                 },
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.mic, "Stop", tint = if (v.listening) Color(0xFF1A1A1A) else Colors.fg, modifier = Modifier.size(28.dp)) }
+    }
+}
+
+// --- drawing a character ---
+
+@Composable
+private fun DrawPanel(ui: UiState, typist: Typist) {
+    val strokes = remember { androidx.compose.runtime.mutableStateListOf<List<Triple<Float, Float, Long>>>() }
+    var current by remember { mutableStateOf<List<Triple<Float, Float, Long>>>(emptyList()) }
+    var read by remember { mutableStateOf<List<String>>(emptyList()) }
+    val lang = typist.currentLanguage()
+    LaunchedEffect(strokes.size) {
+        if (strokes.isEmpty()) { read = emptyList(); return@LaunchedEffect }
+        kotlinx.coroutines.delay(250)
+        read = uk.ccez.keys.learn.InkReader.read(lang, strokes.toList())
+    }
+    Column(Modifier.fillMaxWidth().height(ui.keysHeightDp.dp).padding(horizontal = 6.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth().height(40.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            read.forEach { c ->
+                Text(
+                    c,
+                    color = Colors.fg,
+                    fontSize = 22.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).combinedClickableCompat { typist.putDrawn(c); strokes.clear() }.padding(horizontal = 12.dp, vertical = 2.dp),
+                )
+            }
+        }
+        androidx.compose.foundation.Canvas(
+            Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(10.dp)).background(Colors.key)
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { o -> current = listOf(Triple(o.x, o.y, System.currentTimeMillis())) },
+                        onDragEnd = { if (current.size > 1) strokes.add(current); current = emptyList() },
+                    ) { change, _ -> current = current + Triple(change.position.x, change.position.y, System.currentTimeMillis()) }
+                },
+        ) {
+            val ink = Color(Colors.FG)
+            (strokes + listOf(current)).forEach { s ->
+                s.zipWithNext().forEach { (a, b) ->
+                    drawLine(ink, androidx.compose.ui.geometry.Offset(a.first, a.second), androidx.compose.ui.geometry.Offset(b.first, b.second), strokeWidth = 6.dp.toPx(), cap = StrokeCap.Round)
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().height(40.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            PanelKey("ABC", 1.3f, Colors.faceOn, Colors.accent) { typist.showKeys() }
+            PanelKey("✕", 1f) { strokes.clear() }
+            PanelKey("⌫", 1.3f) { typist.press(KeyKind.BACKSPACE) }
+            PanelKey("↵", 1.3f, Color(Colors.ENTER), Color(Colors.ENTER_FG)) { typist.press(KeyKind.ENTER) }
+        }
     }
 }
 
