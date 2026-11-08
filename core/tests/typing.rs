@@ -54,6 +54,15 @@ fn real_words_are_left_alone() {
 }
 
 #[test]
+fn french_wins_when_its_spelling_is_commoner() {
+    // "deja" is Spanish too, but déjà is far commoner in French.
+    let e = engine(&["fr", "es", "en"]);
+    assert_eq!(fix(&e, "fr", "deja").as_deref(), Some("déjà"));
+    assert_eq!(fix(&e, "fr", "the"), None);
+    assert_eq!(fix(&e, "es", "deja"), None);
+}
+
+#[test]
 fn german_capitals() {
     let e = engine(&["de"]);
     assert_eq!(fix(&e, "de", "haus").as_deref(), Some("Haus"));

@@ -76,8 +76,8 @@ pub fn suggest(lang: &Lang, others: &[&Lang], typed: &str, keys: &Neighbours, au
         _ => 2.0,
     };
     let own = own_logf(lang, typed);
-    // Common in another language typed in ("the" while on French): never touched.
-    let other_common = others.iter().any(|o| own_logf(o, typed).is_some_and(|f| f > COMMON));
+    // How common the word is, as typed, in the other languages typed in.
+    let other = others.iter().filter_map(|o| own_logf(o, typed)).reduce(f32::max);
     let typed_known = own.is_some() || others.iter().any(|o| o.knows(typed));
     let mut scored: Vec<Scored> = lang
         .lex
@@ -100,7 +100,7 @@ pub fn suggest(lang: &Lang, others: &[&Lang], typed: &str, keys: &Neighbours, au
             break;
         }
     }
-    let correction = if autocorrect && !leave_alone(typed) { correct(typed, n, own, other_common, &scored) } else { None };
+    let correction = if autocorrect && !leave_alone(typed) { correct(typed, n, own, other, &scored) } else { None };
     Suggestions { words, correction, typed_known }
 }
 
@@ -123,10 +123,13 @@ fn own_logf(lang: &Lang, typed: &str) -> Option<f32> {
     lang.lex.same_folded(typed).filter(|e| e.word.to_lowercase() == lower).map(|e| e.logf).reduce(f32::max)
 }
 
-/// `other_common`: the word is common in another language typed in, so
-/// only its capitals may change here.
-fn correct(typed: &str, n: usize, own: Option<f32>, other_common: bool, scored: &[Scored]) -> Option<String> {
+/// `other`: how common the word is, as typed, in another language typed
+/// in. A word common there ("the" while on French) changes only to a
+/// spelling at least as common here ("deja" → déjà, though "deja" is
+/// Spanish too).
+fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: &[Scored]) -> Option<String> {
     let pick = |w: &str| Some(with_case(typed, w)).filter(|w| w != typed);
+    let blocked = |logf: f32| other.is_some_and(|o| o > COMMON && logf < o + 1.0);
     let mid_word = scored.first().is_some_and(|c| c.completion);
     match own {
         // A word as typed: only its capitals, accents or apostrophe can
@@ -139,7 +142,7 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other_common: bool, scored: 
             if only_capitals {
                 return pick(near.word);
             }
-            if other_common {
+            if blocked(near.logf) {
                 return None;
             }
             if near.logf >= own + MUCH_COMMONER {
@@ -147,14 +150,17 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other_common: bool, scored: 
             }
             // A rare word one slip or swap from a far commoner one ("teh").
             let slip = scored.iter().find(|c| !c.completion && c.cost > 0.0 && c.cost <= 0.7)?;
-            if own < COMMON && slip.logf >= own + 5.5 { pick(slip.word) } else { None }
+            if own < COMMON && slip.logf >= own + 5.5 && !blocked(slip.logf) { pick(slip.word) } else { None }
         }
         None => {
             // Mid-word ("bonj"): a longer word is likelier than a fix.
-            if mid_word || other_common {
+            if mid_word {
                 return None;
             }
             let best = scored.first()?;
+            if blocked(best.logf) {
+                return None;
+            }
             let limit = match n {
                 1..=2 => 0.3,
                 3..=4 => 1.0,
