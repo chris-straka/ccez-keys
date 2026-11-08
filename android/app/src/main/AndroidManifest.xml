@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Dictionaries and translation models on first use; ccez-words; the AI. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".App"

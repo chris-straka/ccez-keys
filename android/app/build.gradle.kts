@@ -109,5 +109,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.kotlinx.coroutines.android)
     implementation("${libs.jna.get()}@aar")
+    // The learning strip's translation, on the phone (a model per language).
+    implementation(libs.mlkit.translate)
     testImplementation(libs.junit)
 }

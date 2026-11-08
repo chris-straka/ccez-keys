@@ -33,6 +33,9 @@ class UiState {
     var chatApp by mutableStateOf(false)
     var password by mutableStateOf(false)
     var keysHeightDp by mutableFloatStateOf(212f)
+    var strip by mutableStateOf<uk.ccez.keys.learn.StripView?>(null)
+    var glosses by mutableStateOf<List<uk.ccez.keys.learn.Gloss>>(emptyList())
+    var card by mutableStateOf<uk.ccez.keys.learn.CardView?>(null)
 }
 
 /** The keyboard. Compose needs a lifecycle, which an input method doesn't have, so it gets one. */
@@ -73,6 +76,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         typist.start(info)
+        uk.ccez.keys.learn.WordSync.maybe()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

@@ -34,6 +34,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private val app = App.instance
     private val engine get() = app.engine
     val view: KeyboardView = KeyboardView(service, this)
+    val strip = uk.ccez.keys.learn.Strip(ui)
 
     private var lang = engine.currentLanguage()
     private var page = Page.LETTERS
@@ -402,7 +403,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     private fun updateBar() {
-        if (password) { ui.bar = Bar.Buttons; return }
+        ui.card = null
+        strip.update(if (password) "" else sentence(), lang, allowed = !password)
+        if (password) { ui.bar = Bar.Buttons; ui.glosses = emptyList(); return }
+        updateWords()
+        strip.gloss((ui.bar as? Bar.Words)?.mid?.takeIf { word.isNotEmpty() }, lang)
+    }
+
+    private fun updateWords() {
         if (word.isNotEmpty()) {
             val typed = word.toString()
             val s = engine.suggest(lang, typed)
@@ -445,6 +453,53 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             updateShift()
             updateBar()
         }
+    }
+
+    /** The sentence being typed (the last one, when the cursor sits just after its end). */
+    private fun sentence(): String {
+        val before = ic?.getTextBeforeCursor(300, 0)?.toString().orEmpty()
+        val t = before.trimEnd()
+        val ends = ".!?。！？\n"
+        val body = if (t.isNotEmpty() && t.last() in ends) t.dropLast(1) else t
+        val start = body.indexOfLast { it in ends } + 1
+        return t.substring(start).trim()
+    }
+
+    /** The sentence before the cursor swapped for `text` (held strip flag). */
+    fun replaceSentence(text: String) {
+        val ic = ic ?: return
+        val s = sentence()
+        if (s.isEmpty()) return
+        val before = ic.getTextBeforeCursor(300, 0)?.toString().orEmpty()
+        val at = before.lastIndexOf(s)
+        if (at < 0) return
+        word.clear()
+        ic.finishComposingText()
+        ic.deleteSurroundingText(before.length - at, 0)
+        ic.commitText(text + before.substring(at + s.length).takeWhile { it == ' ' }, 1)
+        buzz(HapticFeedbackConstants.CONTEXT_CLICK)
+        updateShift()
+        updateBar()
+    }
+
+    fun markLearning(lang: String, word: String) {
+        buzz(HapticFeedbackConstants.CONTEXT_CLICK)
+        setStatus(lang, word, uk.ccez.keys.core.WordStatus.LEARNING)
+    }
+
+    fun setStatus(lang: String, word: String, status: uk.ccez.keys.core.WordStatus) {
+        if (noLearn) return
+        strip.setStatus(lang, word, status)
+    }
+
+    fun engineStatus(lang: String, word: String) = engine.wordStatus(lang, word)
+
+    /** The glosses under a held suggestion, each to Learning in its language. */
+    fun learnGlosses(glosses: List<uk.ccez.keys.learn.Gloss>) {
+        if (noLearn) return
+        buzz(HapticFeedbackConstants.CONTEXT_CLICK)
+        glosses.forEach { engine.setWordStatus(it.lang, it.word, uk.ccez.keys.core.WordStatus.LEARNING) }
+        uk.ccez.keys.learn.WordSync.soon()
     }
 
     /** The word before the cursor, skipping `skip` characters of the word being typed. */

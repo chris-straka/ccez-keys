@@ -12,6 +12,8 @@ pub enum Kind {
     Langs,
     /// Plain strings (app package names).
     List,
+    /// One string (a server address).
+    Text,
 }
 
 pub struct Def {
@@ -60,6 +62,13 @@ pub const DEFS: &[Def] = &[
         // The owner's order in ccez-tube (2026-11-08).
         default: || json!(["fr", "de", "es", "zh", "ja", "ko", "pt", "ar", "hi", "ru", "pl", "id", "tr", "it", "no", "cs", "el", "fa", "th", "vi", "ro", "bg", "hu", "hy"]),
         about: "Languages being learned, most wanted first: the learning strip's order. Each one with a layout is typed in too.",
+    },
+    Def { key: "learning.strip", kind: Kind::Bool, default: || json!(true), about: "The learning strip: what you type, in a language you're learning." },
+    Def {
+        key: "words.server",
+        kind: Kind::Text,
+        default: || json!(""),
+        about: "The ccez-words server (word statuses shared with ccez-tube, ccez-lang, ccez-llm). Empty: statuses stay on the phone.",
     },
     Def { key: "apps.chat", kind: Kind::List, default: || json!(CHAT_APPS), about: "Apps where the face key opens kaomoji first." },
 ];
@@ -121,6 +130,7 @@ fn check(d: &Def, v: &Value) -> Result<(), String> {
         Kind::Int { min, max } => v.as_i64().is_some_and(|n| (min..=max).contains(&n)),
         Kind::Langs => v.as_array().is_some_and(|a| a.iter().all(|x| x.as_str().is_some_and(is_lang))),
         Kind::List => v.as_array().is_some_and(|a| a.iter().all(Value::is_string)),
+        Kind::Text => v.is_string(),
     };
     if ok {
         Ok(())
@@ -131,6 +141,7 @@ fn check(d: &Def, v: &Value) -> Result<(), String> {
             Kind::Int { min, max } => format!("{} takes a number from {min} to {max}", d.key),
             Kind::Langs => format!("{} takes a list of language codes, like [\"fr\",\"ja\"]", d.key),
             Kind::List => format!("{} takes a list of strings", d.key),
+            Kind::Text => format!("{} takes a string", d.key),
         })
     }
 }
@@ -145,6 +156,7 @@ pub fn schema() -> String {
                 Kind::Int { min, max } => json!({"int": [min, max]}),
                 Kind::Langs => json!("languages"),
                 Kind::List => json!("strings"),
+                Kind::Text => json!("string"),
             };
             json!({"key": d.key, "kind": kind, "default": (d.default)(), "about": d.about})
         })

@@ -75,6 +75,23 @@ language list; self-update (like ccez-tube's); swipe typing (setting, off
 by default); number row; searching the Add list (needs typing into the
 keyboard's own field, which Ask Muse needs too).
 
+## Stage 2 status (2026-11-08)
+
+Checked on the S24: the strip shows the sentence in the first learning
+language (ML Kit on the phone), furigana/pinyin from ccez-lang-core
+(dictionaries download on first use from its public "dictionaries"
+release, checked against SHA256SUMS), known words grey, learning words
+underlined, tap a word for its card (Learning / Known), hold a word for
+Learning, tap the flag for the next language, swipe the strip, hold the
+flag to put the translation in, 🔊 reads it. Glosses under the bold
+suggestion in two learning languages, skipping ones where it's known;
+hold the suggestion to mark them Learning. Statuses sync with ccez-words
+(`keys set words.server …`; 60 came down on first sync).
+
+Known gaps: ML Kit's wording is literal ("free" → 無料); Muse should refine
+the strip once typing pauses. ccez-tube's implicit "known" (heard in two
+videos) stays in ccez-tube, so few words are grey yet.
+
 ## Order
 
 1. Daily-usable keyboard: QWERTY, autocorrect + suggestions (en, fr),

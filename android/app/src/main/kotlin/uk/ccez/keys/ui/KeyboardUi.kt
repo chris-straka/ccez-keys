@@ -13,6 +13,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
@@ -74,6 +76,12 @@ import uk.ccez.keys.Popup
 import uk.ccez.keys.Typist
 import uk.ccez.keys.UiState
 import uk.ccez.keys.core.KeyKind
+import uk.ccez.keys.core.StripWord
+import uk.ccez.keys.core.WordStatus
+import uk.ccez.keys.learn.CardView
+import uk.ccez.keys.learn.Gloss
+import uk.ccez.keys.learn.Speaker
+import uk.ccez.keys.learn.StripView
 
 private val BAR_H = 46.dp
 
@@ -90,7 +98,13 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
     // The system draws its buttons (close keyboard) in the tappable strip,
     // which on Samsung is taller than the navigation bar it reports.
     val bottom = with(d) { maxOf(nav, tap).toDp() }
-    Box(Modifier.fillMaxWidth().background(Colors.bg).padding(bottom = bottom)) {
+    Column(Modifier.fillMaxWidth().background(Colors.bg).padding(bottom = bottom)) {
+        AnimatedVisibility(ui.strip != null && ui.panel == Panel.KEYS, enter = expandVertically(tween(140)) + fadeIn(tween(140)), exit = shrinkVertically(tween(120)) + fadeOut(tween(90))) {
+            var last by remember { mutableStateOf<StripView?>(null) }
+            ui.strip?.let { last = it }
+            last?.let { StripRow(it, typist) }
+        }
+    Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
             Crossfade(ui.bar is Bar.Words && ui.panel == Panel.KEYS, animationSpec = tween(90), label = "bar") { _ -> BarRow(ui, typist) }
             AnimatedContent(ui.panel, transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(90)) }, label = "panel") { panel ->
@@ -104,11 +118,18 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
                 }
             }
         }
-        AnimatedVisibility(ui.popup != null, enter = fadeIn(tween(70)) + scaleIn(tween(90), initialScale = 0.85f), exit = fadeOut(tween(60))) {
-            var last by remember { mutableStateOf<Popup?>(null) }
-            ui.popup?.let { last = it }
-            last?.let { PopupOverlay(it) }
-        }
+        PopupLayer(ui)
+        ui.card?.let { CardOverlay(it, ui, typist) }
+    }
+    }
+}
+
+@Composable
+private fun PopupLayer(ui: UiState) {
+    AnimatedVisibility(ui.popup != null, enter = fadeIn(tween(70)) + scaleIn(tween(90), initialScale = 0.85f), exit = fadeOut(tween(60))) {
+        var last by remember { mutableStateOf<Popup?>(null) }
+        ui.popup?.let { last = it }
+        last?.let { PopupOverlay(it) }
     }
 }
 
@@ -122,7 +143,7 @@ private fun BarRow(ui: UiState, typist: Typist) {
         if (bar is Bar.Words && ui.panel == Panel.KEYS) {
             Cell(bar.left, false, bar.typed, typist, 1f)
             Divider()
-            Cell(bar.mid, true, bar.typed, typist, 1.25f)
+            Cell(bar.mid, true, bar.typed, typist, 1.25f, ui.glosses)
             Divider()
             Cell(bar.right, false, bar.typed, typist, 1f)
             return@Row
@@ -154,10 +175,17 @@ private fun BarRow(ui: UiState, typist: Typist) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: Typist, weight: Float) {
-    Box(
-        Modifier.weight(weight).fillMaxHeight().let { m -> if (text == null) m else m.combinedClickable { typist.pick(text, text == typed) } },
-        contentAlignment = Alignment.Center,
+private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: Typist, weight: Float, glosses: List<Gloss> = emptyList()) {
+    Column(
+        Modifier.weight(weight).fillMaxHeight().let { m ->
+            if (text == null) m else m.combinedClickable(
+                onClick = { typist.pick(text, text == typed) },
+                // Hold: the words under it go to Learning, each in its language.
+                onLongClick = { if (glosses.isNotEmpty()) typist.learnGlosses(glosses) },
+            )
+        },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
         if (text != null) {
             Text(
@@ -169,6 +197,16 @@ private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: T
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
+            if (glosses.isNotEmpty()) {
+                Text(
+                    glosses.joinToString(" · ") { "${it.flag} ${it.word}" },
+                    color = Colors.muted,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
         }
     }
 }
@@ -588,7 +626,7 @@ private fun SizeStepper(version: Int) {
 
 // --- icons (stroked, 24-unit paths) ---
 
-private object Icons {
+internal object Icons {
     private fun stroke(vararg paths: String) = ImageVector.Builder(defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f).apply {
         paths.forEach {
             addPath(

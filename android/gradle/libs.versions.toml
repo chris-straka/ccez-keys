@@ -10,6 +10,7 @@ savedstate = "1.4.0"
 coroutines = "1.11.0"
 jna = "5.19.1"
 junit = "4.13.2"
+mlkit-translate = "17.0.3"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core-ktx" }
@@ -23,6 +24,7 @@ compose-material3 = { module = "androidx.compose.material3:material3" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 junit = { module = "junit:junit", version.ref = "junit" }
+mlkit-translate = { module = "com.google.mlkit:translate", version.ref = "mlkit-translate" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

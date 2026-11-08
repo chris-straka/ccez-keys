@@ -5,6 +5,7 @@
 //! decides about text, it asks here.
 
 pub mod layout;
+pub mod learn;
 pub mod log;
 pub mod settings;
 pub mod typing;
@@ -16,6 +17,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub use layout::{Key, KeyKind, Layout, Page, Row};
+pub use learn::{Card, Ruby, StripWord, WordStatus};
 pub use typing::Suggestions;
 
 uniffi::setup_scaffolding!();
@@ -38,6 +40,7 @@ pub struct Engine {
     dir: PathBuf,
     layouts: layout::Layouts,
     log: log::Log,
+    learn: learn::Learn,
     state: Mutex<State>,
 }
 
@@ -80,6 +83,7 @@ impl Engine {
         let current = fs::read_to_string(dir.join("current-language")).unwrap_or_default().trim().to_string();
         let engine = Engine {
             log: log::Log::new(&dir),
+            learn: learn::Learn::new(&dir),
             layouts: layout::Layouts::load(),
             dir,
             state: Mutex::new(State { langs: HashMap::new(), keys: HashMap::new(), settings, current }),
@@ -218,6 +222,53 @@ impl Engine {
         drop(s);
         self.log.write("info", "setting", &serde_json::json!({"key": key, "value": v}).to_string());
         Ok(v.to_string())
+    }
+
+    // --- learning ---
+
+    /// The folder dictionaries are installed into (IPAdic goes in `ipadic/` there).
+    pub fn dictionary_dir(&self) -> String {
+        learn::Learn::dict_dir(&self.dir).to_string_lossy().into()
+    }
+
+    pub fn dictionary_ready(&self, lang: String) -> bool {
+        self.learn.words.ready(&lang)
+    }
+
+    /// Packs a downloaded dictionary file (the release's `<lang>.tsv.gz`, or `cedict.txt.gz`).
+    pub fn install_dictionary(&self, lang: String, path: String) -> Result<(), KeysError> {
+        self.learn.words.install(&lang, std::path::Path::new(&path)).map_err(|e| KeysError::Bad(e.to_string()))
+    }
+
+    /// Japanese pitch accents (`ja-pitch.tsv.gz`).
+    pub fn install_pitch(&self, path: String) -> Result<(), KeysError> {
+        self.learn.words.install_pitch(std::path::Path::new(&path)).map_err(|e| KeysError::Bad(e.to_string()))
+    }
+
+    /// A sentence's words with readings and the owner's status for each.
+    pub fn strip_words(&self, lang: String, text: String) -> Vec<StripWord> {
+        self.learn.tokens(&lang, &text)
+    }
+
+    pub fn word_card(&self, lang: String, word: String, lemma: String) -> Option<Card> {
+        self.learn.card(&lang, &word, &lemma)
+    }
+
+    pub fn word_status(&self, lang: String, word: String) -> WordStatus {
+        self.learn.statuses.status(&lang, &word).into()
+    }
+
+    pub fn set_word_status(&self, lang: String, word: String, status: WordStatus) {
+        self.learn.statuses.set(&lang, &word, status.into());
+    }
+
+    /// Statuses to and from ccez-words (`words.server`). Blocks: call off the main thread.
+    pub fn sync_words(&self, from: String) -> Result<u32, KeysError> {
+        let server = self.lock().settings.get("words.server").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if server.is_empty() {
+            return Err(KeysError::Bad("no words.server set".into()));
+        }
+        self.learn.sync(&server, &from).map_err(KeysError::Bad)
     }
 
     /// `ctx` is JSON. Never typed text.
