@@ -110,8 +110,9 @@ videos) stays in ccez-tube, so few words are grey yet.
   or Chinese character (hold ?123); swipe typing (off by default).
 - Updates: `scripts/release.sh` → GitHub release → the keyboard installs it.
 
-Not yet / ideas: a week's stats; searching the Add list; Telex for
-Vietnamese; Arabic digits; a Donate row (needs a link from the owner).
+Not yet / ideas: searching the Add list; Arabic digits.
+Declined (owner, 2026-11-08): weekly stats. Telex and Thai/Armenian lists: done.
+Donate: only in a Play Store build (CCEZ_KEYS_STORE=1, CCEZ_KEYS_DONATE_URL).
 
 ## Order
 
@@ -186,7 +187,6 @@ Vietnamese; Arabic digits; a Donate row (needs a link from the owner).
 
 ## Still open
 
-- A week's stats: words typed per language, new words met.
 
 ## Future-proofing
 
