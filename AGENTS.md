@@ -30,5 +30,6 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
   changed (`keys word <lang> <word> new`): statuses sync to all their apps.
   If the owner is typing (`dumpsys input_method` mInputShown=true), only look.
 - Never `am force-stop uk.ccez.keys` while it's the chosen keyboard:
-  Android falls back to Samsung Keyboard. Put the owner's keyboard back
-  after a check (`ime set com.touchtype.swiftkey/com.touchtype.KeyboardService`).
+  Android falls back to Samsung Keyboard. ccez-keys is the owner's
+  keyboard: if a check switched away, put it back
+  (`ime set uk.ccez.keys/.KeysService`).
