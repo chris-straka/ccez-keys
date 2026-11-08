@@ -63,10 +63,45 @@ on the page.
 6. Later: ccez-tube's words of the week first in the strip; a review card
    when the keyboard opens; send selected text to ccez-llm to annotate.
 
-## Open questions for the owner
+## Owner decisions (2026-11-08)
 
-- The layout (docs/layout.html).
-- Swipe (glide) typing from the start? The phone runs SwiftKey today.
-- Which languages are typed, not only learned? (decides Japanese/Chinese input)
-- Muse tips read what's typed: everywhere except passwords, or only in
-  chat apps?
+- Layout v2 approved in direction ("nice job"); the word card in the
+  mockup is preferred over ccez-tube's current one.
+- Swipe typing: a setting, off by default.
+- Types in every language they learn. Today's SwiftKey (6-language limit):
+  de, en, es, fr-CA on QWERTY; ja on Japanese QWERTY (romaji to
+  kana/kanji); zh-Hans on full-key pinyin. Arabic is learned too.
+- Muse reads what's typed everywhere except password fields.
+- Ask Muse: start a chat about something just typed.
+- Kaomoji first in chat apps: Messages, TextNow, Discord, Telegram,
+  WeChat, WhatsApp, Messenger, Instagram, Facebook, Threads (a list
+  editable with `keys`).
+- Clipboard: the newest copy waits as a chip until pasted or replaced,
+  no timer (SwiftKey's chip vanished when it was needed).
+- Repo public.
+
+## Ideas offered to the owner (not yet chosen)
+
+- Mistake log: accepted Muse fixes collect into the owner's recurring
+  mistakes, for review here and drills in ccez-llm.
+- Per-app language: LINE opens in Japanese, WeChat in Chinese.
+- Formality in the strip: tu/vous, du/Sie, casual/polite Japanese.
+- Draw a kanji or hanzi you can't type (ML Kit Digital Ink, on device).
+- Typing without accents: deja → déjà, uber → über, tone numbers in pinyin.
+- One-tap private field: no AI, no learning, for this field only.
+- A week's stats: words typed per language, new words met.
+
+## Future-proofing
+
+- One settings schema in Rust: the settings screen, `keys` and Muse's
+  tools are generated from it, so Muse in Ask can change settings too.
+- Layouts, kaomoji packs and the chat-app list are data files: a new
+  language is a new file, not code.
+- Language packs (dictionaries, ML Kit models, word lists) download on
+  first use; the APK stays small.
+- AI provider per feature (Muse, DeepSeek, Gemini Nano on the phone).
+- Core has no Android code, so a Mac input method could reuse it.
+- Replay tests: typed strings per language through autocorrect and
+  conversion, so a change can't quietly make typing worse.
+- Settings and the personal dictionary back up to the Mac mini, so a new
+  phone is set up in one step.

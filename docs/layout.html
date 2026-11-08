@@ -132,6 +132,27 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .chips .add { color: var(--k-mut); background: transparent; border: 1px dashed #3a3a3a; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
 @media (prefers-reduced-motion: no-preference) { .caret { animation: blink 1.1s steps(1) infinite } @keyframes blink { 50% { opacity: 0 } } }
+.sugg i { font-style: normal; font-size: 9.5px; color: var(--k-mut); line-height: 11px; height: 11px; }
+.sugg.tall { height: 58px; }
+.comp { text-decoration: underline; text-decoration-color: var(--k-mut); text-underline-offset: 3px; }
+.strip .back { flex: 1; min-width: 0; font-size: 15px; color: var(--k-fg); }
+/* clipboard chip in the button row */
+.tools.clipr { justify-content: flex-start; gap: 4px; padding: 0 6px; }
+.chip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; background: #26262a; border-radius: 16px; padding: 6px 6px 6px 10px; color: var(--k-fg); font-size: 13px; }
+.chip .tx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip .ex { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--k-aibg); color: var(--k-ai); display: grid; place-items: center; }
+.chip .ex svg.i { width: 15px; height: 15px; }
+.tools.clipr > span { flex: none; }
+/* Ask Muse panel */
+.chat { background: #141218; padding: 8px 10px 10px; display: grid; gap: 8px; border-bottom: 1px solid #2a2440; }
+.chat .hd { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--k-mut); }
+.chat .hd .about { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #221f2b; border-radius: 10px; padding: 3px 9px; color: #cfc8e6; }
+.chat .hd svg.i { width: 18px; height: 18px; }
+.chat .me { justify-self: end; background: var(--k-me); border-radius: 14px 14px 4px 14px; padding: 6px 11px; font-size: 13px; max-width: 80%; }
+.chat .ai { background: var(--k-aibg); border-radius: 12px; padding: 8px 11px; font-size: 13px; line-height: 1.45; color: #e9e3ff; display: grid; gap: 3px; }
+.chat .ai small { color: #a79fc0; font-size: 11.5px; }
+.chat .cin { display: flex; align-items: center; gap: 8px; background: #1e1c24; border: 1px solid #3a3352; border-radius: 18px; padding: 7px 12px; font-size: 13.5px; }
+.chat .cin .t { flex: 1; min-width: 0; }
 </style>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -146,13 +167,14 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
     <symbol id="kao" viewBox="0 0 24 24"><path d="M4 8c-1.5 2.5-1.5 5.5 0 8M20 8c1.5 2.5 1.5 5.5 0 8"/><path d="M8 10.5l1.5-1.5 1.5 1.5M13 10.5l1.5-1.5 1.5 1.5M10 15h4"/></symbol>
     <symbol id="gif" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M10 10H8v4h2v-2M13 10v4M16 14v-4h2M16 12h1.5"/></symbol>
     <symbol id="num" viewBox="0 0 24 24"><path d="M5 9l2-1.5V16M10.5 9.5a2 2 0 0 1 4 .5c0 2-4 3.5-4 6h4M17.5 8h3l-2 3a2.5 2.5 0 1 1-1.5 4.5"/></symbol>
+    <symbol id="swipe" viewBox="0 0 24 24"><path d="M3 15c3-6 5-8 7-5s3 4 5-1 4-3 6 0"/><circle cx="21" cy="9" r="1.2"/></symbol>
     <symbol id="book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
   </defs>
 </svg>
 
 <div class="wrap">
   <h1>ccez-keys</h1>
-  <p class="lede">Five screens from one layout. The learning strip sits above the suggestions and only appears while you type. Everything else is a normal keyboard.</p>
+  <p class="lede">Eight screens from one layout. The learning strip sits above the suggestions and only appears while you type. Everything else is a normal keyboard.</p>
 
   <div class="screens">
 
@@ -262,6 +284,31 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
       <figcaption><b>Typing French</b>It noticed French and switched the keys (the dot on the space bar). Muse checks what you write in a language you're learning and suggests a fix. Fix puts it in; otherwise it folds away when you keep typing.</figcaption>
     </figure>
 
+    <!-- J: typing Japanese -->
+    <figure>
+      <div class="ph">
+        <div class="app">
+          <div class="appbar"><span class="av" style="background:#8a5a3a">K</span>Kenta · LINE</div>
+          <div class="bub">週末なにしてる？</div>
+          <div class="field"><span class="t">土曜日は<span class="comp">ひま</span><span class="caret"></span></span><span class="send"></span></div>
+        </div>
+        <div class="kb">
+          <div class="strip">
+            <div class="flags"><span class="on">🇬🇧</span></div>
+            <div class="back">I'm free on Saturday</div>
+            <span class="spk"><svg class="i"><use href="#spk"/></svg></span>
+          </div>
+          <div class="sugg tall">
+            <div><i>ひま</i>ひま<small> </small></div>
+            <div class="mid"><i>ひま</i>暇<small>free time</small></div>
+            <div><i>ひま</i>閑<small>leisure</small></div>
+          </div>
+          <div class="keys" data-space="日本語" data-auto="1"></div>
+        </div>
+      </div>
+      <figcaption><b>Typing Japanese</b>Romaji in, kana and kanji out, as on SwiftKey. Each choice shows its reading and meaning. The strip shows what you wrote in English, so you can check it says what you meant.</figcaption>
+    </figure>
+
     <!-- D: kaomoji in TextNow -->
     <figure>
       <div class="ph">
@@ -300,7 +347,52 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
           </div>
         </div>
       </div>
-      <figcaption><b>In a texting app</b>In TextNow and Messages the face key opens kaomoji first, and a kaomoji is offered in the suggestions when the message fits one. Tap pastes. The strip is showing Arabic here; tap the flag or swipe the strip for the next language.</figcaption>
+      <figcaption><b>In a chat app</b>In TextNow, Messages, Discord, Telegram, WeChat, WhatsApp, Messenger and Instagram the face key opens kaomoji first, and a kaomoji is offered in the suggestions when the message fits one. Tap pastes. The strip is showing Arabic here; tap the flag or swipe the strip for the next language.</figcaption>
+    </figure>
+
+    <!-- F: just copied -->
+    <figure>
+      <div class="ph empty">
+        <div class="app">
+          <div class="appbar"><span class="av" style="background:#7a4a5a">L</span>Léa · Messages</div>
+          <div class="bub">Rendez-vous à 19h devant le ciné, j'ai déjà pris les places 🎟️</div>
+          <div class="field"><span class="t">Text message<span class="caret"></span></span><span class="send"></span></div>
+        </div>
+        <div class="kb">
+          <div class="strip">
+            <div class="flags"><span class="on">🇬🇧</span></div>
+            <div class="back">Meet at 7pm outside the cinema, I already got the tickets</div>
+          </div>
+          <div class="tools clipr">
+            <div class="chip"><svg class="i" style="width:16px;height:16px;color:var(--k-mut);flex:none"><use href="#clip"/></svg><span class="tx">Rendez-vous à 19h devant le ciné, j'ai déjà…</span><span class="ex"><svg class="i"><use href="#spark"/></svg></span></div>
+            <span><svg class="i"><use href="#smile"/></svg></span>
+            <span><svg class="i"><use href="#mic"/></svg></span>
+            <span><svg class="i"><use href="#gear"/></svg></span>
+          </div>
+          <div class="keys" data-space="Français"></div>
+        </div>
+      </div>
+      <figcaption><b>Just copied</b>What you copy waits as a chip in the button row of every field until you paste it or copy something else. No timer. Copied text in a language you're learning also shows in English above it, and ✦ explains it.</figcaption>
+    </figure>
+
+    <!-- G: ask Muse -->
+    <figure>
+      <div class="ph">
+        <div class="app">
+          <div class="appbar"><span class="av" style="background:#7a4a5a">L</span>Léa · Messages</div>
+          <div class="field"><span class="t">j'ai hâte de te voir demain</span><span class="send"></span></div>
+        </div>
+        <div class="kb">
+          <div class="chat">
+            <div class="hd"><svg class="i" style="color:var(--k-ai)"><use href="#spark"/></svg><span class="about">j'ai hâte de te voir demain</span><svg class="i"><use href="#book"/></svg></div>
+            <div class="me">why avoir and not être?</div>
+            <div class="ai"><span>Hâte is a noun, so you <i>have</i> it, like avoir faim, avoir peur.</span><small>être pressé(e) de is the adjective version: je suis pressé de te voir.</small></div>
+            <div class="cin"><span class="t">et pour impatient<span class="caret"></span></span><svg class="i" style="width:18px;height:18px;color:var(--k-mut)"><use href="#mic"/></svg></div>
+          </div>
+          <div class="keys" data-space="English"></div>
+        </div>
+      </div>
+      <figcaption><b>Ask Muse</b>✦ on a tip, a card or a copied message opens a chat about it, above the keys. Your keys type into the chat, not the app, until you close it. 📖 carries the chat on in ccez-llm.</figcaption>
     </figure>
 
     <!-- E: toolbar + settings -->
@@ -325,17 +417,19 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
             <div class="grid2">
               <div class="tg"><svg class="i"><use href="#clip"/></svg>Clipboard<span class="sw on"></span></div>
               <div class="tg"><svg class="i"><use href="#smile"/></svg>Emoji<span class="sw on"></span></div>
+              <div class="tg"><svg class="i"><use href="#kao"/></svg>Kaomoji<span class="sw on"></span></div>
               <div class="tg"><svg class="i"><use href="#mic"/></svg>Dictation<span class="sw on"></span></div>
               <div class="tg"><svg class="i"><use href="#tr"/></svg>Translate<span class="sw on"></span></div>
               <div class="tg"><svg class="i"><use href="#spark"/></svg>AI<span class="sw on"></span></div>
+              <div class="tg"><svg class="i"><use href="#book"/></svg>Words<span class="sw on"></span></div>
               <div class="tg off"><svg class="i"><use href="#gif"/></svg>GIFs<span class="sw"></span></div>
               <div class="tg off"><svg class="i"><use href="#num"/></svg>Numbers<span class="sw"></span></div>
-              <div class="tg"><svg class="i"><use href="#book"/></svg>Words<span class="sw on"></span></div>
+              <div class="tg off"><svg class="i"><use href="#swipe"/></svg>Swipe<span class="sw"></span></div>
             </div>
-            <h4>I type</h4>
-            <div class="chips"><span>🇬🇧 English</span><span>🇫🇷 Français</span><span class="add">＋</span></div>
+            <h4>I speak</h4>
+            <div class="chips"><span>🇬🇧 English</span></div>
             <h4>I'm learning</h4>
-            <div class="chips"><span>🇫🇷</span><span>🇯🇵</span><span>🇸🇦</span><span>🇨🇳</span><span>🇰🇷</span><span>🇩🇪</span><span class="add">＋</span></div>
+            <div class="chips"><span>🇫🇷 Français</span><span>🇩🇪 Deutsch</span><span>🇪🇸 Español</span><span>🇯🇵 日本語</span><span>🇨🇳 中文</span><span>🇸🇦 العربية</span><span class="add">＋</span></div>
           </div>
         </div>
       </div>
@@ -354,14 +448,17 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
         <li>Tap a word in the strip: its card. Hold a word: Learning, no card.</li>
         <li>Tap the flag, or swipe the strip: next language you're learning. 🔊 reads it aloud.</li>
         <li>Hold the strip: send the translation instead of what you typed.</li>
+        <li>✦ on a tip, card or copied message: chat with Muse about it.</li>
+        <li>Swipe a clipboard chip away to dismiss it; hold it for the history.</li>
         <li>Hold a suggestion: Learning in every language shown under it.</li>
-        <li>Password fields: no strip, no AI, nothing learned or kept.</li>
+        <li>Password fields: no strip, no AI, nothing learned or kept. Everywhere else Muse reads along.</li>
       </ul>
     </div>
     <div>
       <div class="tag">How it's built</div>
       <h2>Rust underneath, a thin Android shell</h2>
       <ul class="k">
+        <li>Swipe typing is in settings, off at first. No limit on languages (SwiftKey stops at six).</li>
         <li>Kotlin keyboard service; keys drawn on one canvas so a tap shows in the same frame. Panels in Compose. No Tauri or web view: they lag, and Android closes heavy keyboards.</li>
         <li>Rust core through UniFFI, like ccez-tube: autocorrect, next word, language detection, kaomoji ranking, settings, logs.</li>
         <li>Dictionaries, furigana, pinyin, word statuses, ccez-words sync and the Muse client move out of ccez-tube into one shared crate both apps use.</li>
@@ -374,11 +471,12 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
       <div class="tag">Order</div>
       <h2>What gets built first</h2>
       <ol class="k">
-        <li>A keyboard you can use every day: QWERTY, autocorrect and suggestions in English and French, space-bar switching, the button row, settings, <code>keys</code>.</li>
+        <li>A keyboard you can use every day: QWERTY with accents for English, French, German and Spanish, autocorrect, space-bar switching, the button row, the clipboard chip, settings, <code>keys</code>.</li>
         <li>The learning strip: translation, furigana and pinyin, sound, cards, Learning and Known from ccez-words, words under suggestions.</li>
-        <li>Emoji, kaomoji that know the app, clipboard.</li>
-        <li>Dictation, Muse tips, switching language on its own.</li>
-        <li>More layouts: AZERTY, QWERTZ, Arabic, Hangul, Hindi, and Japanese and Chinese input if you type them.</li>
+        <li>Emoji, kaomoji that know the app, clipboard history.</li>
+        <li>Japanese (romaji to kana and kanji) and Chinese (pinyin to hanzi). The hardest piece: each needs a converter that picks the right characters.</li>
+        <li>Dictation, Muse tips, Ask Muse, switching language on its own.</li>
+        <li>Arabic, then any other layout a new language needs (Hangul, Hindi, AZERTY, QWERTZ).</li>
         <li>Later: words you met in ccez-tube this week come first in the strip; a quick review card when the keyboard opens; send selected text to ccez-llm to annotate.</li>
       </ol>
     </div>
