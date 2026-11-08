@@ -39,18 +39,30 @@ object Secrets {
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("secrets", Context.MODE_PRIVATE)
 
+    /** Decrypted once (each Keystore decrypt is a call to the system, too slow per keystroke). */
+    @Volatile private var cached: String? = null
+    @Volatile private var loaded = false
+
     fun set(ctx: Context, value: String?) {
+        cached = value?.trim()?.ifEmpty { null }
+        loaded = true
         if (value.isNullOrBlank()) { prefs(ctx).edit().remove("ai").apply(); return }
         val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val data = c.iv + c.doFinal(value.trim().toByteArray())
         prefs(ctx).edit().putString("ai", Base64.encodeToString(data, Base64.NO_WRAP)).apply()
     }
 
-    fun get(ctx: Context): String? = runCatching {
-        val data = Base64.decode(prefs(ctx).getString("ai", null) ?: return null, Base64.NO_WRAP)
-        val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, data, 0, 12)) }
-        String(c.doFinal(data, 12, data.size - 12))
-    }.getOrNull()
+    fun get(ctx: Context): String? {
+        if (loaded) return cached
+        val v = runCatching {
+            val data = Base64.decode(prefs(ctx).getString("ai", null) ?: return@runCatching null, Base64.NO_WRAP)
+            val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, data, 0, 12)) }
+            String(c.doFinal(data, 12, data.size - 12))
+        }.getOrNull()
+        cached = v
+        loaded = true
+        return v
+    }
 
     /** "••••abcd", for Settings. */
     fun hint(ctx: Context): String? = get(ctx)?.takeLast(4)?.let { "••••$it" }
@@ -98,6 +110,7 @@ data class Line(val role: String, val text: String)
 class Ask(private val ui: UiState) {
     private val app = App.instance
     private var history: List<ChatMessage> = emptyList()
+    private var job: kotlinx.coroutines.Job? = null
 
     fun open(about: String) {
         ui.ask = AskState(about = about, lines = emptyList(), input = "", busy = false)
@@ -115,18 +128,20 @@ class Ask(private val ui: UiState) {
         val e = app.engine
         val messages = if (history.isEmpty()) e.askStart(s.about, q) else history + ChatMessage("user", q)
         ui.ask = s.copy(lines = s.lines + Line("user", q) + Line("assistant", ""), input = "", busy = true)
-        app.scope.launch {
+        val chat = ui.ask
+        job = app.scope.launch {
             val answer = runCatching {
                 e.ask(messages, key, object : AnswerSink {
                     override fun text(soFar: String) {
                         app.scope.launch(Dispatchers.Main) {
-                            ui.ask?.let { a -> ui.ask = a.copy(lines = a.lines.dropLast(1) + Line("assistant", soFar)) }
+                            // Only into the chat it was asked in.
+                            ui.ask?.takeIf { it.about == chat?.about && it.lines.size == chat.lines.size }?.let { a -> ui.ask = a.copy(lines = a.lines.dropLast(1) + Line("assistant", soFar)) }
                         }
                     }
                 })
             }
             withContext(Dispatchers.Main) {
-                val a = ui.ask ?: return@withContext
+                val a = ui.ask?.takeIf { it.about == chat?.about && it.lines.size == chat.lines.size } ?: return@withContext
                 answer.onSuccess { full ->
                     history = messages + ChatMessage("assistant", full)
                     ui.ask = a.copy(lines = a.lines.dropLast(1) + Line("assistant", full), busy = false)
@@ -138,6 +153,8 @@ class Ask(private val ui: UiState) {
     }
 
     fun close() {
+        job?.cancel()
+        job = null
         ui.ask = null
         history = emptyList()
     }

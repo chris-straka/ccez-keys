@@ -83,7 +83,7 @@ fun StripRow(s: StripView, typist: Typist) {
         // The flag, muted (owner, 2026-11-08: it drew the eye; no flags for what's next).
         Box(
             Modifier.width(30.dp).clip(RoundedCornerShape(6.dp))
-                .combinedClickable(onClick = { typist.strip.step(1) }, onLongClick = { typist.replaceSentence(s.text) }),
+                .combinedClickable(onClick = { typist.strip.step(1) }, onLongClick = { typist.replaceSentence(s.text, of = s.source) }),
             contentAlignment = Alignment.Center,
         ) {
             Text(

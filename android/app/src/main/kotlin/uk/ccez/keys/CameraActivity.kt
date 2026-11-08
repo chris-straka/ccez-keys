@@ -203,11 +203,19 @@ class CameraActivity : ComponentActivity() {
     private fun bindCamera(view: PreviewView) {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
-            val provider = future.get()
-            val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
-            val cap = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
-            capture = cap
             runCatching {
+                val provider = future.get()
+                val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
+                // About 2 MP: plenty for text, and no 50 MP bitmap in memory.
+                val size = androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        androidx.camera.core.resolutionselector.ResolutionStrategy(
+                            android.util.Size(1920, 1080),
+                            androidx.camera.core.resolutionselector.ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                        ),
+                    ).build()
+                val cap = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).setResolutionSelector(size).build()
+                capture = cap
                 provider.unbindAll()
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, cap)
             }.onFailure { App.instance.log("warn", "camera", "error" to it.toString()) }
@@ -220,10 +228,13 @@ class CameraActivity : ComponentActivity() {
         cap.takePicture(ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
                 val rotation = image.imageInfo.rotationDegrees
-                val bmp = image.toBitmap().let { b ->
-                    if (rotation == 0) b else Bitmap.createBitmap(b, 0, 0, b.width, b.height, android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }, true)
-                }
+                val bmp = runCatching {
+                    image.toBitmap().let { b ->
+                        if (rotation == 0) b else Bitmap.createBitmap(b, 0, 0, b.width, b.height, android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }, true)
+                    }
+                }.getOrNull()
                 image.close()
+                if (bmp == null) { busy = false; return }
                 shot = bmp
                 recognize(InputImage.fromBitmap(bmp, 0))
             }
@@ -246,7 +257,7 @@ class CameraActivity : ComponentActivity() {
             "${MediaStore.Images.Media.DATE_ADDED} DESC",
         )?.use { c -> if (c.moveToFirst()) ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(0)) else null } ?: return
         busy = true
-        val bmp = contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } ?: run { busy = false; return }
+        val bmp = runCatching { contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull() ?: run { busy = false; return }
         shot = bmp
         recognize(InputImage.fromBitmap(bmp, 0))
     }
@@ -303,7 +314,7 @@ class CameraActivity : ComponentActivity() {
         if (kana > 0 && (kana + han) * 3 >= letters) return "ja"
         if (hangul * 3 >= letters) return "ko"
         if (han * 3 >= letters) return "zh"
-        val id = runCatching { LanguageIdentification.getClient().identifyLanguage(text).await() }.getOrNull()
+        val id = runCatching { LanguageIdentification.getClient().use { it.identifyLanguage(text).await() } }.getOrNull()
         return if (id == null || id == "und") App.instance.engine.currentLanguage() else id
     }
 

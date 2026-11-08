@@ -115,15 +115,23 @@ class Voice(private val ctx: Context, private val onState: (VoiceState?) -> Unit
         } catch (e: SecurityException) {
             set(VoiceState(lang, "", false, true, problem = "mic")); return
         }
+        if (rec.state != AudioRecord.STATE_INITIALIZED) {
+            rec.release()
+            set(VoiceState(lang, "", false, true, problem = "error")); return
+        }
         val out = ByteArrayOutputStream()
         recording = rec
         buffer = out
         set(VoiceState(lang, "", listening = true, whisper = true))
-        rec.startRecording()
+        runCatching { rec.startRecording() }.onFailure {
+            recording = null; buffer = null; rec.release()
+            set(VoiceState(lang, "", false, true, problem = "error")); return
+        }
         app.scope.launch(Dispatchers.IO) {
             val b = ByteArray(size)
             while (recording === rec) {
                 val n = rec.read(b, 0, b.size)
+                if (n < 0) break // released, or the mic was taken
                 if (n > 0) synchronized(out) { out.write(b, 0, n) }
                 // Ten minutes at most.
                 if (out.size() > rate * 2 * 600) break
@@ -173,11 +181,13 @@ class Voice(private val ctx: Context, private val onState: (VoiceState?) -> Unit
     }
 
     private suspend fun whisper(pcm: ByteArray, lang: String): String? {
-        val service = bind() ?: return null
+        val (service, conn) = kotlinx.coroutines.withTimeoutOrNull(10_000) { bind() } ?: return null
+        if (service == null) { conn?.let { runCatching { ctx.unbindService(it) } }; return null }
+        val pipe = ParcelFileDescriptor.createPipe()
         return try {
-            val pipe = ParcelFileDescriptor.createPipe()
             app.scope.launch(Dispatchers.IO) {
-                ParcelFileDescriptor.AutoCloseOutputStream(pipe[1]).use { it.write(pcm) }
+                // Whisper may close its end early (an error): never a crash here.
+                runCatching { ParcelFileDescriptor.AutoCloseOutputStream(pipe[1]).use { it.write(pcm) } }
             }
             val json = service.hear(pipe[0], lang) ?: return null
             val segs = JSONObject(json).getJSONArray("segments")
@@ -185,20 +195,28 @@ class Voice(private val ctx: Context, private val onState: (VoiceState?) -> Unit
         } catch (e: Exception) {
             app.log("warn", "whisper", "error" to e.toString())
             null
+        } finally {
+            runCatching { pipe[0].close() }
+            conn?.let { runCatching { ctx.unbindService(it) } }
         }
     }
 
-    private suspend fun bind(): IWhisper? = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+    /** The service and its connection (to unbind); a null service when it isn't installed. */
+    private suspend fun bind(): Pair<IWhisper?, ServiceConnection?> = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
         val conn = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                if (cont.isActive) cont.resumeWith(Result.success(IWhisper.Stub.asInterface(binder)))
+                if (cont.isActive) cont.resumeWith(Result.success(IWhisper.Stub.asInterface(binder) to this))
             }
             override fun onServiceDisconnected(name: ComponentName?) {}
         }
         val ok = runCatching {
             ctx.bindService(Intent("uk.ccez.whisper.HEAR").setPackage("uk.ccez.whisper"), conn, Context.BIND_AUTO_CREATE)
         }.getOrDefault(false)
-        if (!ok && cont.isActive) cont.resumeWith(Result.success(null))
+        if (!ok) {
+            runCatching { ctx.unbindService(conn) }
+            if (cont.isActive) cont.resumeWith(Result.success(null to null))
+        }
+        cont.invokeOnCancellation { runCatching { ctx.unbindService(conn) } }
     }
 
     /** Live dictation: stop listening and use what was heard. */

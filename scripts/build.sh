@@ -19,7 +19,8 @@ echo "built $APK ($CCEZ_KEYS_VERSION_NAME)"
 [ "${NO_INSTALL:-}" = 1 ] && exit 0
 SERIAL="${KEYS_SERIAL:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}"
 [ -z "$SERIAL" ] && { echo "no phone connected; not installed"; exit 0; }
-adb -s "$SERIAL" install -r "$APK" >/dev/null && echo "installed on $SERIAL"
+if ! adb -s "$SERIAL" install -r "$APK" >/dev/null; then echo "install failed on $SERIAL" >&2; exit 1; fi
+echo "installed on $SERIAL"
 # It must start: a crash on launch would leave the phone without a keyboard.
 # Asked through its control point (no screen opens over what the owner is doing).
 adb -s "$SERIAL" logcat -c

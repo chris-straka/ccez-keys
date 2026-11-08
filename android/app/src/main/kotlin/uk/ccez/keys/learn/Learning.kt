@@ -29,6 +29,7 @@ import uk.ccez.keys.App
 suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
     addOnSuccessListener { cont.resume(it) }
     addOnFailureListener { cont.resumeWithException(it) }
+    addOnCanceledListener { cont.cancel() }
 }
 
 /**
@@ -47,7 +48,8 @@ object Translator {
 
     fun supports(lang: String) = TranslateLanguage.fromLanguageTag(lang) != null
 
-    private suspend fun models(vararg langs: String) {
+    /** False when a model is missing and `download` is false. */
+    private suspend fun models(download: Boolean, vararg langs: String): Boolean {
         val manager = RemoteModelManager.getInstance()
         for (tag in langs) {
             val lang = TranslateLanguage.fromLanguageTag(tag) ?: continue
@@ -56,30 +58,32 @@ object Translator {
                 if (lang in have) return@withLock
                 val model = TranslateRemoteModel.Builder(lang).build()
                 if (!manager.isModelDownloaded(model).await()) {
+                    if (!download) return false
                     App.instance.log("info", "model-download", "lang" to tag)
                     manager.download(model, DownloadConditions.Builder().build()).await()
                 }
                 have += lang
             }
         }
+        return true
     }
 
     /** `text` from one language into another, or null (no model yet, unsupported, failed). */
-    suspend fun translate(text: String, from: String, to: String): String? {
+    suspend fun translate(text: String, from: String, to: String, download: Boolean = true): String? {
         if (from == to) return text
         val source = TranslateLanguage.fromLanguageTag(from) ?: return null
         val target = TranslateLanguage.fromLanguageTag(to) ?: return null
         val key = "$from|$to|$text"
         synchronized(cache) { cache[key] }?.let { return it }
         return runCatching {
-            models(from, to)
+            if (!models(download, from, to)) return null
             val client = Translation.getClient(TranslatorOptions.Builder().setSourceLanguage(source).setTargetLanguage(target).build())
             try {
                 ONE.withLock { client.translate(text).await() }
             } finally {
                 client.close()
             }
-        }.onFailure { App.instance.log("warn", "translate-failed", "from" to from, "to" to to, "error" to it.javaClass.simpleName) }
+        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; App.instance.log("warn", "translate-failed", "from" to from, "to" to to, "error" to it.javaClass.simpleName) }
             .getOrNull()
             ?.also { synchronized(cache) { cache[key] = it } }
     }
@@ -94,7 +98,11 @@ object Dictionaries {
     private const val BASE = "https://github.com/chris-straka/ccez-lang-core/releases/download/dictionaries/"
     private val ONE = Mutex()
     private var sums: Map<String, String>? = null
-    private val failed = mutableSetOf<String>()
+    /** Languages whose download failed, and when: tried again after a while (the phone may have been offline). */
+    private val failed = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val RETRY_MS = 15 * 60 * 1000L
+
+    private fun gaveUp(lang: String) = failed[lang]?.let { System.currentTimeMillis() - it < RETRY_MS } == true
 
     private fun files(lang: String): List<String> = when (lang) {
         "zh" -> listOf("cedict.txt.gz")
@@ -113,15 +121,15 @@ object Dictionaries {
     /** Fetches and installs `lang`'s dictionary unless it's there. True when it was installed just now. */
     suspend fun ensure(lang: String): Boolean {
         val engine = App.instance.engine
-        if (complete(lang) || lang in failed) return false
+        if (complete(lang) || gaveUp(lang)) return false
         ONE.withLock {
-            if (complete(lang)) return false
+            if (complete(lang) || gaveUp(lang)) return false
             val started = System.nanoTime()
             try {
                 val sums = sums ?: fetchSums().also { sums = it }
                 // Only the main file when just the converter is missing.
                 val wanted = files(lang).filter { it in sums }.let { all -> if (engine.dictionaryReady(lang)) all.take(1) else all }
-                if (wanted.isEmpty()) { failed += lang; return false }
+                if (wanted.isEmpty()) { failed[lang] = Long.MAX_VALUE / 2; return false }
                 val dir = File(App.instance.cacheDir, "dict").apply { mkdirs() }
                 for (name in wanted) {
                     val file = File(dir, name)
@@ -129,6 +137,7 @@ object Dictionaries {
                     val sha = sha256(file)
                     if (sha != sums[name]) {
                         file.delete()
+                        this.sums = null // a new release may have replaced the files
                         error("checksum of $name")
                     }
                     when {
@@ -147,7 +156,8 @@ object Dictionaries {
                 App.instance.log("info", "dictionary", "lang" to lang, "ms" to (System.nanoTime() - started) / 1_000_000)
                 return true
             } catch (e: Exception) {
-                failed += lang
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                failed[lang] = System.currentTimeMillis()
                 App.instance.log("warn", "dictionary-failed", "lang" to lang, "error" to e.toString())
                 return false
             }
@@ -204,6 +214,8 @@ object Speaker {
             ready = status == TextToSpeech.SUCCESS
             pending?.let { (s, l) -> if (ready) speak(s, l) }
             pending = null
+            // No speech engine (or it failed): drop it, so the next tap tries again.
+            if (!ready) { tts?.shutdown(); tts = null }
         }.also { tts = it }
         if (!ready) { pending = text to lang; return }
         speak(text, lang)

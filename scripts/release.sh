@@ -12,7 +12,9 @@ APK="android/app/build/outputs/apk/release/app-release.apk"
 OUT="$(mktemp -d)"
 cp "$APK" "$OUT/ccez-keys-$TAG.apk"
 (cd "$OUT" && shasum -a 256 "ccez-keys-$TAG.apk" > "ccez-keys-$TAG.apk.sha256")
-if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then echo "$TAG exists: commit something new first" >&2; exit 1; fi
-git tag "$TAG" && git push -q origin "$TAG"
+if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG is released: commit something new first" >&2; exit 1; fi
+# A tag left by a run that stopped before its release is used again.
+git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag "$TAG"
+git push -q origin "$TAG"
 gh release create "$TAG" "$OUT/ccez-keys-$TAG.apk" "$OUT/ccez-keys-$TAG.apk.sha256" --title "ccez-keys $TAG" --notes "$(git log -1 --format=%s)" --latest
 echo "released $TAG"

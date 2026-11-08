@@ -22,8 +22,13 @@ pub fn romaji_to_kana(input: &str) -> (String, String) {
 /// converting, when nothing more is coming).
 pub fn romaji(input: &str, finish: bool) -> (String, String) {
     let (mut kana, pending) = romaji_inner(input);
-    if finish && pending == "n" {
-        kana.push('ん');
+    if finish {
+        // Nothing more is coming: a last "n"/"nn" is ん, other letters stay as typed.
+        match pending.as_str() {
+            "" => {}
+            "n" | "nn" => kana.push('ん'),
+            p => kana.push_str(p),
+        }
         return (kana, String::new());
     }
     (kana, pending)
@@ -42,6 +47,10 @@ fn romaji_inner(input: &str) -> (String, String) {
                 // "nn" is ん, unless a vowel follows: then the second n
                 // starts the next kana ("konnichiha" → こんにちは).
                 Some('n') => {
+                    // Typed one letter at a time: "nn" waits, a vowel may still follow.
+                    if i + 2 == s.len() {
+                        return (out, "nn".into());
+                    }
                     out.push('ん');
                     i += if s.get(i + 2).is_some_and(|c| "aiueoy".contains(*c)) { 1 } else { 2 };
                     continue;
@@ -237,6 +246,7 @@ fn write_index(all: HashMap<String, Vec<(usize, String)>>, out: &Path) -> std::i
         writeln!(f, "{key}\t{}", ranked.join("\t"))?;
         n += 1;
     }
+    f.flush()?;
     Ok(n)
 }
 

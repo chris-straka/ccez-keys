@@ -726,6 +726,9 @@ private fun AiSettings(version: Int) {
             if (!text.isNullOrEmpty() && !text.contains(' ')) {
                 uk.ccez.keys.learn.Secrets.set(ctx, text)
                 hint = uk.ccez.keys.learn.Secrets.hint(ctx)
+                // A key never stays in the clipboard history or the chip.
+                uk.ccez.keys.learn.Clips.remove(ctx, text)
+                App.instance.clearClipChip?.invoke()
             }
         }
         if (hint != null) Action("Remove") { uk.ccez.keys.learn.Secrets.set(ctx, null); hint = null }

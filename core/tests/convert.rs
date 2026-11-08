@@ -63,3 +63,27 @@ fn chinese_words_from_pinyin() {
     assert!(c.iter().any(|x| x.text == "我" && x.consumed == 2), "{c:?}");
     assert!(c.first().is_some_and(|x| !x.reading.is_empty()), "pinyin shown with tone marks: {c:?}");
 }
+
+/// Typed a letter at a time, the way the keyboard feeds it.
+fn typed(letters: &str) -> String {
+    let (mut kana, mut pending) = (String::new(), String::new());
+    for c in letters.chars() {
+        let (k, p) = ccez_keys_core::convert::romaji(&format!("{pending}{c}"), false);
+        kana.push_str(&k);
+        pending = p;
+    }
+    kana + &ccez_keys_core::convert::romaji(&pending, true).0
+}
+
+#[test]
+fn romaji_typed_letter_by_letter() {
+    assert_eq!(typed("konnichiha"), "こんにちは");
+    assert_eq!(typed("minna"), "みんな");
+    assert_eq!(typed("konna"), "こんな");
+    assert_eq!(typed("kanji"), "かんじ");
+    assert_eq!(typed("hon"), "ほん");
+    assert_eq!(typed("honn"), "ほん");
+    assert_eq!(typed("kitte"), "きって");
+    // Letters with no vowel yet aren't lost.
+    assert_eq!(typed("ok"), "おk");
+}

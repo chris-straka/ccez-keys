@@ -76,7 +76,7 @@ class Control : ContentProvider() {
                     app.log("info", "ai-key", "set" to value.isNotBlank())
                     if (value.isBlank()) "removed" else "saved"
                 }
-                "log" -> engine.logTail((arg?.toIntOrNull() ?: 50).toUInt())
+                "log" -> engine.logTail((arg?.toIntOrNull() ?: 50).coerceIn(1, 5000).toUInt())
                 else -> error("no command called $method")
             }
             out.putString("out", b64(result))

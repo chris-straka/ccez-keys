@@ -64,6 +64,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         savedState.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         typist = Typist(this, ui)
+        App.instance.clearClipChip = { ui.clip = null }
         App.instance.onRecovered = { runCatching { ui.panel = Panel.KEYS; ui.popup = null; typist.recover() } }
         clipboard = getSystemService(ClipboardManager::class.java)?.also { it.addPrimaryClipChangedListener(onClip) }
         App.instance.log("info", "keyboard-created")
@@ -83,7 +84,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        if (lifecycleRegistry.currentState != Lifecycle.State.DESTROYED) lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         typist.start(info)
         uk.ccez.keys.learn.WordSync.maybe()
         App.instance.pendingInsert?.let { t ->
@@ -98,7 +99,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         Updater.closed(this) { !isInputViewShown }
         typist.voice.close()
         typist.finish()
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.RESUMED)) lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     }
 
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
@@ -108,8 +109,9 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
 
     override fun onDestroy() {
         clipboard?.removePrimaryClipChangedListener(onClip)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        // Android finishes the input view inside super.onDestroy (a pause): destroyed after that.
         super.onDestroy()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
     }
 
     /** Text copied anywhere, unless the app marked it sensitive (password managers). */

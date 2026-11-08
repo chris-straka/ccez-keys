@@ -24,7 +24,12 @@ class App : Application() {
     /** Bumped whenever a setting changes (from the panel or `keys`). */
     val settingsVersion = MutableStateFlow(0)
 
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** Background work. A failure in one job is logged, never a crash of the keyboard. */
+    val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
+            runCatching { log("error", "job-failed", "error" to e.toString(), "at" to e.stackTrace.take(6).joinToString(" < ")) }
+        },
+    )
 
     override fun onCreate() {
         super.onCreate()
@@ -90,13 +95,20 @@ class App : Application() {
                     val now = System.currentTimeMillis()
                     recent.addLast(now)
                     while (recent.isNotEmpty() && now - recent.first() > 10_000) recent.removeFirst()
-                    runCatching { log("error", "recovered", "error" to e.toString(), "at" to e.stackTrace.take(8).joinToString(" < ")) }
+                    runCatching {
+                        // The innermost cause says what went wrong (the outer one is Android's wrapper).
+                        val root = generateSequence(e) { it.cause }.last()
+                        log("error", "recovered", "error" to e.toString(), "cause" to root.toString(), "at" to root.stackTrace.take(10).joinToString(" < "))
+                    }
                     if (recent.size >= 3) throw e
                     onRecovered?.invoke()
                 }
             }
         }
     }
+
+    /** Hides the clipboard chip (after the AI key was pasted from it). */
+    @Volatile var clearClipChip: (() -> Unit)? = null
 
     /** The keyboard resets its typing state after a recovered error. */
     @Volatile var onRecovered: (() -> Unit)? = null

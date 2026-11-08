@@ -34,6 +34,15 @@ pub enum KeysError {
     Bad(String),
 }
 
+/// Written whole or not at all: a kill mid-write (an update installing)
+/// would otherwise leave a cut file, read back as empty settings or words.
+fn write_safely(path: &std::path::Path, text: impl AsRef<[u8]>) {
+    let tmp = path.with_extension("tmp");
+    if fs::write(&tmp, text).is_ok() {
+        let _ = fs::rename(&tmp, path);
+    }
+}
+
 struct State {
     langs: HashMap<String, typing::Lang>,
     keys: HashMap<String, words::Neighbours>,
@@ -92,7 +101,7 @@ impl Engine {
     }
 
     fn save_settings(&self, s: &settings::Settings) {
-        let _ = fs::write(self.dir.join("settings.json"), s.to_json());
+        write_safely(&self.dir.join("settings.json"), s.to_json());
     }
 }
 
@@ -144,7 +153,7 @@ impl Engine {
         let mut s = self.lock();
         if let Some(l) = s.langs.remove(&lang) {
             if let Ok(t) = serde_json::to_string(&l.user) {
-                let _ = fs::write(self.user_path(&lang), t);
+                write_safely(&self.user_path(&lang), t);
             }
         }
         s.keys.remove(&lang);
@@ -166,7 +175,7 @@ impl Engine {
     }
 
     pub fn set_current_language(&self, lang: String) {
-        let _ = fs::write(self.dir.join("current-language"), &lang);
+        write_safely(&self.dir.join("current-language"), &lang);
         self.lock().current = lang;
     }
 
@@ -247,7 +256,7 @@ impl Engine {
         let s = self.lock();
         for (lang, l) in &s.langs {
             if let Ok(t) = serde_json::to_string(&l.user) {
-                let _ = fs::write(self.user_path(lang), t);
+                write_safely(&self.user_path(lang), t);
             }
         }
     }
@@ -346,12 +355,15 @@ impl Engine {
     /// cedict.txt.gz) with wordfreq's list (`freq`) for the order.
     pub fn build_converter(&self, lang: String, dict_path: String, freq: String) -> Result<u32, KeysError> {
         let out = self.converter_path(&lang);
+        // Built beside it and renamed, so a build cut short never leaves half a file.
+        let tmp = out.with_extension("tmp");
         let n = match lang.as_str() {
-            "ja" => convert::build_japanese(std::path::Path::new(&dict_path), &freq, &out),
-            "zh" => convert::build_chinese(std::path::Path::new(&dict_path), &freq, &out),
+            "ja" => convert::build_japanese(std::path::Path::new(&dict_path), &freq, &tmp),
+            "zh" => convert::build_chinese(std::path::Path::new(&dict_path), &freq, &tmp),
             _ => return Err(KeysError::Bad(format!("no converter for {lang}"))),
         }
         .map_err(|e| KeysError::Bad(e.to_string()))?;
+        fs::rename(&tmp, &out).map_err(|e| KeysError::Bad(e.to_string()))?;
         self.converters.lock().unwrap_or_else(|e| e.into_inner()).remove(&lang);
         self.log.write("info", "converter", &serde_json::json!({"lang": lang, "keys": n}).to_string());
         Ok(n as u32)
@@ -451,10 +463,9 @@ impl Engine {
         let id = self.lock().settings.get("ai.provider").and_then(|v| v.as_str()).unwrap_or("muse").to_string();
         p.thinking = ccez_lang_core::ai::provider(&id).and_then(|x| x.default_thinking).map(String::from).or(p.thinking);
         let m = ai::to_messages(&messages);
-        let mut so_far = String::new();
+        // The crate hands over the whole answer so far each time.
         let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |t| {
-            so_far.push_str(t);
-            sink.text(so_far.clone());
+            sink.text(t.to_string());
         }));
         self.log.write("info", "ask", &serde_json::json!({"ok": r.is_ok(), "turns": messages.len()}).to_string());
         r.map_err(|e| KeysError::Bad(e.to_string()))

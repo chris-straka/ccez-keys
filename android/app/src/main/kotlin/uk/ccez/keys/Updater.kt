@@ -80,7 +80,9 @@ object Updater {
         val sum = get(url(".apk.sha256") ?: return).inputStream.bufferedReader().readText().trim().split(Regex("\\s+")).first()
         val apk = File(ctx.cacheDir, "update.apk")
         get(apkUrl).inputStream.use { i -> apk.outputStream().use { i.copyTo(it) } }
-        val got = MessageDigest.getInstance("SHA-256").digest(apk.readBytes()).joinToString("") { "%02x".format(it) }
+        val md = MessageDigest.getInstance("SHA-256")
+        apk.inputStream().use { s -> val b = ByteArray(1 shl 16); while (true) { val n = s.read(b); if (n < 0) break; md.update(b, 0, n) } }
+        val got = md.digest().joinToString("") { "%02x".format(it) }
         if (got != sum) { apk.delete(); error("checksum") }
         if (!sameSigner(ctx, apk)) { apk.delete(); error("signed by another key") }
         App.instance.log("info", "update", "to" to code)
@@ -103,11 +105,17 @@ object Updater {
             if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
         val id = installer.createSession(params)
-        installer.openSession(id).use { s ->
-            s.openWrite("base.apk", 0, apk.length()).use { out -> apk.inputStream().use { it.copyTo(out) }; s.fsync(out) }
-            val intent = Intent(ctx, Done::class.java).putExtra("code", BuildConfig.VERSION_CODE.toLong()).putExtra("to", apk.name)
-            val pi = PendingIntent.getBroadcast(ctx, id, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            s.commit(pi.intentSender)
+        try {
+            installer.openSession(id).use { s ->
+                s.openWrite("base.apk", 0, apk.length()).use { out -> apk.inputStream().use { it.copyTo(out) }; s.fsync(out) }
+                val intent = Intent(ctx, Done::class.java).putExtra("code", BuildConfig.VERSION_CODE.toLong()).putExtra("to", apk.name)
+                val pi = PendingIntent.getBroadcast(ctx, id, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                s.commit(pi.intentSender)
+            }
+        } catch (e: Exception) {
+            // A session left open holds the APK's space until the next boot.
+            runCatching { installer.abandonSession(id) }
+            throw e
         }
     }
 

@@ -25,8 +25,9 @@ impl Log {
         if fs::metadata(&self.path).map(|m| m.len() > MAX_BYTES).unwrap_or(false) {
             let _ = fs::rename(&self.path, self.path.with_extension("1.jsonl"));
         }
+        // One write per line, so lines from several threads never interleave.
         if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&self.path) {
-            let _ = writeln!(f, "{line}");
+            let _ = f.write_all(format!("{line}\n").as_bytes());
         }
     }
 

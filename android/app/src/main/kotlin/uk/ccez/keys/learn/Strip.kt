@@ -24,6 +24,8 @@ data class StripView(
     val refined: Boolean = false,
     /** The AI is rewording it now. */
     val pending: Boolean = false,
+    /** The sentence it translates. */
+    val source: String = "",
 )
 
 /** A word under a suggestion, in a language being learned. */
@@ -64,8 +66,12 @@ class Strip(private val ui: UiState) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 64
     }
 
-    fun update(sentence: String, typingLang: String, allowed: Boolean, polite: Boolean = false) {
+    /** `ai`: the AI may reword it (never in a field that asks for no learning). */
+    private var ai = true
+
+    fun update(sentence: String, typingLang: String, allowed: Boolean, polite: Boolean = false, ai: Boolean = true) {
         this.polite = polite
+        this.ai = ai
         if (!allowed || !engine.settingBool("learning.strip") || sentence.isBlank() || !Translator.supports(typingLang)) {
             if (sentence.isBlank()) index = 0
             job?.cancel()
@@ -83,13 +89,14 @@ class Strip(private val ui: UiState) {
         }
     }
 
+    /** One language-ID client for the keyboard's life (each one holds native memory). */
+    private val langId by lazy { com.google.mlkit.nl.languageid.LanguageIdentification.getClient() }
+
     /** The language `sentence` is in, among those typed; the keyboard's when unsure. */
     private suspend fun written(sentence: String, keyboard: String): String {
         if (sentence.length < 4) return keyboard
         val typed = engine.typingLanguages()
-        val found = runCatching {
-            com.google.mlkit.nl.languageid.LanguageIdentification.getClient().identifyPossibleLanguages(sentence).await()
-        }.getOrNull().orEmpty()
+        val found = runCatching { langId.identifyPossibleLanguages(sentence).await() }.getOrNull().orEmpty()
         val best = found.filter { it.languageTag in typed }.maxByOrNull { it.confidence } ?: return keyboard
         return if (best.languageTag != keyboard && best.confidence >= 0.6f) best.languageTag else keyboard
     }
@@ -117,7 +124,7 @@ class Strip(private val ui: UiState) {
         val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }
         val next = emptyList<String>()
-        withContext(Dispatchers.Main) { ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false) }
+        withContext(Dispatchers.Main) { ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = source) }
         if (pending) {
             // Shown as pending once the pause has come and the AI is asked.
             app.scope.launch {
@@ -140,7 +147,7 @@ class Strip(private val ui: UiState) {
     /** True when the AI will be asked. */
     private fun refine(key: String, source: String, from: String, to: String): Boolean {
         refineJob?.cancel()
-        if (!engine.settingBool("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return false
+        if (!ai || !engine.settingBool("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return false
         // Sentences only: a word or two gets ML Kit's plain translation (owner, 2026-11-08:
         // "worth" became a whole phrase).
         if (source.split(Regex("\\s+")).count { it.isNotBlank() } < 3 && source.none { it in '\u3040'..'\u9fff' }) return false
@@ -167,7 +174,7 @@ class Strip(private val ui: UiState) {
             val out = mutableListOf<Gloss>()
             for (lang in targets(typingLang).take(4)) {
                 if (out.size == 2) break
-                val t = Translator.translate(word, typingLang, lang)?.trim()?.trimEnd('.', '!', '?') ?: continue
+                val t = Translator.translate(word, typingLang, lang, download = false)?.trim()?.trimEnd('.', '!', '?') ?: continue
                 if (t.isEmpty() || t.equals(word, ignoreCase = true) || t.count { it == ' ' } > 2) continue
                 if (engine.wordStatus(lang, t) == WordStatus.KNOWN) continue
                 out += Gloss(lang, Langs.of(app, lang)?.flag ?: lang, t)
