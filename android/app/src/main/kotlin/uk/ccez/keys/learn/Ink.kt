@@ -38,6 +38,10 @@ object InkReader {
             } finally {
                 r.close()
             }
-        }.onFailure { App.instance.log("warn", "ink-failed", "error" to it.toString()) }.getOrDefault(emptyList())
+        }.onFailure { e ->
+            var c: Throwable? = e
+            val chain = generateSequence(c) { it.cause }.take(4).joinToString(" <- ") { it.toString().take(160) }
+            App.instance.log("warn", "ink-failed", "error" to chain, "at" to (e.cause ?: e).stackTrace.take(4).joinToString(" < "))
+        }.getOrDefault(emptyList())
     }
 }
