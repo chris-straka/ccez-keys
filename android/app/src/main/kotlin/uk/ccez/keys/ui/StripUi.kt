@@ -62,7 +62,7 @@ private val STRIP_BG = Color(0xFF181818)
 /**
  * The learning strip: flags on the left (tap: next language; hold: put
  * this translation in instead of what was typed), the words with their
- * readings (tap: card; hold: Learning), 🔊 on the right.
+ * readings (tap: card), 🔊 on the right.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -149,8 +149,9 @@ private fun Word(w: StripWord, lang: String, typist: Typist, readings: Boolean) 
     Row(
         Modifier.let { m ->
             if (!w.word) m else m.clip(RoundedCornerShape(4.dp)).combinedClickable(
+                // Tap: the card (Learning / Known). Hold does nothing (owner, 2026-11-08:
+                // a hold meant as "known" saved the word to Learning).
                 onClick = { typist.strip.open(lang, w) },
-                onLongClick = { typist.markLearning(lang, w.lemma.ifEmpty { w.text }) },
             )
         },
     ) {

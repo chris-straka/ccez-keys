@@ -195,6 +195,8 @@ class Strip(private val ui: UiState) {
     fun setStatus(lang: String, word: String, status: WordStatus) {
         engine.setWordStatus(lang, word, status)
         WordSync.soon()
+        // A word now known leaves the line under the suggestion at once.
+        if (status == WordStatus.KNOWN) ui.glosses = ui.glosses.filterNot { it.lang == lang && it.word.equals(word, ignoreCase = true) }
         if (status == WordStatus.KNOWN && ui.strip?.lang == lang) {
             // Everything shown now known: on to the next language.
             job?.cancel()
