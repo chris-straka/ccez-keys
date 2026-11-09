@@ -176,15 +176,15 @@ private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, 
     // Furigana and pinyin are on the card, not over the line (owner, 2026-11-08: a shorter line).
     val readings = false
     val level = Modifier.padding(top = if (readings) 12.dp else 0.dp)
-    // The flag, muted (owner, 2026-11-08: it drew the eye; no flags for what's next).
+    // Every language the same: a small dim flag, then its words (owner, 2026-11-08).
+    // Hold the first flag: this translation in place of what was typed. No tap
+    // (swipes change language).
+    Spacer(Modifier.width(4.dp))
     Box(
-        Modifier.width(30.dp).clip(RoundedCornerShape(6.dp))
-            .combinedClickable(onClick = { typist.strip.step(1) }, onLongClick = { typist.replaceSentence(s.text, of = s.source) }),
+        level.clip(RoundedCornerShape(4.dp)).combinedClickable(onClick = {}, onLongClick = { typist.replaceSentence(s.text, of = s.source) }),
         contentAlignment = Alignment.Center,
-    ) {
-        Box(level) { MutedFlag(s.flag, 15) }
-    }
-    Spacer(Modifier.width(6.dp))
+    ) { MutedFlag(s.flag, 12) }
+    Spacer(Modifier.width(5.dp))
     if (more.isNotEmpty()) {
         // The same in the next languages, "chat | Katze | gato", as many as fit;
         // each word taps to its card, in its language.
@@ -192,7 +192,8 @@ private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, 
             Row(verticalAlignment = Alignment.CenterVertically) { s.words.forEach { w -> Word(w, s.lang, typist, readings) } }
             more.forEach { seg ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("|", color = Colors.dim, fontSize = 15.sp, modifier = level.padding(horizontal = 8.dp))
+                    // Space, not a bar: the flag marks where a language starts.
+                    Spacer(Modifier.width(16.dp))
                     Box(level) { MutedFlag(seg.flag, 12) }
                     Spacer(Modifier.width(5.dp))
                     seg.words.forEach { w -> Word(w, seg.lang, typist, readings) }
