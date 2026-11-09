@@ -3,6 +3,7 @@ package uk.ccez.keys.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -82,37 +83,29 @@ fun StripRow(s: StripView, typist: Typist) {
             .padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The flag, muted (owner, 2026-11-08: it drew the eye; no flags for what's next).
-        Box(
-            Modifier.width(30.dp).clip(RoundedCornerShape(6.dp))
-                .combinedClickable(onClick = { typist.strip.step(1) }, onLongClick = { typist.replaceSentence(s.text, of = s.source) }),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                s.flag,
-                fontSize = 15.sp,
-                modifier = Modifier.graphicsLayer {
-                    alpha = 0.55f
-                    if (android.os.Build.VERSION.SDK_INT >= 31) {
-                        renderEffect = android.graphics.RenderEffect.createColorFilterEffect(
-                            android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.25f) }),
-                        ).asComposeRenderEffect()
-                    }
-                },
-            )
-        }
-        Spacer(Modifier.width(6.dp))
-        // One line, kept scrolled to its end: the words being typed now show.
-        val scroll = androidx.compose.foundation.rememberScrollState()
-        androidx.compose.runtime.LaunchedEffect(s.text) { scroll.scrollTo(scroll.maxValue) }
-        CompositionLocalProvider(LocalLayoutDirection provides if (s.lang in RTL) LayoutDirection.Rtl else LayoutDirection.Ltr) {
-            Row(Modifier.weight(1f).horizontalScroll(scroll, enabled = false), verticalAlignment = Alignment.CenterVertically) {
-                // Room for furigana or pinyin only when a word has some, so
-                // plain words sit level with the flag.
-                val readings = s.words.any { w -> w.ruby.any { it.rt.isNotEmpty() } }
-                s.words.forEach { w -> Word(w, s.lang, typist, readings) }
-            }
-        }
+        // A new language slides in from the side swiped towards; the AI's wording
+        // fades in over ML Kit's. Typing updates the line in place.
+        androidx.compose.animation.AnimatedContent(
+            targetState = s,
+            contentKey = { it.lang to it.refined },
+            transitionSpec = {
+                val ease = androidx.compose.animation.core.FastOutSlowInEasing
+                if (initialState.lang != targetState.lang) {
+                    val dir = targetState.moved
+                    (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280, easing = ease)) { w -> dir * w / 4 } +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240, delayMillis = 40)))
+                        .togetherWith(
+                            androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280, easing = ease)) { w -> -dir * w / 4 } +
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)),
+                        )
+                } else {
+                    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(320, easing = ease))
+                        .togetherWith(androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)))
+                }.using(androidx.compose.animation.SizeTransform(clip = true))
+            },
+            modifier = Modifier.weight(1f),
+            label = "strip",
+        ) { v -> Row(verticalAlignment = Alignment.CenterVertically) { StripLine(v, typist) } }
         // The AI at work (a soft violet pulse) or its wording in place (✦);
         // nothing: ML Kit's quick translation.
         if (s.pending) {
@@ -129,6 +122,43 @@ fun StripRow(s: StripView, typist: Typist) {
                 .combinedClickable(onClick = { Speaker.say(ctx, s.text, s.lang) }, onLongClick = { typist.flipRegister() }),
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.sound, "Listen", tint = if (typist.polite()) Colors.accent else Colors.muted, modifier = Modifier.size(19.dp)) }
+    }
+}
+
+/** The flag and the words: what slides when the language changes. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, typist: Typist) {
+    // The flag, muted (owner, 2026-11-08: it drew the eye; no flags for what's next).
+    Box(
+        Modifier.width(30.dp).clip(RoundedCornerShape(6.dp))
+            .combinedClickable(onClick = { typist.strip.step(1) }, onLongClick = { typist.replaceSentence(s.text, of = s.source) }),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            s.flag,
+            fontSize = 15.sp,
+            modifier = Modifier.graphicsLayer {
+                alpha = 0.55f
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    renderEffect = android.graphics.RenderEffect.createColorFilterEffect(
+                        android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.25f) }),
+                    ).asComposeRenderEffect()
+                }
+            },
+        )
+    }
+    Spacer(Modifier.width(6.dp))
+    // One line, kept scrolled to its end: the words being typed now show.
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    androidx.compose.runtime.LaunchedEffect(s.text) { scroll.scrollTo(scroll.maxValue) }
+    CompositionLocalProvider(LocalLayoutDirection provides if (s.lang in RTL) LayoutDirection.Rtl else LayoutDirection.Ltr) {
+        Row(Modifier.weight(1f).horizontalScroll(scroll, enabled = false), verticalAlignment = Alignment.CenterVertically) {
+            // Room for furigana or pinyin only when a word has some, so
+            // plain words sit level with the flag.
+            val readings = s.words.any { w -> w.ruby.any { it.rt.isNotEmpty() } }
+            s.words.forEach { w -> Word(w, s.lang, typist, readings) }
+        }
     }
 }
 

@@ -26,6 +26,8 @@ data class StripView(
     val pending: Boolean = false,
     /** The sentence it translates. */
     val source: String = "",
+    /** How it got this language: 1 on down the owner's list, -1 back up (for the slide). */
+    val moved: Int = 1,
 )
 
 /** A word under a suggestion, in a language being learned. */
@@ -46,6 +48,8 @@ class Strip(private val ui: UiState) {
     private var job: Job? = null
     private var glossJob: Job? = null
     private var index = 0
+    /** The way the last change of language went (1 down the list, -1 up). */
+    private var moved = 1
     private var source = ""
     private var typing = ""
 
@@ -106,6 +110,7 @@ class Strip(private val ui: UiState) {
         val n = targets(typing).size
         if (n == 0) return
         index = ((index + by) % n + n) % n
+        moved = if (by < 0) -1 else 1
         job?.cancel()
         job = app.scope.launch { show(autoSteps = n) }
     }
@@ -125,7 +130,7 @@ class Strip(private val ui: UiState) {
         val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }
         val next = emptyList<String>()
-        withContext(Dispatchers.Main) { ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = source) }
+        withContext(Dispatchers.Main) { ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = source, moved = moved) }
         if (pending) {
             // Shown as pending once the pause has come and the AI is asked.
             app.scope.launch {
@@ -137,6 +142,7 @@ class Strip(private val ui: UiState) {
         if (known.isNotEmpty() && known.all { it.status == WordStatus.KNOWN } && autoSteps < all.size - 1) {
             delay(pause)
             index = (index + 1) % all.size
+            moved = 1
             show(autoSteps + 1)
         }
     }
