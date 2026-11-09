@@ -75,6 +75,12 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
             it.setViewTreeLifecycleOwner(this)
             it.setViewTreeSavedStateRegistryOwner(this)
         }
+        // A tap on the app above closes a word card (the keyboard hears of it, the app gets the tap too).
+        window.window?.let { w ->
+            w.addFlags(android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+            val inner = w.callback
+            if (inner != null && inner !is OutsideTaps) w.callback = OutsideTaps(inner) { if (ui.card != null) ui.card = null }
+        }
         return ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@KeysService)
             setViewTreeSavedStateRegistryOwner(this@KeysService)
@@ -123,5 +129,13 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         val text = clip.getItemAt(0).coerceToText(this)?.toString()?.trim().orEmpty().take(10_000)
         ui.clip = text.ifEmpty { null }
         if (text.isNotEmpty()) uk.ccez.keys.learn.Clips.add(this, text)
+    }
+}
+
+/** Passes everything on; a touch outside the keyboard runs `onOutside` first. */
+private class OutsideTaps(private val inner: android.view.Window.Callback, private val onOutside: () -> Unit) : android.view.Window.Callback by inner {
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (event.actionMasked == android.view.MotionEvent.ACTION_OUTSIDE) { onOutside(); return true }
+        return inner.dispatchTouchEvent(event)
     }
 }
