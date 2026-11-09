@@ -14,6 +14,8 @@ pub const ACCEPT: u32 = 2;
 /// One whole edit costs as much as this many e-folds of frequency.
 const EDIT_WEIGHT: f32 = 3.0;
 const COMPLETION_PENALTY: f32 = 0.4;
+/// Each edit past the first, on top of EDIT_WEIGHT.
+const FAR_WEIGHT: f32 = 3.0;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct UserWords {
@@ -87,7 +89,9 @@ pub fn suggest(lang: &Lang, others: &[&Lang], typed: &str, keys: &Neighbours, au
         .into_iter()
         .map(|c| {
             let e = &lang.lex.entries[c.id as usize];
-            let score = e.logf - EDIT_WEIGHT * c.cost - if c.completion { COMPLETION_PENALTY } else { 0.0 };
+            // Each edit past the first counts far more: one slip from a rarer word beats
+            // two from a very common one ("foood" → food, not for; "κάτιι" → κάτι, not και).
+            let score = e.logf - EDIT_WEIGHT * c.cost - FAR_WEIGHT * (c.cost - 1.0).max(0.0) - if c.completion { COMPLETION_PENALTY } else { 0.0 };
             Scored { score, logf: e.logf, cost: c.cost, completion: c.completion, word: &e.word }
         })
         .collect();
@@ -154,7 +158,10 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: 
     // A real word elsewhere ("allons", "manger" while still on English)
     // never becomes a different word here; only its accents may change.
     let elsewhere = other.is_some_and(|o| o > COMMON);
-    let mid_word = scored.first().is_some_and(|c| c.completion);
+    // Mid-word: the best is a longer word the typed letters start ("bonj").
+    // One letter longer is a missed letter, a fix like any other ("guessin"
+    // → guessing, "prioriy" → priority).
+    let mid_word = scored.first().is_some_and(|c| c.completion && c.word.chars().count() >= n + 2);
     match own {
         // A word as typed: only its capitals, accents or apostrophe can
         // change, and only to a spelling far commoner ("deja" → déjà,
@@ -167,6 +174,15 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: 
                 return pick(near.word);
             }
             if blocked(near.logf) {
+                return None;
+            }
+            // An accent typed is meant (a long press): never taken away
+            // ("mesuré" stays, though "mesure" is commoner).
+            let marks = |w: &str| {
+                use unicode_normalization::UnicodeNormalization;
+                w.nfd().filter(|c| ('\u{300}'..='\u{36f}').contains(c)).count()
+            };
+            if marks(near.word) < marks(typed) {
                 return None;
             }
             if near.logf >= own + MUCH_COMMONER {
@@ -190,7 +206,13 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: 
                 3..=4 => 1.0,
                 _ => 1.6,
             };
-            let clear = scored.iter().filter(|c| c.word != best.word).find(|c| !c.completion).is_none_or(|c2| best.score - c2.score >= 0.5);
+            // Ahead of the next other word ("Einer" is "einer" again, not a rival).
+            // Rivals too far off to be picked themselves don't count ("diesw": not "die").
+            let clear = scored
+                .iter()
+                .filter(|c| c.word.to_lowercase() != best.word.to_lowercase() && c.cost <= limit)
+                .find(|c| !c.completion)
+                .is_none_or(|c2| best.score - c2.score >= 0.5);
             if best.cost <= limit && clear { pick(best.word) } else { None }
         }
     }

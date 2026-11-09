@@ -240,3 +240,18 @@ fn next_words_from_the_language_then_the_owner() {
     // No Tatoeba stock names.
     assert!(!p("en", "with").iter().any(|w| w == "Tom" || w == "Mary"));
 }
+
+#[test]
+fn bench_findings_stay_fixed() {
+    let e = engine(&["en", "de", "fr"]);
+    // A missed last letter, and one missed inside.
+    assert_eq!(fix(&e, "en", "guessin").as_deref(), Some("guessing"));
+    assert_eq!(fix(&e, "en", "prioriy").as_deref(), Some("priority"));
+    // German's "einer"/"Einer" are one word, not rivals.
+    assert_eq!(fix(&e, "de", "einerr").as_deref(), Some("einer"));
+    assert_eq!(fix(&e, "de", "diesw").as_deref(), Some("diese"));
+    // One slip from a rarer word beats two from a very common one.
+    assert_eq!(fix(&e, "en", "foood").as_deref(), Some("food"));
+    // An accent typed stays.
+    assert_eq!(fix(&e, "fr", "mesuré"), None);
+}
