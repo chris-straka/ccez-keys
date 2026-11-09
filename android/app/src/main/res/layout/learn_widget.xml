@@ -1,93 +1,97 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A word being learned: its flag and reading, the word, what it means; Known, Later, Next. -->
+<!-- One row: the word (flag and reading over it, meaning under), then Known, Later, Next. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="14dp"
+    android:paddingEnd="10dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
 
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-        <TextView
-            android:id="@+id/flag"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:alpha="0.55"
-            android:textSize="13sp" />
-        <TextView
-            android:id="@+id/reading"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:textColor="#8E8E93"
-            android:textSize="13sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/word"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:textColor="#F2F2F2"
-        android:textSize="30sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/meaning"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
         android:layout_weight="1"
-        android:maxLines="2"
-        android:ellipsize="end"
-        android:textColor="#C7C7CC"
-        android:textSize="15sp" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:id="@+id/flag"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:alpha="0.55"
+                android:textSize="11sp" />
+            <TextView
+                android:id="@+id/reading"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#8E8E93"
+                android:textSize="11sp" />
+        </LinearLayout>
         <TextView
-            android:id="@+id/known"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@drawable/widget_button"
-            android:gravity="center"
-            android:text="Known"
+            android:id="@+id/word"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:textColor="#F2F2F2"
-            android:textSize="14sp" />
+            android:textSize="20sp"
+            android:textStyle="bold" />
         <TextView
-            android:id="@+id/later"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:background="@drawable/widget_button"
-            android:gravity="center"
-            android:text="Later"
-            android:textColor="#F2F2F2"
-            android:textSize="14sp" />
-        <TextView
-            android:id="@+id/next"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:background="@drawable/widget_button"
-            android:gravity="center"
-            android:text="Next"
-            android:textColor="#F2F2F2"
-            android:textSize="14sp" />
+            android:id="@+id/meaning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="#C7C7CC"
+            android:textSize="13sp" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/known"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginStart="8dp"
+        android:background="@drawable/widget_button"
+        android:gravity="center"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:text="Known"
+        android:textColor="#F2F2F2"
+        android:textSize="12sp" />
+    <TextView
+        android:id="@+id/later"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginStart="5dp"
+        android:background="@drawable/widget_button"
+        android:gravity="center"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:text="Later"
+        android:textColor="#F2F2F2"
+        android:textSize="12sp" />
+    <TextView
+        android:id="@+id/next"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginStart="5dp"
+        android:background="@drawable/widget_button"
+        android:gravity="center"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:text="Next"
+        android:textColor="#F2F2F2"
+        android:textSize="12sp" />
 </LinearLayout>
