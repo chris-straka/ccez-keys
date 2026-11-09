@@ -46,6 +46,8 @@ class App : Application() {
             val m = android.appwidget.AppWidgetManager.getInstance(this)
             if (m.getAppWidgetIds(android.content.ComponentName(this, uk.ccez.keys.learn.WordWidget::class.java)).isNotEmpty()) {
                 uk.ccez.keys.learn.WordWidget.schedule(this)
+                // Drawn again now (an update leaves it empty until its next turn).
+                uk.ccez.keys.learn.WordWidget.refresh(this, advance = false)
             }
         }
     }

@@ -43,6 +43,14 @@
             </intent-filter>
         </activity>
 
+        <!-- The widget's word card, over the home screen. -->
+        <activity
+            android:name=".learn.WordCardActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="uk.ccez.keys.card"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <activity
             android:name=".CameraActivity"
             android:exported="false"

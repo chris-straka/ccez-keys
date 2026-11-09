@@ -376,7 +376,7 @@ fun BoxScope.CardOverlay(c: CardView, ui: UiState, typist: Typist) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.StatusButton(label: String, on: Boolean, onTap: () -> Unit) {
+internal fun androidx.compose.foundation.layout.RowScope.StatusButton(label: String, on: Boolean, onTap: () -> Unit) {
     Box(
         Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(8.dp))
             .background(if (on) Color(0xFF3A2422) else Color(0xFF2A2A2C)).combinedClickable(onClick = onTap),

@@ -141,7 +141,11 @@ class WordWidget : AppWidgetProvider() {
                 view.setOnClickPendingIntent(R.id.next, tap(NEXT, 1))
                 view.setOnClickPendingIntent(R.id.known, tap(KNOWN, 2))
                 view.setOnClickPendingIntent(R.id.later, tap(LATER, 3))
-                view.setOnClickPendingIntent(R.id.word, tap(SAY, 4))
+                // Anywhere on the word: its card (said as it opens).
+                val card = pick?.let { (l, w) ->
+                    PendingIntent.getActivity(ctx, 5, WordCardActivity.intent(ctx, l, w), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                }
+                card?.let { view.setOnClickPendingIntent(R.id.root, it) }
                 val manager = AppWidgetManager.getInstance(ctx)
                 manager.updateAppWidget(ComponentName(ctx, WordWidget::class.java), view)
             }
