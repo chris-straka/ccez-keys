@@ -72,13 +72,24 @@ impl Worker {
             }
             let mut cache: HashMap<(String, String), String> = HashMap::new();
             let mut missing: Vec<String> = Vec::new();
-            while let Ok(mut ask) = rx.recv() {
+            let mut next: Option<Ask> = None;
+            loop {
+                let Some(mut ask) = next.take().or_else(|| rx.recv().ok()) else { break };
                 // Only the newest: typing moved on past the others.
                 while let Ok(newer) = rx.try_recv() {
                     ask = newer;
                 }
                 let mut lines = Vec::new();
-                for lang in &ask.langs {
+                'langs: for lang in &ask.langs {
+                    // A newer sentence: this one's done with.
+                    if let Ok(newer) = rx.try_recv() {
+                        let mut n = newer;
+                        while let Ok(more) = rx.try_recv() {
+                            n = more;
+                        }
+                        next = Some(n);
+                        break 'langs;
+                    }
                     let key = (lang.clone(), ask.text.clone());
                     let got = if let Some(t) = cache.get(&key) {
                         Some(t.clone())
@@ -105,8 +116,10 @@ impl Worker {
                     if let Some(t) = got.filter(|t| !t.trim().eq_ignore_ascii_case(ask.text.trim())) {
                         lines.push((lang.clone(), t));
                     }
-                    // Enough for one line: the rest wouldn't show.
-                    if lines.iter().map(|(_, t)| t.chars().count() + 4).sum::<usize>() > 90 {
+                    // Each language as it comes (Apple's translator does one at a time, ~0.3 s each).
+                    *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines: lines.clone() });
+                    // Four lines at most show.
+                    if lines.len() == 4 {
                         break;
                     }
                 }

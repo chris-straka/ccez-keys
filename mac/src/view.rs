@@ -20,9 +20,14 @@ const PAD_Y: f64 = 7.0;
 pub struct View {
     panel: Retained<NSPanel>,
     bg: Retained<NSBox>,
-    label: Retained<NSTextField>,
+    /// One label per language, stacked (owner, 2026-11-09: each on its own line).
+    labels: Vec<Retained<NSTextField>>,
     shown: std::cell::Cell<bool>,
 }
+
+/// Most languages shown at once.
+pub const LINES: usize = 4;
+const GAP: f64 = 3.0;
 
 fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
@@ -51,23 +56,48 @@ impl View {
         bg.setFillColor(&NSColor::colorWithSRGBRed_green_blue_alpha(0.12, 0.12, 0.13, 0.96));
         bg.setContentViewMargins(NSSize::new(0.0, 0.0));
         panel.setContentView(Some(&bg));
-        let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
-        label.setFont(Some(&NSFont::systemFontOfSize(14.0)));
-        label.setTextColor(Some(&NSColor::colorWithSRGBRed_green_blue_alpha(0.95, 0.95, 0.95, 1.0)));
-        label.setLineBreakMode(NSLineBreakMode::ByTruncatingHead);
-        label.setUsesSingleLineMode(true);
-        bg.addSubview(&label);
-        View { panel, bg, label, shown: std::cell::Cell::new(false) }
+        let labels = (0..LINES)
+            .map(|_| {
+                let l = NSTextField::labelWithString(&NSString::from_str(""), mtm);
+                l.setFont(Some(&NSFont::systemFontOfSize(14.0)));
+                l.setTextColor(Some(&NSColor::colorWithSRGBRed_green_blue_alpha(0.95, 0.95, 0.95, 1.0)));
+                // A long sentence shows its end: the words being typed.
+                l.setLineBreakMode(NSLineBreakMode::ByTruncatingHead);
+                l.setUsesSingleLineMode(true);
+                bg.addSubview(&l);
+                l
+            })
+            .collect();
+        View { panel, bg, labels, shown: std::cell::Cell::new(false) }
     }
 
-    /// Puts `text` up, under `caret` (top-left screen points) or at the foot of the screen.
-    pub fn show(&self, mtm: MainThreadMarker, text: &str, caret: Option<Rect>) {
-        self.label.setStringValue(&NSString::from_str(text));
-        self.label.sizeToFit();
-        let s = self.label.frame().size;
-        let w = (s.width + 2.0 * PAD_X).min(MAX_W);
-        let h = s.height + 2.0 * PAD_Y;
-        self.label.setFrame(rect(PAD_X, PAD_Y, w - 2.0 * PAD_X, s.height));
+    /// Puts `lines` up (one language each, the first on top), under `caret`
+    /// (top-left screen points) or at the foot of the screen.
+    pub fn show(&self, mtm: MainThreadMarker, lines: &[String], caret: Option<Rect>) {
+        let n = lines.len().min(LINES);
+        if n == 0 {
+            return self.hide();
+        }
+        let mut widest: f64 = 0.0;
+        let mut line_h: f64 = 18.0;
+        for (i, l) in self.labels.iter().enumerate() {
+            let text = lines.get(i).filter(|_| i < n).map(String::as_str).unwrap_or("");
+            l.setStringValue(&NSString::from_str(text));
+            l.sizeToFit();
+            l.setHidden(i >= n);
+            if i < n {
+                let s = l.frame().size;
+                widest = widest.max(s.width);
+                line_h = s.height;
+            }
+        }
+        let w = (widest + 2.0 * PAD_X).min(MAX_W);
+        let h = n as f64 * line_h + (n as f64 - 1.0) * GAP + 2.0 * PAD_Y;
+        // Top line first: AppKit counts y from the bottom.
+        for (i, l) in self.labels.iter().take(n).enumerate() {
+            let y = h - PAD_Y - (i as f64 + 1.0) * line_h - i as f64 * GAP;
+            l.setFrame(rect(PAD_X, y, w - 2.0 * PAD_X, line_h));
+        }
         let screens = NSScreen::screens(mtm);
         let primary_h = screens.firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
         let (x, y) = match caret {

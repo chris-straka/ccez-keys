@@ -32,4 +32,9 @@ class StripTest {
         assertEquals(null, articleFrom("fr", "les", "livres"))
         assertEquals(null, articleFrom("de", "ein", "Buch"))
     }
+
+    @Test fun formTags() {
+        assertEquals("past participle · unterhalten", uk.ccez.keys.learn.WordWidget.formTag("participle past of unterhalten"))
+        assertEquals("third-person singular present indicative · être", uk.ccez.keys.learn.WordWidget.formTag("third-person singular present indicative of être"))
+    }
 }
