@@ -59,6 +59,38 @@ objc2::define_class!(
     }
 );
 
+/// A row's right-click tag (-1_000_000 - row): its line replaces the sentence typed.
+pub fn swap_tag(row: usize) -> isize {
+    -1_000_000 - row as isize
+}
+
+objc2::define_class!(
+    /// The preview's buttons: a click does what its tag says; a right-click
+    /// on any of a line's buttons asks for that line in place of the sentence.
+    #[unsafe(super(NSButton, objc2_app_kit::NSControl, objc2_app_kit::NSView, objc2_app_kit::NSResponder, objc2_foundation::NSObject))]
+    #[thread_kind = objc2::MainThreadOnly]
+    #[name = "CcezKeysButton"]
+    pub struct LineButton;
+
+    impl LineButton {
+        #[unsafe(method(rightMouseDown:))]
+        fn right_mouse_down(&self, _event: &objc2_app_kit::NSEvent) {
+            let tag = self.tag();
+            let row = if tag >= 0 { tag / 1000 } else if tag <= -1000 && tag > -1_000_000 { -1000 - tag } else { return };
+            CLICK.with(|c| if let Some(f) = c.borrow().as_ref() { f(swap_tag(row as usize)) });
+        }
+    }
+);
+
+/// A borderless button of the preview's kind (right-click aware).
+fn line_button(mtm: MainThreadMarker, title: &str, clicker: &Clicker) -> Retained<NSButton> {
+    let _ = mtm;
+    let b: Retained<LineButton> = unsafe {
+        objc2::msg_send![<LineButton as objc2::ClassType>::class(), buttonWithTitle: &*NSString::from_str(title), target: Some(clicker), action: Some(objc2::sel!(clicked:))]
+    };
+    Retained::into_super(b)
+}
+
 pub struct View {
     panel: Retained<NSPanel>,
     bg: Retained<NSBox>,
@@ -106,7 +138,7 @@ fn label(mtm: MainThreadMarker, text: &str, size: f64, grey: bool) -> Retained<N
 /// as on the phone, known dimmed); a click opens its card.
 fn word_button(mtm: MainThreadMarker, clicker: &Clicker, t: &Tok, size: f64, tag: isize) -> Retained<NSButton> {
     use objc2_foundation::{NSAttributedString, NSDictionary};
-    let b = unsafe { NSButton::buttonWithTitle_target_action(&NSString::from_str(&t.text), Some(clicker), Some(objc2::sel!(clicked:)), mtm) };
+    let b = line_button(mtm, &t.text, clicker);
     b.setBordered(false);
     b.setTag(tag);
     let color = match t.status {
@@ -279,7 +311,7 @@ impl View {
         for (ri, (parts, rh)) in built.into_iter().enumerate() {
             let base = top - rh;
             // Under the words: the rest of the line, which reads it aloud too.
-            let hit = unsafe { NSButton::buttonWithTitle_target_action(&NSString::from_str(""), Some(&*self.clicker), Some(objc2::sel!(clicked:)), mtm) };
+            let hit = line_button(mtm, "", &self.clicker);
             hit.setBordered(false);
             hit.setTransparent(true);
             hit.setTag(row_tag(ri));

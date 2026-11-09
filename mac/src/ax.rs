@@ -215,3 +215,33 @@ pub fn describe() -> String {
     let get = |a: &str| attr(el.0, a).and_then(|r| string(&r)).unwrap_or_default();
     format!("role={} subrole={} frame={:?}", get("AXRole"), get("AXSubrole"), frame_of(el.0))
 }
+
+/// The focused field's text range `start..start+len` (UTF-16 units, as AX
+/// counts) replaced by `text` through Accessibility. False when the app
+/// doesn't take it (many web and Electron fields): then `selected` says
+/// whether at least the range is selected, so typing replaces it.
+pub fn replace_range(start: usize, len: usize, text: &str) -> (bool, bool) {
+    let Some(el) = focused_element(0.5) else { return (false, false) };
+    let range = CFRange { location: start as isize, length: len as isize };
+    let value = Owned(unsafe { AXValueCreate(AX_CFRANGE, &range as *const _ as *const c_void) });
+    let name = s("AXSelectedTextRange");
+    unsafe { AXUIElementSetAttributeValue(el.0, Retained::as_ptr(&name) as Ref, value.0) };
+    let selected = attr(el.0, "AXSelectedTextRange").is_some_and(|r| {
+        let mut got = CFRange::default();
+        let ok = unsafe { AXValueGetValue(r.0, AX_CFRANGE, &mut got as *mut _ as *mut c_void) };
+        ok && got.location == range.location && got.length == range.length
+    });
+    if !selected {
+        return (false, false);
+    }
+    let before = attr(el.0, "AXValue").and_then(|r| string(&r)).unwrap_or_default();
+    let new = s(text);
+    let name = s("AXSelectedText");
+    let err = unsafe { AXUIElementSetAttributeValue(el.0, Retained::as_ptr(&name) as Ref, Retained::as_ptr(&new) as Ref) };
+    // Taken only if the field now holds it where the sentence was.
+    let after = attr(el.0, "AXValue").and_then(|r| string(&r)).unwrap_or_default();
+    let units: Vec<u16> = after.encode_utf16().collect();
+    let want: Vec<u16> = text.encode_utf16().collect();
+    let done = err == 0 && after != before && units.get(start..start + want.len()) == Some(&want[..]);
+    (done, true)
+}

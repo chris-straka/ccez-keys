@@ -9,6 +9,8 @@
 #[cfg(target_os = "macos")]
 mod ax;
 #[cfg(target_os = "macos")]
+mod keys;
+#[cfg(target_os = "macos")]
 mod learn;
 #[cfg(target_os = "macos")]
 mod prefs;
@@ -74,6 +76,9 @@ mod app {
          * the key its meaning-here comes back under. */
         card_view: RefCell<Option<(String, String, String, u8, String)>>,
         meanings: std::sync::Arc<crate::meaning::Meanings>,
+        /** A translation put in place of the sentence (right-click): not translated
+         * again while the sentence still starts with it. */
+        swapped: RefCell<String>,
         prefs: RefCell<crate::prefs::Prefs>,
         /** The app being typed in (bundle id, name): the menu's "Off in …" is about it. */
         typing_in: RefCell<Option<(String, String)>>,
@@ -150,6 +155,17 @@ mod app {
         // The sentence typed, still shown after its full stop and a space (as on
         // the phone); a new line or an emptied field starts blank (sentence_of).
         let sentence = sentence_of(field.before.clone());
+        // Just swapped in for a translation (and typed on from there): nothing to show.
+        {
+            let mut sw = app.swapped.borrow_mut();
+            if !sw.is_empty() {
+                if sentence.starts_with(sw.as_str()) {
+                    app.view.hide();
+                    return;
+                }
+                sw.clear();
+            }
+        }
         // Nothing secret is ever shown or translated: the sentence, or what's near it.
         let tail: String = field.before.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
         if sentence.trim().is_empty() || looks_secret(tail) {
@@ -278,6 +294,41 @@ mod app {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// Right-click on a line: that translation in place of the sentence typed
+    /// (spaces after it kept). Through Accessibility where the app takes it,
+    /// otherwise selected and typed over, or deleted and typed; ⌘Z undoes it.
+    fn swap(app: &App, row: usize) {
+        let rows = app.line.borrow().clone();
+        let Some(r) = rows.get(row).filter(|r| !r.toks.iter().any(|t| t.key == PENDING)) else { return };
+        let text: String = r.toks.iter().map(|t| t.text.as_str()).collect::<String>().trim().to_string();
+        let Some(f) = ax::focused().filter(|f| !f.secure) else { return };
+        let sentence = sentence_of(f.before.clone());
+        // Only the sentence this line translates, as it is now.
+        if sentence.is_empty() || sentence != *app.sentence.borrow() || looks_secret(f.before.clone()) {
+            return;
+        }
+        let trimmed = f.before.trim_end();
+        if !trimmed.ends_with(sentence.as_str()) {
+            return;
+        }
+        let trailing = &f.before[trimmed.len()..];
+        let end = trimmed.encode_utf16().count();
+        let len = sentence.encode_utf16().count();
+        let (done, selected) = ax::replace_range(end - len, len, &text);
+        if !done {
+            if selected {
+                crate::keys::type_text(&text);
+            } else {
+                crate::keys::delete(sentence.chars().count() + trailing.chars().count());
+                crate::keys::type_text(&format!("{text}{trailing}"));
+            }
+        }
+        log("info", &format!("swapped a sentence for {} ({})", r.lang, if done { "accessibility" } else if selected { "typed over" } else { "retyped" }));
+        *app.swapped.borrow_mut() = text;
+        app.line.borrow_mut().clear();
+        app.view.hide();
+    }
+
     /// The card's meaning: what it means here (on-device model) over the dictionary's.
     fn card_text(here: Option<&str>, dict: &str) -> String {
         match here {
@@ -384,7 +435,9 @@ mod app {
             println!("replaced: {replaced}");
             return;
         }
-        if let Some(i) = args.iter().position(|a| a == "--click") {
+        // `--rclick x y`: the same with the right button.
+        if let Some(i) = args.iter().position(|a| a == "--click" || a == "--rclick") {
+            let right = args[i] == "--rclick";
             use std::ffi::c_void;
             #[repr(C)]
             struct P { x: f64, y: f64 }
@@ -395,8 +448,9 @@ mod app {
             }
             let x: f64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(0.0);
             let y: f64 = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(0.0);
-            for kind in [1u32, 2u32] {
-                unsafe { CGEventPost(0, CGEventCreateMouseEvent(std::ptr::null(), kind, P { x, y }, 0)) };
+            let (kinds, button) = if right { ([3u32, 4u32], 1u32) } else { ([1u32, 2u32], 0u32) };
+            for kind in kinds {
+                unsafe { CGEventPost(0, CGEventCreateMouseEvent(std::ptr::null(), kind, P { x, y }, button)) };
                 std::thread::sleep(std::time::Duration::from_millis(60));
             }
             return;
@@ -432,6 +486,7 @@ mod app {
             card: RefCell::default(),
             card_view: RefCell::default(),
             meanings: crate::meaning::Meanings::new(&dirs()),
+            swapped: RefCell::default(),
             langs,
             flags: flags(),
             paused: Cell::new(false),
@@ -520,6 +575,7 @@ mod app {
                         // Asked again: the cached translation comes back with the new status.
                         app.sentence.borrow_mut().clear();
                     }
+                    t if t <= -1_000_000 => swap(app, (-1_000_000 - t) as usize),
                     t if t <= -1000 => {
                         // A line's flag or blank space: the line read aloud.
                         let rows = app.line.borrow().clone();

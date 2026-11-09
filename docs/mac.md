@@ -41,7 +41,7 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
   `~/.config/ccez-keys/words-server` (one line, outside the repo).
 - Dictionaries (ja, zh) come from ccez-lang-core's release, checked
   against SHA256SUMS.
-- Not yet: Muse rewording, the card's "here" meaning, hover to hear.
+- Right-click a line: it replaces the sentence typed (Accessibility where the app takes it, else typed over; ⌘Z undoes it). Not yet: hover to hear.
 
 ## Next (owner, 2026-11-09)
 
