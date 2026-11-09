@@ -90,3 +90,23 @@ pub fn mark_after_space(lang: String, mark: String) -> Option<String> {
     let french = lang == "fr" && "!?;:".contains(mark.as_str());
     Some(format!("{}{} ", if french { "\u{a0}" } else { "" }, mark))
 }
+
+/// Text that looks like a password, an API key or a token: never shown,
+/// translated or sent to the AI. A long run of letters and digits mixed,
+/// or a known key prefix.
+#[uniffi::export]
+pub fn looks_secret(text: String) -> bool {
+    const PREFIXES: &[&str] = &["sk-", "sk_", "pk_", "ghp_", "gho_", "ghs_", "github_pat_", "xox", "AKIA", "AIza", "eyJ", "glpat-", "-----BEGIN"];
+    text.split_whitespace().any(|t| {
+        let t = t.trim_matches(|c: char| "\"'`,;()[]{}<>".contains(c));
+        if PREFIXES.iter().any(|p| t.starts_with(p)) && t.len() >= 12 {
+            return true;
+        }
+        let n = t.chars().count();
+        let digits = t.chars().filter(char::is_ascii_digit).count();
+        let letters = t.chars().filter(char::is_ascii_alphabetic).count();
+        let upper = t.chars().filter(char::is_ascii_uppercase).count();
+        // Long and unbroken, letters mixed with digits (or odd capitals), as keys and passwords are.
+        n >= 16 && t.is_ascii() && !t.contains("://") && letters > 0 && (digits >= 2 || (upper >= 3 && upper < letters)) && t.chars().all(|c| c.is_ascii_graphic())
+    })
+}
