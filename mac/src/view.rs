@@ -73,6 +73,17 @@ objc2::define_class!(
     pub struct LineButton;
 
     impl LineButton {
+        // A pointing hand over words (they open cards).
+        #[unsafe(method(mouseEntered:))]
+        fn mouse_entered(&self, _event: &objc2_app_kit::NSEvent) {
+            objc2_app_kit::NSCursor::pointingHandCursor().set();
+        }
+
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited(&self, _event: &objc2_app_kit::NSEvent) {
+            objc2_app_kit::NSCursor::arrowCursor().set();
+        }
+
         #[unsafe(method(rightMouseDown:))]
         fn right_mouse_down(&self, _event: &objc2_app_kit::NSEvent) {
             let tag = self.tag();
@@ -81,6 +92,15 @@ objc2::define_class!(
         }
     }
 );
+
+/// The pointing hand over `b` (a word), even though the preview never has focus.
+fn pointer(b: &NSButton) {
+    use objc2::AllocAnyThread;
+    use objc2_app_kit::{NSTrackingArea, NSTrackingAreaOptions};
+    let opts = NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::ActiveAlways | NSTrackingAreaOptions::InVisibleRect;
+    let area = unsafe { NSTrackingArea::initWithRect_options_owner_userInfo(NSTrackingArea::alloc(), b.bounds(), opts, Some(b), None) };
+    b.addTrackingArea(&area);
+}
 
 /// A borderless button of the preview's kind (right-click aware).
 fn line_button(mtm: MainThreadMarker, title: &str, clicker: &Clicker) -> Retained<NSButton> {
@@ -273,6 +293,7 @@ impl View {
                 }
                 let v: Retained<objc2_app_kit::NSView> = if t.word {
                     let b = word_button(mtm, &self.clicker, t, size, (ri * 1000 + ti) as isize);
+                    pointer(&b);
                     objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(b))
                 } else {
                     // Marks as tight as words (a label pads itself); a click reads the line.
@@ -385,8 +406,8 @@ impl View {
     }
 
     /// A word's card beside the preview: the word, what it means, Learning and
-    /// Known (lit when it is), and a way to close it. Button tags: -1 close,
-    /// -2 learning, -3 known.
+    /// Known (lit when it is), Copy, and a way to close it. Button tags: -1
+    /// close, -2 learning, -3 known, -4 copy.
     pub fn open_card(&self, mtm: MainThreadMarker, head: &str, sub: &str, meaning: &str, status: u8) {
         let Some(content) = self.card_bg.contentView() else { return };
         for v in content.subviews().iter() {
@@ -408,6 +429,7 @@ impl View {
         let learning = btn("Learning", -2, status == 1);
         let known = btn("Known", -3, status == 2);
         let close = btn("✕", -1, false);
+        let copy = btn("Copy", -4, false);
         // The reading and form, small and grey under the word.
         let small = (!sub.is_empty()).then(|| label(mtm, sub, 11.5, true));
         let sh = small.as_ref().map(|l| l.frame().size.height + 1.0).unwrap_or(0.0);
@@ -424,7 +446,8 @@ impl View {
         mean.setFrame(rect(12.0, y, w - 24.0, mh));
         learning.setFrame(rect(12.0, 10.0, 90.0, 22.0));
         known.setFrame(rect(110.0, 10.0, 90.0, 22.0));
-        for v in [&*word as &objc2_app_kit::NSView, &*mean, &*learning, &*known, &*close] {
+        copy.setFrame(rect(208.0, 10.0, 80.0, 22.0));
+        for v in [&*word as &objc2_app_kit::NSView, &*mean, &*learning, &*known, &*copy, &*close] {
             content.addSubview(v);
         }
         self.card_size.set((w, h));

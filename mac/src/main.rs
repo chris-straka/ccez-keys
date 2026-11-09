@@ -53,6 +53,11 @@ mod app {
     const PENDING: &str = "\u{1}pending";
     /** The pause in typing that asks for a translation. */
     const PAUSE: Duration = Duration::from_millis(200);
+    /** Typing has stopped this long: the preview may show (never while typing). */
+    const STILL: Duration = Duration::from_millis(500);
+    /** Languages come one at a time (Apple's translator): shown together when all
+     * are in, or what's ready after this long, the rest held open. */
+    const ALL_IN: Duration = Duration::from_millis(1500);
 
     /// Apps where nothing shows (docs/mac.md, decision 4): terminals, code
     /// editors, password managers, Claude.
@@ -87,6 +92,9 @@ mod app {
         changed: Cell<Instant>,
         seq: Cell<u64>,
         asked: Cell<bool>,
+        asked_at: Cell<Instant>,
+        /** Every language of the newest ask is in. */
+        complete: Cell<bool>,
         woken: RefCell<std::collections::HashSet<i32>>,
         line: RefCell<Vec<crate::view::Row>>,
         /** When the preview last changed on screen: it stays LINGER from then. */
@@ -202,6 +210,8 @@ mod app {
         // Translated once typing pauses a moment, not for every letter.
         if !app.asked.get() && app.changed.get().elapsed() >= PAUSE {
             app.asked.set(true);
+            app.asked_at.set(Instant::now());
+            app.complete.set(false);
             app.seq.set(app.seq.get() + 1);
             let shown = app.prefs.borrow().shown;
             let langs: Vec<String> = if shown == 0 { app.langs.clone() } else { app.langs.iter().take(shown + 2).cloned().collect() };
@@ -220,12 +230,17 @@ mod app {
                 let line = render(app, &shown);
                 *app.line.borrow_mut() = line;
                 app.appeared.set(Instant::now());
+                app.complete.set(shown.pending.is_empty());
             } else {
                 // An older sentence's: put back for nothing, wait for the newest.
             }
         }
-        // From when it showed, not from the last key: translating takes a moment.
-        let fresh = app.changed.get().elapsed() < LINGER || app.appeared.get().elapsed() < LINGER || option_held();
+        // Not while typing; once stopped, every language together (or what's in
+        // after a moment); then a while from when it showed.
+        let typing = app.changed.get().elapsed() < STILL;
+        let ready = app.complete.get() || app.asked_at.get().elapsed() >= ALL_IN;
+        let recent = app.changed.get().elapsed() < LINGER || app.appeared.get().elapsed() < LINGER;
+        let fresh = (recent && !typing && ready) || option_held();
         let line = app.line.borrow();
         if fresh && !line.is_empty() {
             app.view.show(mtm, &line, app.caret.get());
@@ -519,6 +534,8 @@ mod app {
             changed: Cell::new(Instant::now()),
             seq: Cell::new(0),
             asked: Cell::new(true),
+            asked_at: Cell::new(Instant::now()),
+            complete: Cell::new(true),
             woken: RefCell::default(),
             line: RefCell::default(),
             appeared: Cell::new(Instant::now()),
@@ -576,6 +593,11 @@ mod app {
             *c.borrow_mut() = Some(Box::new(move |tag: isize| {
                 let Some(mtm) = MainThreadMarker::new() else { return };
                 match tag {
+                    -4 => {
+                        if let Some((_, _, text)) = app.card.borrow().clone() {
+                            copy(&text);
+                        }
+                    }
                     -1 => {
                         app.view.close_card();
                         *app.card.borrow_mut() = None;

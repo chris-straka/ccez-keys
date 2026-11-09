@@ -33,7 +33,7 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
 ## Built so far
 
 - Each language on its own line (2/4/6/8/All, default 6), furigana and
-  per-character pinyin, kept clear of the box being typed in (under it, or over it when there is no room), lingers a minute; a language still coming holds its line with "…".
+  per-character pinyin, kept clear of the box being typed in (under it, or over it when there is no room), shows only once typing stops (half a second), every language together (or what's in after 1.5 s), then lingers a minute; a language still coming holds its line with "…".
 - Known words are skipped: a language whose words are all known isn't shown.
 - Words are coloured by status (Learning tinted); clicking one opens a card
   (meaning, Learning / Known) without taking focus. Statuses sync with
@@ -41,7 +41,7 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
   `~/.config/ccez-keys/words-server` (one line, outside the repo).
 - Dictionaries (ja, zh) come from ccez-lang-core's release, checked
   against SHA256SUMS.
-- Click a line's flag or blank space: read aloud and copied. Right-click a line: it replaces the sentence typed (Accessibility where the app takes it, else typed over; ⌘Z undoes it). Not yet: hover to hear.
+- Click a line's flag or blank space: read aloud and copied. A pointing hand over words; the card has Copy. Right-click a line: it replaces the sentence typed (Accessibility where the app takes it, else typed over; ⌘Z undoes it). Not yet: hover to hear.
 
 ## Next (owner, 2026-11-09)
 
