@@ -73,6 +73,8 @@ fun StripRow(s: StripView, typist: Typist) {
         Modifier.fillMaxSize().background(STRIP_BG)
             .pointerInput(s.lang) {
                 detectHorizontalDragGestures(
+                    // Right: the language before on the owner's list; left: the one after.
+                    // (The words don't scroll by hand, so a swipe anywhere on the line works.)
                     onDragEnd = { if (drag > 60f) typist.strip.step(-1) else if (drag < -60f) typist.strip.step(1); drag = 0f },
                     onDragCancel = { drag = 0f },
                 ) { _, d -> drag += d }
@@ -104,7 +106,7 @@ fun StripRow(s: StripView, typist: Typist) {
         val scroll = androidx.compose.foundation.rememberScrollState()
         androidx.compose.runtime.LaunchedEffect(s.text) { scroll.scrollTo(scroll.maxValue) }
         CompositionLocalProvider(LocalLayoutDirection provides if (s.lang in RTL) LayoutDirection.Rtl else LayoutDirection.Ltr) {
-            Row(Modifier.weight(1f).horizontalScroll(scroll, reverseScrolling = false), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).horizontalScroll(scroll, enabled = false), verticalAlignment = Alignment.CenterVertically) {
                 // Room for furigana or pinyin only when a word has some, so
                 // plain words sit level with the flag.
                 val readings = s.words.any { w -> w.ruby.any { it.rt.isNotEmpty() } }
