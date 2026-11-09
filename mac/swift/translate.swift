@@ -5,8 +5,12 @@
 // Language & Region > Translation Languages); it never downloads.
 import Foundation
 import Translation
+import FoundationModels
 
-struct Ask: Decodable { let id: Int; let from: String; let to: String; let text: String; let readings: Bool? }
+// Or, for a word's card: {"id":2,"meaning":{"lang":"fr","word":"d'accord","sentence":"D'accord, on y va."}}
+// → {"id":2,"text":"okay, agreed"} from Apple's on-device model, or {"id":2,"error":"unavailable: …"}.
+struct Meaning: Decodable { let lang: String; let word: String; let sentence: String }
+struct Ask: Decodable { let id: Int; let from: String?; let to: String?; let text: String?; let readings: Bool?; let meaning: Meaning? }
 struct Answer: Encodable { let id: Int; let text: String?; let error: String?; var ruby: [[String]]? = nil }
 
 /// Japanese and Chinese: each word with its reading (hiragana over kanji, pinyin
@@ -42,25 +46,44 @@ func ruby(_ text: String, _ lang: String) -> [[String]] {
     return out
 }
 
+/// What a word means in its sentence, in a few English words, from the
+/// on-device model (free, offline). A fresh session each time: no history.
+func meaning(_ id: Int, _ m: Meaning) async -> Answer {
+    let model = SystemLanguageModel.default
+    guard case .available = model.availability else {
+        return Answer(id: id, text: nil, error: "unavailable: \(model.availability)")
+    }
+    let session = LanguageModelSession(instructions: "You help someone learning a language. Given a sentence and one word or phrase from it, say what that word means in that sentence, in English. Answer with only the meaning: at most six words, no quotes, no explanation.")
+    do {
+        let r = try await session.respond(to: "Language: \(m.lang)\nSentence: \(m.sentence)\nWord: \(m.word)")
+        let text = r.content.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"“”«»."))
+        return Answer(id: id, text: text, error: nil)
+    } catch {
+        return Answer(id: id, text: nil, error: "\(error)")
+    }
+}
+
 actor Sessions {
     var open: [String: TranslationSession] = [:]
-    func session(_ a: Ask) -> TranslationSession {
-        let key = "\(a.from)>\(a.to)"
+    func session(_ from: String, _ to: String) -> TranslationSession {
+        let key = "\(from)>\(to)"
         if let have = open[key] { return have }
-        let s = TranslationSession(installedSource: Locale.Language(identifier: a.from), target: Locale.Language(identifier: a.to))
+        let s = TranslationSession(installedSource: Locale.Language(identifier: from), target: Locale.Language(identifier: to))
         open[key] = s
         return s
     }
-    func drop(_ a: Ask) { open["\(a.from)>\(a.to)"] = nil }
+    func drop(_ from: String, _ to: String) { open["\(from)>\(to)"] = nil }
     // Each language's session translates on its own (an actor method would line them up).
     nonisolated func translate(_ a: Ask) async -> Answer {
-        let s = await session(a)
+        if let m = a.meaning { return await meaning(a.id, m) }
+        guard let from = a.from, let to = a.to, let text = a.text else { return Answer(id: a.id, text: nil, error: "bad request") }
+        let s = await session(from, to)
         do {
-            let r = try await s.translate(a.text)
-            let wantRuby = (a.readings ?? false) && (a.to.hasPrefix("ja") || a.to.hasPrefix("zh"))
-            return Answer(id: a.id, text: r.targetText, error: nil, ruby: wantRuby ? ruby(r.targetText, a.to) : nil)
+            let r = try await s.translate(text)
+            let wantRuby = (a.readings ?? false) && (to.hasPrefix("ja") || to.hasPrefix("zh"))
+            return Answer(id: a.id, text: r.targetText, error: nil, ruby: wantRuby ? ruby(r.targetText, to) : nil)
         } catch {
-            await drop(a)
+            await drop(from, to)
             return Answer(id: a.id, text: nil, error: "\(error)")
         }
     }

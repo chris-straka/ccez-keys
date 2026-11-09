@@ -13,6 +13,8 @@ mod learn;
 #[cfg(target_os = "macos")]
 mod prefs;
 #[cfg(target_os = "macos")]
+mod meaning;
+#[cfg(target_os = "macos")]
 mod speak;
 #[cfg(target_os = "macos")]
 mod view;
@@ -68,6 +70,10 @@ mod app {
         engine: std::sync::Arc<ccez_keys_core::Engine>,
         /** The word whose card is open: language, dictionary form, as shown. */
         card: RefCell<Option<(String, String, String)>>,
+        /** What the open card shows: its word, the dictionary's meaning, its status, and
+         * the key its meaning-here comes back under. */
+        card_view: RefCell<Option<(String, String, u8, String)>>,
+        meanings: std::sync::Arc<crate::meaning::Meanings>,
         prefs: RefCell<crate::prefs::Prefs>,
         /** The app being typed in (bundle id, name): the menu's "Off in …" is about it. */
         typing_in: RefCell<Option<(String, String)>>,
@@ -188,6 +194,14 @@ mod app {
             let langs: Vec<String> = if shown == 0 { app.langs.clone() } else { app.langs.iter().take(shown + 2).cloned().collect() };
             app.worker.ask(Ask { seq: app.seq.get(), text: sentence, from: "en".into(), langs, max: if shown == 0 { usize::MAX } else { shown } });
         }
+        // A card's meaning-here, arriving after it opened.
+        if let Some((k, here)) = app.meanings.out.lock().unwrap().take()
+            && app.view.card_open.get()
+            && let Some((head, dict, st, key)) = app.card_view.borrow().clone()
+            && key == k
+        {
+            app.view.open_card(mtm, &head, &card_text(Some(&here), &dict), st);
+        }
         if let Some(shown) = app.worker.out.lock().unwrap().take() {
             if shown.seq == app.seq.get() {
                 let line = render(app, &shown);
@@ -205,6 +219,15 @@ mod app {
             app.view.show(mtm, &line, app.caret.get());
         } else {
             app.view.hide();
+        }
+    }
+
+    /// The card's meaning: what it means here (on-device model) over the dictionary's.
+    fn card_text(here: Option<&str>, dict: &str) -> String {
+        match here {
+            Some(h) if dict.is_empty() || h.eq_ignore_ascii_case(dict) => h.to_string(),
+            Some(h) => format!("{h}\n{dict}"),
+            None => dict.to_string(),
         }
     }
 
@@ -334,6 +357,8 @@ mod app {
             worker: Worker::start(engine.clone(), log),
             engine: engine.clone(),
             card: RefCell::default(),
+            card_view: RefCell::default(),
+            meanings: crate::meaning::Meanings::new(&dirs()),
             langs,
             flags: flags(),
             paused: Cell::new(false),
@@ -447,8 +472,16 @@ mod app {
                             _ => 0,
                         };
                         crate::speak::say(&lang, &tok.text);
+                        // What it means in this sentence: kept from before, or asked of the on-device model.
+                        let sentence: String = rows[ri].toks.iter().map(|t| t.text.as_str()).collect();
+                        let mkey = crate::meaning::key(&lang, &tok.text, &sentence);
+                        let here = app.meanings.known(&mkey);
+                        if here.is_none() {
+                            app.meanings.ask(lang.clone(), tok.text.clone(), sentence);
+                        }
+                        app.view.open_card(mtm, &head, &card_text(here.as_deref(), &meaning), st);
+                        *app.card_view.borrow_mut() = Some((head, meaning, st, mkey));
                         *app.card.borrow_mut() = Some((lang, key, tok.text.clone()));
-                        app.view.open_card(mtm, &head, &meaning, st);
                         // The card stays as long as the preview, counted from the click.
                         app.appeared.set(Instant::now());
                     }

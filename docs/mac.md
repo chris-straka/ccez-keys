@@ -46,14 +46,30 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
 ## Next (owner, 2026-11-09)
 
 - Card meanings from Apple's on-device model (Foundation Models, macOS 26+):
-  the word's meaning in this sentence, free and offline, cached; the
-  dictionary's when the model isn't there. On the owner's Mac it reports
-  "not ready" (Apple Intelligence off or still downloading).
+  the word's meaning in this sentence, free and offline, kept on disk
+  (meanings.json, 500); the dictionary's alone while the model isn't there.
+  Built; on the owner's Mac the model is still downloading ("not ready"), so
+  its answers are unchecked.
 - The menu's "ⓘ Translation languages…" opens System Settings' Language &
   Region page (Translation Languages is there) and names any language the
   Mac couldn't translate into.
 
-## Windows, later (owner, 2026-11-09)
+## Windows and Linux, later (owner, 2026-11-09)
+
+Not Tauri: the hard parts are each system's own (reading the focused field,
+a window that floats by the cursor without taking focus), and a web view
+adds a browser engine to a few lines of text. One Rust core, a thin native
+shell per system, as on the Mac.
+
+### Linux
+- The focused field and caret through AT-SPI (the accessibility bus GTK, Qt,
+  Firefox and Chromium apps talk on).
+- Placing a window by the cursor: X11 allows it; Wayland lets apps place
+  their own windows only through layer-shell (KDE, Sway, Hyprland), so on
+  GNOME Wayland the preview sits at a fixed spot.
+- Translation as on Windows (Bergamot); speech through Speech Dispatcher.
+
+### Windows
 
 The same app for Microsoft Windows, sharing the Rust core and the menu's
 choices:
