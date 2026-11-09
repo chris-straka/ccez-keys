@@ -115,18 +115,15 @@ fun StripRow(s: StripView, typist: Typist) {
             )
             Box(Modifier.padding(horizontal = 6.dp).size(6.dp).graphicsLayer { alpha = pulse }.clip(RoundedCornerShape(3.dp)).background(VIOLET))
         } else if (s.refined) {
-            // Tap: ask Muse about this wording.
+            // Tap: ask Muse about this wording. Hold: this app's wording polite or
+            // casual (the star brighter when polite).
             Box(
-                Modifier.size(30.dp).clip(RoundedCornerShape(15.dp)).combinedClickable(onClick = { typist.openAsk("${s.source} → ${s.text}") }),
+                Modifier.size(30.dp).clip(RoundedCornerShape(15.dp))
+                    .combinedClickable(onClick = { typist.openAsk("${s.source} → ${s.text}") }, onLongClick = { typist.flipRegister() }),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.spark, "Ask Muse", tint = VIOLET.copy(alpha = 0.8f), modifier = Modifier.size(13.dp)) }
+            ) { Icon(Icons.spark, "Ask Muse", tint = if (typist.polite()) VIOLET else VIOLET.copy(alpha = 0.6f), modifier = Modifier.size(13.dp)) }
         }
-        // Tap: hear it. Hold: this app's translations polite or casual (lit when polite).
-        Box(
-            Modifier.size(34.dp).clip(RoundedCornerShape(17.dp))
-                .combinedClickable(onClick = { Speaker.say(ctx, s.text, s.lang) }, onLongClick = { typist.flipRegister() }),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.sound, "Listen", tint = if (typist.polite()) Colors.accent else Colors.muted, modifier = Modifier.size(19.dp)) }
+        // No speaker here: the cards have one (owner, 2026-11-08).
     }
 }
 
