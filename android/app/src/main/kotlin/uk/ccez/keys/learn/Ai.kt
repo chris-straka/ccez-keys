@@ -88,8 +88,8 @@ class Tips(private val ui: UiState) {
         val tip = ui.tip
         if (tip != null && tip.sentence != sentence) ui.tip = null
         val e = app.engine
-        val learning = lang != e.setting("languages.default").trim('"') && lang in e.settingStrings("languages.learning")
-        if (!allowed || !learning || !e.settingBool("ai.tips") || sentence.split(' ').count { it.isNotBlank() } < 3) return
+        val learning = lang != app.text("languages.default") && lang in app.strings("languages.learning")
+        if (!allowed || !learning || !app.flag("ai.tips") || sentence.split(' ').count { it.isNotBlank() } < 3) return
         val key = Secrets.get(app) ?: return
         synchronized(seen) { if (seen.containsKey(sentence)) { seen[sentence]?.let { ui.tip = Tip(sentence, lang, it) }; return } }
         job = app.scope.launch {

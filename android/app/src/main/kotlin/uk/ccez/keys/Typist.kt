@@ -126,7 +126,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     /** Vietnamese with Telex: the letters typed, which `word` shows as Telex writes them. */
     private val telexRaw = StringBuilder()
-    private fun telexOn() = lang == "vi" && engine.settingBool("typing.telex")
+    private fun telexOn() = lang == "vi" && app.flag("typing.telex")
 
     private fun clearWord() {
         word.setLength(0)
@@ -181,8 +181,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         romajiSwitch = null
         ui.panel = Panel.KEYS
         ui.password = password
-        ui.chatApp = info.packageName in engine.settingStrings("apps.chat")
-        ui.polite = info.packageName in engine.settingStrings("apps.polite")
+        ui.chatApp = info.packageName in app.strings("apps.chat")
+        ui.polite = info.packageName in app.strings("apps.polite")
         refresh()
         updateShift()
         updateBar()
@@ -217,12 +217,12 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         }
         // The converter is several MB: loaded off the main thread before the first kana.
         if (converting()) lang.let { l -> app.scope.launch { uk.ccez.keys.learn.Dictionaries.ensure(l); engine.convert(l, "") } }
-        val face = engine.settingBool("buttons.face")
+        val face = app.flag("buttons.face")
         var layout = withoutFace(engine.layout(lang, page), !face)
-        if (page == Page.LETTERS && engine.settingBool("typing.numbers")) layout = withNumbers(layout)
+        if (page == Page.LETTERS && app.flag("typing.numbers")) layout = withNumbers(layout)
         view.layout = layout
         view.scale = (engine.setting("keyboard.height").toIntOrNull() ?: 100) / 100f
-        view.swipe = engine.settingBool("typing.swipe") && !converting()
+        view.swipe = app.flag("typing.swipe") && !converting()
         val langs = engine.typingLanguages()
         view.spaceLabel = uk.ccez.keys.ui.Langs.of(service, lang)?.own ?: lang
         view.showArrows = langs.size > 1
@@ -235,7 +235,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     override fun onPress(key: Key) {
         buzz(HapticFeedbackConstants.KEYBOARD_TAP)
-        if (engine.settingBool("typing.sound")) {
+        if (app.flag("typing.sound")) {
             val am = service.getSystemService(AudioManager::class.java)
             am?.playSoundEffect(
                 when (key.kind) {
@@ -266,7 +266,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
      * when the phone's touch feedback is off, and the owner felt nothing.
      */
     private fun buzz(kind: Int) {
-        if (!engine.settingBool("typing.vibrate")) return
+        if (!app.flag("typing.vibrate")) return
         val v = vibrator ?: return
         if (!v.hasVibrator()) return
         val (primitive, scale, fallback) = when (kind) {
@@ -313,10 +313,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (shift != Shift.OFF) w = w.replaceFirstChar { it.uppercase() }
         val prev = prevWord(0)
         ic.commitText((if (before.isNotEmpty() && !before[0].isWhitespace()) " " else "") + w + " ", 1)
-        if (!noLearn) engine.learn(lang, prev, w, false)
+        if (!noLearn) learn(lang, prev, w, false)
         lastSpaceAt = SystemClock.uptimeMillis()
         swiped = w
         if (shift == Shift.ONCE) setShift(Shift.OFF)
+        noticeLanguage(w)
+        // The strip, tips and capitals as after any word; then the swipe's other words in the bar.
+        updateShift()
+        updateBar()
         ui.bar = Bar.Words(words.getOrNull(1), w, words.getOrNull(2), false, null)
         autoSpace = true
     }
@@ -405,14 +409,15 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         service.getSharedPreferences("app-languages", android.content.Context.MODE_PRIVATE).edit().putString(pkg, lang).apply()
     }
 
-    fun polite() = editor?.packageName in engine.settingStrings("apps.polite")
+    fun polite() = ui.polite
 
     /** Hold 🔊: this app's translations switch between casual and polite. */
     fun flipRegister() {
         val pkg = editor?.packageName ?: return
-        val l = engine.settingStrings("apps.polite")
+        val l = app.strings("apps.polite")
         val next = if (pkg in l) l - pkg else l + pkg
         engine.setSetting("apps.polite", org.json.JSONArray(next).toString())
+        app.settingsChanged()
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         ui.polite = pkg in next
         updateBar()
@@ -545,14 +550,16 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val ic = ic ?: return null
         val typed = word.toString()
         val prev = prevWord(typed.length)
-        val fixed = if (correct && !noCorrect) engine.suggest(lang, typed).correction else null
+        val fixed = if (correct && !noCorrect) suggestFor(typed).correction else null
         val out = fixed ?: typed
         ic.commitText(out, 1)
         fix = fixed?.let { typed to it }
         clearWord()
-        if (!noLearn) engine.learn(lang, prev, out, false)
-        // What was typed tells the language, not what it became.
+        // What was typed tells the language, not what it became; the word is
+        // learned in the language it turned out to be ("chez" in French, never
+        // in English, where it would stop counting as foreign).
         noticeLanguage(typed)
+        if (!noLearn) learn(lang, prev, out, false)
         return out
     }
 
@@ -587,10 +594,23 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         refresh()
         word.append(typed)
         ic.setComposingText(word, 1)
-        if (!noLearn) engine.learn(lang, prevWord(typed.length), typed, true)
+        if (!noLearn) learn(lang, prevWord(typed.length), typed, true)
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         updateBar()
         return true
+    }
+
+    /** The last suggestions asked for: a word's are asked while typing it and again as it ends. */
+    private var lastSuggest: Triple<String, String, uk.ccez.keys.core.Suggestions>? = null
+
+    private fun suggestFor(typed: String): uk.ccez.keys.core.Suggestions =
+        lastSuggest?.takeIf { it.first == lang && it.second == typed }?.third
+            ?: engine.suggest(lang, typed).also { lastSuggest = Triple(lang, typed, it) }
+
+    /** What the core learns changes its suggestions: the last ones are dropped. */
+    private fun learn(l: String, prev: String, w: String, strong: Boolean) {
+        lastSuggest = null
+        engine.learn(l, prev, w, strong)
     }
 
     /** The last words typed in this field, for noticing their language. */
@@ -628,7 +648,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             ic.commitText(" ", 1)
         } else {
             val before = ic.getTextBeforeCursor(2, 0)?.toString().orEmpty()
-            if (engine.settingBool("typing.double_space_period") && now - lastSpaceAt < 1000 &&
+            if (app.flag("typing.double_space_period") && now - lastSpaceAt < 1000 &&
                 before.length == 2 && before[1] == ' ' && before[0].isLetterOrDigit()
             ) {
                 ic.deleteSurroundingText(1, 0)
@@ -663,7 +683,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 ic.deleteSurroundingText(tail.length, 0)
                 word.append(typed)
                 ic.setComposingText(word, 1)
-                if (!noLearn) engine.learn(lang, prevWord(typed.length), typed, true)
+                if (!noLearn) learn(lang, prevWord(typed.length), typed, true)
                 buzz(HapticFeedbackConstants.CONTEXT_CLICK)
                 updateBar()
                 return
@@ -743,6 +763,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             if (ic.getTextBeforeCursor(tail.length, 0)?.toString() == tail) {
                 ic.deleteSurroundingText(tail.length, 0)
                 ic.commitText("$text ", 1)
+                // The word picked is the one meant (the swiped one was learned already).
+                if (!noLearn) learn(lang, prevWord(text.length + 1), text, true)
                 updateBar()
                 return
             }
@@ -754,7 +776,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         ic.commitText(if (noSpaces()) text else "$gap$text ", 1)
         clearWord()
         fix = null
-        if (!noLearn) engine.learn(lang, prev, text, isTyped)
+        if (!noLearn) learn(lang, prev, text, isTyped)
         lastSpaceAt = SystemClock.uptimeMillis()
         autoSpace = !noSpaces()
         updateShift()
@@ -816,13 +838,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         tips.update(sentence, lang, allowed = !password && !noLearn, ended = sentence.trimEnd().lastOrNull()?.let { it in ".!?。！？" } == true)
         if (password) { ui.bar = Bar.Buttons; return }
         updateWords()
-        ui.face = if (ui.chatApp && engine.settingBool("buttons.face")) uk.ccez.keys.learn.Kaomoji.suggest(service, sentence, uk.ccez.keys.ui.Faces.recent(service)) else null
+        ui.face = if (ui.chatApp && app.flag("buttons.face")) uk.ccez.keys.learn.Kaomoji.suggest(service, sentence, uk.ccez.keys.ui.Faces.recent(service)) else null
     }
 
     private fun updateWords() {
         if (word.isNotEmpty()) {
             val typed = word.toString()
-            val s = engine.suggest(lang, typed)
+            val s = suggestFor(typed)
             val mid = s.correction ?: if (s.typedKnown) typed else s.words.firstOrNull() ?: typed
             val rest = s.words.filter { !it.equals(mid, ignoreCase = true) }
             val left = if (s.correction != null || !s.typedKnown && mid != typed) typed else rest.getOrNull(0)
@@ -845,7 +867,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun updateShift() {
         if (shift == Shift.LOCK) return
         val info = editor ?: return
-        val auto = engine.settingBool("typing.capitals") && word.isEmpty() && !password &&
+        val auto = app.flag("typing.capitals") && word.isEmpty() && !password &&
             (ic?.getCursorCapsMode(info.inputType) ?: 0) != 0
         setShift(if (auto) Shift.ONCE else Shift.OFF)
     }
@@ -936,11 +958,6 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     /** The buzz of a hold. */
     fun holdBuzz() = buzz(HapticFeedbackConstants.LONG_PRESS)
-
-    fun markLearning(lang: String, word: String) {
-        buzz(HapticFeedbackConstants.CONTEXT_CLICK)
-        setStatus(lang, word, uk.ccez.keys.core.WordStatus.LEARNING)
-    }
 
     fun setStatus(lang: String, word: String, status: uk.ccez.keys.core.WordStatus) {
         if (noLearn) return

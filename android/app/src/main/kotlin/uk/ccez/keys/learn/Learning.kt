@@ -49,7 +49,7 @@ object Translator {
     fun supports(lang: String) = TranslateLanguage.fromLanguageTag(lang) != null
 
     /** False when a model is missing and `download` is false. */
-    private suspend fun models(download: Boolean, vararg langs: String, wifi: Boolean = false): Boolean {
+    private suspend fun models(download: Boolean, vararg langs: String, wifi: Boolean = true): Boolean {
         val manager = RemoteModelManager.getInstance()
         for (tag in langs) {
             val lang = TranslateLanguage.fromLanguageTag(tag) ?: continue
@@ -93,12 +93,21 @@ object Translator {
         synchronized(cache) { cache[key] }?.let { return it }
         return runCatching {
             if (!models(download, from, to)) return null
-            val client = Translation.getClient(TranslatorOptions.Builder().setSourceLanguage(source).setTargetLanguage(target).build())
-            try {
-                uk.ccez.keys.Stats.translations.incrementAndGet()
-                ONE.withLock { client.translate(text).await() }
-            } finally {
-                client.close()
+            // Never cancelled halfway: a cancelled call let the lock go while ML Kit
+            // was still at work, and two translators at once abort the process.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                ONE.withLock {
+                    // Done meanwhile by another caller (a prefetch)?
+                    synchronized(cache) { cache[key] } ?: run {
+                        val client = Translation.getClient(TranslatorOptions.Builder().setSourceLanguage(source).setTargetLanguage(target).build())
+                        try {
+                            uk.ccez.keys.Stats.translations.incrementAndGet()
+                            client.translate(text).await()
+                        } finally {
+                            client.close()
+                        }
+                    }
+                }
             }
         }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; App.instance.log("warn", "translate-failed", "from" to from, "to" to to, "error" to it.javaClass.simpleName) }
             .getOrNull()

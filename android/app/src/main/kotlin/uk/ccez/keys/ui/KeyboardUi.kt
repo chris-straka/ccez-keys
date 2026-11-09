@@ -113,7 +113,7 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
         // The strip's room is always there (while the strip is on): a band that
         // came and went resized the keyboard window, which Android redraws a
         // beat late, so the keys jumped (owner, 2026-11-08). Only what's in it changes.
-        val stripOn = remember(version) { App.instance.engine.settingBool("learning.strip") }
+        val stripOn = remember(version) { App.instance.flag("learning.strip") }
         if (ask == null && ui.panel == Panel.KEYS && !ui.password && stripOn) StripBand(ui, typist)
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
@@ -211,7 +211,7 @@ private fun BarRow(ui: UiState, typist: Typist) {
             return@Row
         }
         val clip = ui.clip
-        val showClip = clip != null && !ui.password && App.instance.engine.settingBool("buttons.clipboard")
+        val showClip = clip != null && !ui.password && App.instance.flag("buttons.clipboard")
         if (showClip && clip != null) {
             Row(
                 Modifier.weight(1f, fill = false).padding(start = 8.dp, end = 6.dp).height(34.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
@@ -223,7 +223,7 @@ private fun BarRow(ui: UiState, typist: Typist) {
                 Spacer(Modifier.width(8.dp))
                 Text(clip.replace('\n', ' '), color = Colors.fg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-        } else if (!ui.password && App.instance.engine.settingBool("buttons.clipboard")) {
+        } else if (!ui.password && App.instance.flag("buttons.clipboard")) {
             val on = ui.panel == Panel.CLIPS
             Box(
                 Modifier.padding(start = 8.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Colors.line else Color.Transparent)
@@ -243,13 +243,13 @@ private fun BarRow(ui: UiState, typist: Typist) {
             )
         }
         Spacer(Modifier.weight(1f))
-        if (!ui.password && App.instance.engine.settingBool("buttons.camera")) {
+        if (!ui.password && App.instance.flag("buttons.camera")) {
             Box(
                 Modifier.padding(end = 4.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = { typist.openCamera() }),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.cam, "Camera text", tint = Colors.muted, modifier = Modifier.size(20.dp)) }
         }
-        if (!ui.password && App.instance.engine.settingBool("buttons.mic")) MicButton(typist)
+        if (!ui.password && App.instance.flag("buttons.mic")) MicButton(typist)
         val on = ui.panel == Panel.SETTINGS
         Box(
             Modifier.padding(end = 8.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Colors.line else Color.Transparent)
@@ -672,7 +672,7 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
     Heading("Languages")
     FlagGrid(learning(), version, go)
     Heading("Default language")
-    val def = remember(version) { e.setting("languages.default").trim('"') }
+    val def = remember(version) { App.instance.text("languages.default") }
     val d = Langs.of(ctx, def)
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat { go(Page.DEFAULT) }.padding(vertical = 10.dp),
@@ -882,7 +882,7 @@ private fun TwoColumns(rows: List<Triple<ImageVector, String, String>>, version:
         rows.chunked(2).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 pair.forEach { (icon, label, key) ->
-                    val on = remember(version, key) { key.isNotEmpty() && app.engine.settingBool(key) }
+                    val on = remember(version, key) { key.isNotEmpty() && app.flag(key) }
                     Row(
                         Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(10.dp))
                             .let { m -> if (key.isEmpty()) m else m.combinedClickableCompat { set(key, (!on).toString()) } }

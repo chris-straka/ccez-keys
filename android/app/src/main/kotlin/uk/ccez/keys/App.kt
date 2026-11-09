@@ -77,7 +77,17 @@ class App : Application() {
         log("info", "words", "lang" to lang, "count" to n.toLong(), "ms" to (System.nanoTime() - started) / 1_000_000)
     }
 
+    private val flags = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val lists = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+    private val texts = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** Settings as Kotlin keeps them between changes: hot paths read these, not the core over JNI. */
+    fun flag(name: String): Boolean = flags.getOrPut(name) { engine.settingBool(name) }
+    fun strings(name: String): List<String> = lists.getOrPut(name) { engine.settingStrings(name) }
+    fun text(name: String): String = texts.getOrPut(name) { engine.setting(name).trim('"') }
+
     fun settingsChanged() {
+        flags.clear(); lists.clear(); texts.clear()
         settingsVersion.value += 1
         loadLanguages()
     }

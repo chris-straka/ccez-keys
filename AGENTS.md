@@ -19,6 +19,11 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
   never regenerate it) and installs it on the connected phone.
 - `keys status | get | set | schema | log` (cli/) talks to the keyboard
   over adb; `keys log` holds its events and errors (never typed text).
+- Tests: `cargo test --release` in core/ (`--test bench -- --ignored --nocapture`
+  for the autocorrect benchmark); `./gradlew :app:testDebugUnitTest` in
+  android/; on the emulator, `KEYS_SERIAL=emulator-5554 scripts/typing-check.sh`
+  types real keys in every script and checks the field; `scripts/perf.sh` for
+  CPU and dropped frames.
 - `scripts/phone-type.py "deja "` types on the phone by tapping keys, for
   checks; screenshot with `adb exec-out screencap -p`. The test field is
   in the app's own screen (`am start -n uk.ccez.keys/.MainActivity`, field

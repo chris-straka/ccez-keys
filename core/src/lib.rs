@@ -57,6 +57,8 @@ pub struct Engine {
     log: log::Log,
     learn: learn::Learn,
     converters: Mutex<HashMap<String, convert::Index>>,
+    /// Converters being read from disk now.
+    loading: Mutex<std::collections::HashSet<String>>,
     state: Mutex<State>,
 }
 
@@ -118,6 +120,7 @@ impl Engine {
             log: log::Log::new(&dir),
             learn: learn::Learn::new(&dir),
             converters: Mutex::new(HashMap::new()),
+            loading: Mutex::new(std::collections::HashSet::new()),
             layouts: layout::Layouts::load(),
             dir,
             state: Mutex::new(State { langs: HashMap::new(), keys: HashMap::new(), settings, current }),
@@ -450,20 +453,32 @@ impl Engine {
 
     /// Words for kana (Japanese) or pinyin letters (Chinese).
     pub fn convert(&self, lang: String, input: String) -> Vec<Conversion> {
-        let mut c = self.converters.lock().unwrap_or_else(|e| e.into_inner());
-        if !c.contains_key(&lang) {
-            match convert::Index::load(&self.converter_path(&lang)) {
-                Some(i) => {
-                    c.insert(lang.clone(), i);
-                }
-                None => return if lang == "ja" && !input.is_empty() {
-                    vec![Conversion { text: input.clone(), reading: String::new(), consumed: input.chars().count() as u32 }]
-                } else {
-                    vec![]
-                },
+        // The kana as typed, while there's no converter (yet).
+        let plain = || if lang == "ja" && !input.is_empty() {
+            vec![Conversion { text: input.clone(), reading: String::new(), consumed: input.chars().count() as u32 }]
+        } else {
+            vec![]
+        };
+        {
+            let c = self.converters.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(i) = c.get(&lang) {
+                return i.convert(&input, lang == "ja");
             }
         }
-        c.get(&lang).map(|i| i.convert(&input, lang == "ja")).unwrap_or_default()
+        // Loaded (several MB) outside the lock, by one caller at a time: a key
+        // typed meanwhile gets the kana as typed rather than waiting.
+        {
+            let mut loading = self.loading.lock().unwrap_or_else(|e| e.into_inner());
+            if !loading.insert(lang.clone()) {
+                return plain();
+            }
+        }
+        let index = convert::Index::load(&self.converter_path(&lang));
+        self.loading.lock().unwrap_or_else(|e| e.into_inner()).remove(&lang);
+        let Some(index) = index else { return plain() };
+        let out = index.convert(&input, lang == "ja");
+        self.converters.lock().unwrap_or_else(|e| e.into_inner()).insert(lang, index);
+        out
     }
 
     // --- AI ---

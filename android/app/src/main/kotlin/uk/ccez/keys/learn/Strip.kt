@@ -52,8 +52,20 @@ data class CardView(
     val asking: Boolean = false,
 )
 
+/**
+ * The meanings that match a word of the sentence typed come first: "I read
+ * a book" puts livre's "book" before "delivers".
+ */
+internal fun inContext(meanings: List<String>, said: String): List<String> {
+    val split = Regex("[^\\p{L}']+")
+    val words = said.lowercase().split(split).filter { it.length >= 3 }.toSet()
+    if (words.isEmpty()) return meanings
+    fun hits(m: String) = m.lowercase().split(split).count { it in words || words.any { w -> it.length >= 4 && (w.startsWith(it) || it.startsWith(w)) } }
+    return meanings.withIndex().sortedWith(compareByDescending<IndexedValue<String>> { hits(it.value) > 0 }.thenBy { it.index }).map { it.value }
+}
+
 /** Without punctuation left at the end ("テスト・", "chat."). */
-private fun bare(t: String) = t.trimEnd { it.isWhitespace() || Character.getType(it).toByte().let { k -> k == Character.OTHER_PUNCTUATION || k == Character.DASH_PUNCTUATION || k == Character.CONNECTOR_PUNCTUATION } }
+internal fun bare(t: String) = t.trimEnd { it.isWhitespace() || Character.getType(it).toByte().let { k -> k == Character.OTHER_PUNCTUATION || k == Character.DASH_PUNCTUATION || k == Character.CONNECTOR_PUNCTUATION } }
 
 /**
  * The learning strip: the sentence being typed, in a language being
@@ -71,12 +83,12 @@ class Strip(private val ui: UiState) {
     private var source = ""
     private var typing = ""
 
-    private fun defaultLang() = engine.setting("languages.default").trim('"')
+    private fun defaultLang() = app.text("languages.default")
 
     /** Where the strip translates to, in turn. */
     private fun targets(typing: String): List<String> {
         val def = defaultLang()
-        val learning = engine.settingStrings("languages.learning")
+        val learning = app.strings("languages.learning")
         return if (typing != def && typing in learning) listOf(def)
         else learning.filter { it != typing && Translator.supports(it) }
     }
@@ -120,7 +132,7 @@ class Strip(private val ui: UiState) {
     fun update(sentence: String, typingLang: String, allowed: Boolean, polite: Boolean = false, ai: Boolean = true) {
         this.polite = polite
         this.ai = ai
-        if (!allowed || !engine.settingBool("learning.strip") || sentence.isBlank() || !Translator.supports(typingLang)) {
+        if (!allowed || !app.flag("learning.strip") || sentence.isBlank() || !Translator.supports(typingLang)) {
             if (sentence.isBlank()) index = 0
             job?.cancel()
             ui.strip = null
@@ -162,24 +174,27 @@ class Strip(private val ui: UiState) {
 
     /** `pause`: how long an all-known sentence shows before the next language. */
     private suspend fun show(autoSteps: Int, pause: Long = 1500) {
-        val all = targets(typing)
+        // This sentence and language, read once: typing goes on while this runs.
+        val src = source
+        val from = typing
+        val all = targets(from)
         if (all.isEmpty()) return
         index %= all.size
         val lang = all[index]
         // A dictionary that arrives now brings readings and statuses: redraw.
         app.scope.launch { if (Dictionaries.ensure(lang) && ui.strip?.lang == lang) redraw() }
-        val key = "$typing|$lang|$polite|$source"
+        val key = "$from|$lang|$polite|$src"
         val better = synchronized(refined) { refined[key] }
-        val text = (better ?: Translator.translate(source, typing, lang) ?: return)
-            .let { if (source.none { c -> c.isWhitespace() }) bare(it) else it }
-        val pending = better == null && refine(key, source, typing, lang, all)
+        val text = (better ?: Translator.translate(src, from, lang) ?: return)
+            .let { if (src.none { c -> c.isWhitespace() }) bare(it) else it }
+        val pending = better == null && refine(key, src, from, lang, all)
         val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }
         val next = emptyList<String>()
         withContext(Dispatchers.Main) {
             // The other languages stay as they were until their new wording is ready (no blink per key).
             val keep = ui.strip?.takeIf { it.lang == lang }?.more.orEmpty()
-            ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = source, moved = moved, more = keep)
+            ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = src, moved = moved, more = keep)
         }
         if (pending) {
             // Shown as pending once the pause has come and the AI is asked.
@@ -189,9 +204,9 @@ class Strip(private val ui: UiState) {
                 withContext(Dispatchers.Main) { ui.strip?.takeIf { it.text == text && !it.refined }?.let { ui.strip = it.copy(pending = true) } }
             }
         }
-        prefetch(all)
-        // The voice ready before a word is tapped.
-        Speaker.warm(app, lang, text)
+        prefetch(all, index, src, from)
+        // The voice ready before a word is tapped (the speech engine on the main thread, as taps are).
+        withContext(Dispatchers.Main) { Speaker.warm(app, lang, text) }
         val known = words.filter { it.word }
         if (known.isNotEmpty() && known.all { it.status == WordStatus.KNOWN } && autoSteps < all.size - 1) {
             delay(pause)
@@ -242,24 +257,23 @@ class Strip(private val ui: UiState) {
     }
 
     /** The languages either side, translated ahead so a swipe shows them at once. */
-    private fun prefetch(all: List<String>) {
+    private fun prefetch(all: List<String>, at: Int, text: String, from: String) {
         if (all.size < 2) return
-        val text = source
-        val from = typing
         val n = all.size
-        app.scope.launch {
-            for (d in listOf(1, -1)) Translator.translate(text, from, all[((index + d) % n + n) % n], download = false)
+        // Part of the strip's job: cancelled with it when typing goes on.
+        val parent = job ?: return
+        kotlinx.coroutines.CoroutineScope(parent + Dispatchers.IO).launch {
+            for (d in listOf(1, -1)) Translator.translate(text, from, all[((at + d) % n + n) % n], download = false)
         }
     }
 
     /**
      * Once typing pauses, the AI's wording (natural, in the app's register)
-     * replaces ML Kit's literal one.
+     * replaces ML Kit's literal one. True when the AI will be asked.
      */
-    /** True when the AI will be asked. */
     private fun refine(key: String, source: String, from: String, to: String, all: List<String>): Boolean {
         refineJob?.cancel()
-        if (!ai || !engine.settingBool("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return false
+        if (!ai || !app.flag("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return false
         // Sentences, and single uncommon words ("gerrymandering": ML Kit made it a verb).
         // A common word or two keeps ML Kit's plain translation (owner, 2026-11-08:
         // "worth" became a whole phrase).
@@ -309,7 +323,7 @@ class Strip(private val ui: UiState) {
             val context = ui.strip?.takeIf { it.lang == lang }?.text ?: ui.strip?.more?.firstOrNull { it.lang == lang }?.text.orEmpty()
             val key = "gloss|$lang|${w.text}|$context"
             val known = synchronized(refined) { refined[key] }
-            val aiKey = if (ai && context.isNotBlank() && engine.settingBool("learning.refine")) Secrets.get(app) else null
+            val aiKey = if (ai && context.isNotBlank() && app.flag("learning.refine")) Secrets.get(app) else null
             fun split(t: String) = t.lines().map { it.trim() }.filter { it.isNotEmpty() }.let { it.firstOrNull() to it.drop(1).joinToString(" ").ifEmpty { null } }
             val (here, note) = known?.let(::split) ?: (null to null)
             val view = CardView(lang, w.text, w.lemma, card, meaning, reading, here, note, asking = known == null && aiKey != null)
@@ -326,16 +340,6 @@ class Strip(private val ui: UiState) {
         }
     }
 
-    /**
-     * The meanings that match a word of the sentence typed come first: "I read
-     * a book" puts livre's "book" before "delivers".
-     */
-    private fun inContext(meanings: List<String>, said: String): List<String> {
-        val words = said.lowercase().split(Regex("[^\\p{L}']+")).filter { it.length >= 3 }.toSet()
-        if (words.isEmpty()) return meanings
-        fun hits(m: String) = m.lowercase().split(Regex("[^\\p{L}']+")).count { it in words || words.any { w -> it.length >= 4 && (w.startsWith(it) || it.startsWith(w)) } }
-        return meanings.withIndex().sortedWith(compareByDescending<IndexedValue<String>> { hits(it.value) > 0 }.thenBy { it.index }).map { it.value }
-    }
 
     fun setStatus(lang: String, word: String, status: WordStatus) {
         engine.setWordStatus(lang, word, status)
