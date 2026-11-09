@@ -304,8 +304,34 @@ fun BoxScope.CardOverlay(c: CardView, ui: UiState, typist: Typist) {
                     }
                 }
             }
-            val meaning = card?.meanings?.take(2)?.joinToString("; ")?.ifEmpty { null } ?: c.meaning
-            if (meaning != null) Text(meaning, color = Colors.fg, fontSize = 15.sp, maxLines = 3)
+            // What it means here: Muse's reading of it in this sentence (✦), else the
+            // dictionary's best match, Muse's answer fading in over it.
+            var more by remember(c.word, c.lang) { mutableStateOf(false) }
+            val meanings = card?.meanings.orEmpty().ifEmpty { listOfNotNull(c.meaning) }
+            androidx.compose.animation.Crossfade(c.here, animationSpec = androidx.compose.animation.core.tween(220), label = "here") { here ->
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    if (here != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.spark, "Muse", tint = VIOLET, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(here, color = Colors.fg, fontSize = 17.sp, maxLines = 2)
+                        }
+                        c.note?.let { Text(it, color = Colors.muted, fontSize = 13.sp, maxLines = 3) }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            meanings.firstOrNull()?.let { Text(it, color = Colors.fg, fontSize = 17.sp, maxLines = 2, modifier = Modifier.weight(1f, fill = false)) }
+                            if (c.asking) {
+                                var bright by remember { mutableStateOf(true) }
+                                androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(550); bright = !bright } }
+                                Box(Modifier.padding(start = 8.dp).size(6.dp).graphicsLayer { alpha = if (bright) 1f else 0.3f }.clip(RoundedCornerShape(3.dp)).background(VIOLET))
+                            }
+                        }
+                    }
+                }
+            }
+            // 📚: the dictionary's other meanings.
+            val rest = if (c.here != null) meanings else meanings.drop(1)
+            if (more && rest.isNotEmpty()) Text(rest.joinToString("; "), color = Colors.muted, fontSize = 14.sp, maxLines = 5)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val key = card?.lemma?.ifEmpty { null } ?: c.lemma.ifEmpty { c.word }
                 StatusButton("Learning", status == WordStatus.LEARNING) {
@@ -316,6 +342,11 @@ fun BoxScope.CardOverlay(c: CardView, ui: UiState, typist: Typist) {
                     typist.setStatus(c.lang, key, if (status == WordStatus.KNOWN) WordStatus.NEW else WordStatus.KNOWN)
                     ui.card = null
                 }
+                if (rest.isNotEmpty()) Box(
+                    Modifier.width(44.dp).height(36.dp).clip(RoundedCornerShape(8.dp)).background(if (more) Color(0xFF3A3A3C) else Color(0xFF2A2A2C))
+                        .combinedClickable(onClick = { more = !more }),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.book, "Dictionary", tint = Colors.muted, modifier = Modifier.size(17.dp)) }
                 Box(
                     Modifier.width(44.dp).height(36.dp).clip(RoundedCornerShape(8.dp)).background(VIOLET_BG)
                         .combinedClickable(onClick = { typist.openAsk("$key (${ui.strip?.text ?: c.word})") }),

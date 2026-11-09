@@ -38,7 +38,19 @@ data class StripView(
 data class Segment(val lang: String, val flag: String, val words: List<StripWord>, val text: String)
 
 /** A tapped word's card. */
-data class CardView(val lang: String, val word: String, val lemma: String, val card: Card?, val meaning: String?, val reading: String = "")
+data class CardView(
+    val lang: String,
+    val word: String,
+    val lemma: String,
+    val card: Card?,
+    val meaning: String?,
+    val reading: String = "",
+    /** Muse: what it means in this sentence, and at most one short note. */
+    val here: String? = null,
+    val note: String? = null,
+    /** Muse is being asked. */
+    val asking: Boolean = false,
+)
 
 /** Without punctuation left at the end ("テスト・", "chat."). */
 private fun bare(t: String) = t.trimEnd { it.isWhitespace() || Character.getType(it).toByte().let { k -> k == Character.OTHER_PUNCTUATION || k == Character.DASH_PUNCTUATION || k == Character.CONNECTOR_PUNCTUATION } }
@@ -178,6 +190,8 @@ class Strip(private val ui: UiState) {
             }
         }
         prefetch(all)
+        // The voice ready before a word is tapped.
+        Speaker.warm(app, lang, text)
         val known = words.filter { it.word }
         if (known.isNotEmpty() && known.all { it.status == WordStatus.KNOWN } && autoSteps < all.size - 1) {
             delay(pause)
@@ -283,13 +297,32 @@ class Strip(private val ui: UiState) {
     fun open(lang: String, w: StripWord) {
         // The same word again: its card closes.
         ui.card?.let { c -> if (c.lang == lang && c.word == w.text) { ui.card = null; return } }
+        // Heard as it opens.
+        Speaker.say(app, w.text, lang)
         val said = source
         app.scope.launch {
             val card = engine.wordCard(lang, w.text, w.lemma)?.let { c -> c.copy(meanings = inContext(c.meanings, said)) }
             val meaning = if (card?.meanings.isNullOrEmpty()) Translator.translate(w.lemma.ifEmpty { w.text }, lang, defaultLang()) else null
             // Furigana or pinyin, now only on the card (owner, 2026-11-08: a shorter line).
             val reading = w.ruby.joinToString("") { it.rt.ifEmpty { it.text } }.takeIf { r -> w.ruby.any { it.rt.isNotEmpty() } }.orEmpty()
-            withContext(Dispatchers.Main) { ui.card = CardView(lang, w.text, w.lemma, card, meaning, reading) }
+            // In this sentence: Muse's gloss (kept on disk), else asked now.
+            val context = ui.strip?.takeIf { it.lang == lang }?.text ?: ui.strip?.more?.firstOrNull { it.lang == lang }?.text.orEmpty()
+            val key = "gloss|$lang|${w.text}|$context"
+            val known = synchronized(refined) { refined[key] }
+            val aiKey = if (ai && context.isNotBlank() && engine.settingBool("learning.refine")) Secrets.get(app) else null
+            fun split(t: String) = t.lines().map { it.trim() }.filter { it.isNotEmpty() }.let { it.firstOrNull() to it.drop(1).joinToString(" ").ifEmpty { null } }
+            val (here, note) = known?.let(::split) ?: (null to null)
+            val view = CardView(lang, w.text, w.lemma, card, meaning, reading, here, note, asking = known == null && aiKey != null)
+            withContext(Dispatchers.Main) { ui.card = view }
+            if (known != null || aiKey == null) return@launch
+            val got = runCatching { uk.ccez.keys.Stats.ai.incrementAndGet(); engine.gloss(context, w.text, aiKey) }.getOrNull()?.takeIf { it.isNotBlank() }
+            if (got != null) remember(key, got)
+            withContext(Dispatchers.Main) {
+                ui.card?.takeIf { it.lang == lang && it.word == w.text }?.let { c ->
+                    val (h, n) = got?.let(::split) ?: (null to null)
+                    ui.card = c.copy(here = h, note = n, asking = false)
+                }
+            }
         }
     }
 

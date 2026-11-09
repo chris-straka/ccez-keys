@@ -223,30 +223,68 @@ object Dictionaries {
  */
 object Speaker {
     private var tts: TextToSpeech? = null
-    private var ready = false
+    @Volatile private var ready = false
     private var pending: Pair<String, String>? = null
+    /** The best voice per language, found once (the list is a call to the speech engine). */
+    private val voices = java.util.concurrent.ConcurrentHashMap<String, Voice>()
+    private var current: String? = null
+    /** Languages whose voice was loaded ahead, so the first word sounds at once. */
+    private val warmed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private var waiting: Pair<String, String>? = null
+
+    private fun engine(ctx: Context): TextToSpeech = tts ?: TextToSpeech(ctx.applicationContext) { status ->
+        ready = status == TextToSpeech.SUCCESS
+        if (!ready) { tts?.shutdown(); tts = null; return@TextToSpeech }
+        pending?.let { (s, l) -> speak(s, l) }
+        pending = null
+        waiting?.let { (l, sample) -> load(l, sample) }
+        waiting = null
+    }.also { tts = it }
 
     fun say(ctx: Context, text: String, lang: String) {
-        val t = tts ?: TextToSpeech(ctx.applicationContext) { status ->
-            ready = status == TextToSpeech.SUCCESS
-            pending?.let { (s, l) -> if (ready) speak(s, l) }
-            pending = null
-            // No speech engine (or it failed): drop it, so the next tap tries again.
-            if (!ready) { tts?.shutdown(); tts = null }
-        }.also { tts = it }
+        engine(ctx)
         if (!ready) { pending = text to lang; return }
         speak(text, lang)
     }
 
-    private fun speak(text: String, lang: String) {
+    /**
+     * Gets `lang`'s voice ready while the strip shows it: the engine started,
+     * the voice chosen and a sample made silently (to a file), so a tap
+     * speaks without the first-time pause.
+     */
+    fun warm(ctx: Context, lang: String, sample: String) {
+        if (lang in warmed) return
+        engine(ctx)
+        if (!ready) { waiting = lang to sample; return }
+        load(lang, sample)
+    }
+
+    private fun load(lang: String, sample: String) {
         val t = tts ?: return
+        if (!warmed.add(lang)) return
+        if (!use(t, lang)) { warmed.remove(lang); return }
+        val out = java.io.File(uk.ccez.keys.App.instance.cacheDir, "tts-warm.wav")
+        runCatching { t.synthesizeToFile(sample.take(12), null, out, "warm-$lang") }
+    }
+
+    /** Sets `lang`'s best voice (unless it's the one set). False when the phone has none. */
+    private fun use(t: TextToSpeech, lang: String): Boolean {
+        if (current == lang) return true
         val want = Locale.forLanguageTag(lang).language
-        val voice = runCatching { t.voices }.getOrNull().orEmpty()
+        val voice = voices[lang] ?: runCatching { t.voices }.getOrNull().orEmpty()
             .filter { it.locale.language == want && TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in it.features.orEmpty() }
             .maxWithOrNull(compareBy<Voice>({ it.quality }, { !it.isNetworkConnectionRequired }))
-            ?: return
+            ?.also { voices[lang] = it }
+            ?: return false
         t.voice = voice
         t.setSpeechRate(0.9f)
+        current = lang
+        return true
+    }
+
+    private fun speak(text: String, lang: String) {
+        val t = tts ?: return
+        if (!use(t, lang)) return
         t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "strip")
     }
 }

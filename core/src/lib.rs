@@ -503,6 +503,18 @@ impl Engine {
         r.map(|t| t.trim().trim_matches('"').to_string()).map_err(|e| KeysError::Bad(e.to_string()))
     }
 
+    /// What `word` means in `context` (the strip's sentence), as ccez-lang
+    /// glosses a word: its English equivalent for this sense on the first
+    /// line, at most one short note on the next. Blocks: off the main thread.
+    pub fn gloss(&self, context: String, word: String, key: String) -> Result<String, KeysError> {
+        let p = self.provider()?;
+        let m = ccez_lang_core::ai::ask_messages(&context, &word, None, false);
+        let started = std::time::Instant::now();
+        let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, None, |_| {}));
+        self.log.write("info", "gloss", &serde_json::json!({"ok": r.is_ok(), "ms": started.elapsed().as_millis() as u64}).to_string());
+        r.map(|t| t.trim().to_string()).map_err(|e| KeysError::Bad(e.to_string()))
+    }
+
     /// A correction the owner took (for review later, in ccez-learn).
     pub fn note_mistake(&self, lang: String, written: String, fixed: String, why: String) {
         let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
