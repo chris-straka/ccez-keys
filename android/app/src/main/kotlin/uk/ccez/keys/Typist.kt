@@ -748,14 +748,15 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             }
         }
         val prev = prevWord(word.length)
-        // A prediction right after a word (no space yet) gets one.
-        val gap = if (word.isEmpty()) ic.getTextBeforeCursor(1, 0)?.toString()?.lastOrNull()?.takeIf(::isWordChar)?.let { " " } ?: "" else ""
-        ic.commitText("$gap$text ", 1)
+        // A prediction right after a word (no space yet) gets one; Japanese,
+        // Chinese and Thai take none.
+        val gap = if (word.isEmpty() && !noSpaces()) ic.getTextBeforeCursor(1, 0)?.toString()?.lastOrNull()?.takeIf(::isWordChar)?.let { " " } ?: "" else ""
+        ic.commitText(if (noSpaces()) text else "$gap$text ", 1)
         clearWord()
         fix = null
         if (!noLearn) engine.learn(lang, prev, text, isTyped)
         lastSpaceAt = SystemClock.uptimeMillis()
-        autoSpace = true
+        autoSpace = !noSpaces()
         updateShift()
         updateBar()
     }
@@ -953,8 +954,19 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun prevWord(skip: Int): String {
         val before = ic?.getTextBeforeCursor(64 + skip, 0)?.toString().orEmpty()
         val t = before.dropLast(skip).trimEnd()
+        if (noSpaces()) {
+            // Japanese, Chinese, Thai: no spaces between words; ICU (in Android) finds the last one.
+            if (t.isEmpty() || !isWordChar(t.last())) return ""
+            val it = android.icu.text.BreakIterator.getWordInstance(android.icu.util.ULocale.forLanguageTag(lang))
+            it.setText(t)
+            val start = it.preceding(t.length).coerceAtLeast(0)
+            return t.substring(start)
+        }
         return t.takeLastWhile(::isWordChar)
     }
+
+    /** Languages written without spaces between words. */
+    private fun noSpaces() = lang == "ja" || lang == "zh" || lang == "th"
 
     companion object {
         private val PASSWORDS = setOf(

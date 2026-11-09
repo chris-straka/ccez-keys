@@ -86,8 +86,58 @@ fn words(s: &str) -> Vec<(String, bool)> {
         .collect()
 }
 
+/// Japanese, Chinese and Thai: the words ICU finds (dictionaries for
+/// Chinese and Japanese, a model for Thai); next to each other unless
+/// something not a word (punctuation, a space) comes between.
+fn segmented(s: &str) -> Vec<(String, bool)> {
+    use icu_segmenter::{WordSegmenter, options::WordBreakInvariantOptions};
+    let seg = WordSegmenter::new_auto(WordBreakInvariantOptions::default());
+    let mut out = Vec::new();
+    let mut last = 0;
+    let mut joined = false;
+    let mut iter = seg.segment_str(s);
+    while let Some(end) = iter.next() {
+        if end == 0 {
+            continue;
+        }
+        let piece = &s[last..end];
+        last = end;
+        if iter.is_word_like() {
+            out.push((piece.to_string(), joined && !out.is_empty()));
+            joined = true;
+        } else {
+            joined = false;
+        }
+    }
+    out
+}
+
 fn main() {
     let lang = std::env::args().nth(1).expect("usage: keys-next <lang> < sentences.tsv");
+    let no_spaces = matches!(lang.as_str(), "ja" | "zh" | "th");
+    // Chinese: traditional characters made simplified (the keyboard types
+    // simplified), from CEDICT's single characters: `--cedict cedict.txt.gz`.
+    let simp: HashMap<char, char> = std::env::args()
+        .skip_while(|a| a != "--cedict")
+        .nth(1)
+        .map(|p| {
+            let mut text = String::new();
+            use std::io::Read;
+            flate2::read::GzDecoder::new(std::fs::File::open(p).expect("cedict")).read_to_string(&mut text).expect("cedict");
+            text.lines()
+                .filter(|l| !l.starts_with('#'))
+                .filter_map(|l| {
+                    let mut it = l.split(' ');
+                    let (t, s) = (it.next()?, it.next()?);
+                    let (mut tc, mut sc) = (t.chars(), s.chars());
+                    match (tc.next(), tc.next(), sc.next(), sc.next()) {
+                        (Some(a), None, Some(b), None) if a != b => Some((a, b)),
+                        _ => None,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     // previous (lower) → next (lower) → count; next (lower) → spelling → count.
     let mut pairs: HashMap<String, HashMap<String, u32>> = HashMap::new();
     let mut spelled: HashMap<String, HashMap<String, u32>> = HashMap::new();
@@ -96,7 +146,8 @@ fn main() {
         let Ok(line) = line else { continue };
         let Some(text) = line.splitn(3, '\t').nth(2) else { continue };
         sentences += 1;
-        let ws = words(text);
+        let text: String = if simp.is_empty() { text.to_string() } else { text.chars().map(|c| *simp.get(&c).unwrap_or(&c)).collect() };
+        let ws = if no_spaces { segmented(&text) } else { words(&text) };
         for i in 1..ws.len() {
             let (next, joined) = &ws[i];
             if !joined {

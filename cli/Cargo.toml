@@ -20,4 +20,6 @@ path = "src/next.rs"
 
 [dependencies]
 flate2 = "1"
+# keys-next: words in Japanese, Chinese and Thai sentences (no spaces between them).
+icu_segmenter = "2.0"
 serde_json = "1"
