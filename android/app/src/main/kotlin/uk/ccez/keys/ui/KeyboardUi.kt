@@ -48,6 +48,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -177,7 +181,17 @@ private fun PopupLayer(ui: UiState) {
 @Composable
 private fun BarRow(ui: UiState, typist: Typist) {
     val bar = ui.bar
-    Row(Modifier.fillMaxWidth().height(BAR_H), verticalAlignment = Alignment.CenterVertically) {
+    var drag by remember { mutableFloatStateOf(0f) }
+    Row(
+        Modifier.fillMaxWidth().height(BAR_H).pointerInput(Unit) {
+            // A swipe either way: the buttons in place of the words, or back.
+            detectHorizontalDragGestures(
+                onDragEnd = { if (kotlin.math.abs(drag) > 60f && (ui.bar is Bar.Words || ui.tools)) ui.tools = !ui.tools; drag = 0f },
+                onDragCancel = { drag = 0f },
+            ) { _, d -> drag += d }
+        },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (bar is Bar.Convert && ui.panel == Panel.KEYS) {
             Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 bar.words.forEachIndexed { i, c ->
@@ -195,13 +209,12 @@ private fun BarRow(ui: UiState, typist: Typist) {
             return@Row
         }
         if (bar is Bar.Words && ui.panel == Panel.KEYS && !ui.tools) {
-            // The buttons are one tap away while words show (the clipboard icon,
-            // lit, when something was just copied).
-            val fresh = ui.clip != null && !ui.password
-            Box(
+            // Swipe the bar for the buttons (owner, 2026-11-08: a button for them was
+            // jarring). Something just copied: its icon, lit, opens them too.
+            if (ui.clip != null && !ui.password) Box(
                 Modifier.width(40.dp).fillMaxHeight().combinedClickable(onClick = { ui.tools = true }),
                 contentAlignment = Alignment.Center,
-            ) { Icon(if (fresh) Icons.clip else Icons.tools, "Buttons", tint = if (fresh) Colors.accent else Colors.muted, modifier = Modifier.size(18.dp)) }
+            ) { Icon(Icons.clip, "Clipboard", tint = Colors.accent, modifier = Modifier.size(18.dp)) }
             Cell(bar.left, false, bar.typed, typist, 1f)
             Divider()
             Cell(bar.mid, true, bar.typed, typist, 1.25f)
@@ -539,24 +552,56 @@ private fun DrawPanel(ui: UiState, typist: Typist) {
 private fun ClipsPanel(ui: UiState, typist: Typist) {
     val ctx = LocalContext.current
     var items by remember { mutableStateOf(uk.ccez.keys.learn.Clips.all(ctx)) }
+    // The day's screenshots first (Android leaves them off the clipboard), then copies, two to a row.
+    var shots by remember { mutableStateOf<List<Pair<android.net.Uri, androidx.compose.ui.graphics.ImageBitmap>>>(emptyList()) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        shots = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            uk.ccez.keys.learn.Shots.recent(ctx).mapNotNull { u -> uk.ccez.keys.learn.Shots.thumb(ctx, u)?.let { u to it.asImageBitmap() } }
+        }
+    }
+    var sent by remember { mutableStateOf<android.net.Uri?>(null) }
     Column(
         Modifier.fillMaxWidth().height(ui.keysHeightDp.dp).verticalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        items.forEach { t ->
-            Text(
-                t.replace('\n', ' '),
-                color = Colors.fg,
-                fontSize = 13.5.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Colors.chip)
-                    .combinedClickable(
-                        onClick = { typist.paste(t); typist.showKeys() },
-                        onLongClick = { uk.ccez.keys.learn.Clips.remove(ctx, t); items = uk.ccez.keys.learn.Clips.all(ctx) },
+        if (shots.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                shots.forEach { (uri, bmp) ->
+                    androidx.compose.foundation.Image(
+                        bmp,
+                        "Screenshot",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.height(96.dp).width(54.dp).clip(RoundedCornerShape(8.dp))
+                            .background(Colors.chip)
+                            .let { m -> if (sent == uri) m.graphicsLayer { alpha = 0.5f } else m }
+                            .combinedClickable(onClick = {
+                                // Into the app as an image; where the field takes none, onto the clipboard to paste.
+                                if (typist.sendShot(uri)) typist.showKeys() else sent = uri
+                            }),
                     )
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-            )
+                }
+            }
+            if (sent != null) Text("Copied", color = Colors.muted, fontSize = 12.sp)
+        }
+        items.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { t ->
+                    Text(
+                        t.replace('\n', ' '),
+                        color = Colors.fg,
+                        fontSize = 13.5.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp).clip(RoundedCornerShape(10.dp)).background(Colors.chip)
+                            .combinedClickable(
+                                onClick = { typist.paste(t); typist.showKeys() },
+                                onLongClick = { uk.ccez.keys.learn.Clips.remove(ctx, t); items = uk.ccez.keys.learn.Clips.all(ctx) },
+                            )
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    )
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
         }
     }
 }

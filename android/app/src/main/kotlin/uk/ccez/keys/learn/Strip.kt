@@ -138,6 +138,8 @@ class Strip(private val ui: UiState) {
             ui.strip = null
             return
         }
+        // Another sentence (not this one going on): back to the first language.
+        if (!sameSentence(source, sentence)) { index = 0; moved = 1 }
         source = sentence
         job?.cancel()
         job = app.scope.launch {
@@ -147,6 +149,13 @@ class Strip(private val ui: UiState) {
             typing = written(sentence, typingLang)
             show(autoSteps = 0)
         }
+    }
+
+    /** `now` is `before` typed on (or a few letters taken back), not a new sentence. */
+    private fun sameSentence(before: String, now: String): Boolean {
+        if (before.isEmpty() || now.isEmpty()) return false
+        val n = minOf(before.length, now.length, 12)
+        return before.take(n) == now.take(n)
     }
 
     /** One language-ID client for the keyboard's life (each one holds native memory). */
@@ -183,7 +192,8 @@ class Strip(private val ui: UiState) {
         val lang = all[index]
         // A dictionary that arrives now brings readings and statuses: redraw.
         app.scope.launch { if (Dictionaries.ensure(lang) && ui.strip?.lang == lang) redraw() }
-        val key = "$from|$lang|$polite|$src"
+        // A full stop added isn't a new sentence for Muse: the key leaves end marks out.
+        val key = "$from|$lang|$polite|${bare(src)}"
         val better = synchronized(refined) { refined[key] }
         val text = (better ?: Translator.translate(src, from, lang) ?: return)
             .let { if (src.none { c -> c.isWhitespace() }) bare(it) else it }
@@ -235,7 +245,7 @@ class Strip(private val ui: UiState) {
             if (room <= 0 || segs.size >= 5) break
             val lang = all[(index + k) % all.size]
             // Only models already on the phone: no downloads for these.
-            val ai = synchronized(refined) { refined["$typing|$lang|$polite|$src"] }
+            val ai = synchronized(refined) { refined["$typing|$lang|$polite|${bare(src)}"] }
             val got = ai ?: Translator.translate(src, typing, lang, download = false)
             if (got == null) {
                 // Its model isn't on the phone yet: fetched quietly (one at a time, on Wi-Fi),
@@ -290,7 +300,7 @@ class Strip(private val ui: UiState) {
         refineJob = app.scope.launch {
             delay(1200)
             // The other languages asked alongside (one wait, one change on the line).
-            val others = also.filter { lang -> synchronized(refined) { !refined.containsKey("$from|$lang|$polite|$source") } }.map { lang ->
+            val others = also.filter { lang -> synchronized(refined) { !refined.containsKey("$from|$lang|$polite|${bare(source)}") } }.map { lang ->
                 async { lang to runCatching { uk.ccez.keys.Stats.ai.incrementAndGet(); engine.translateAi(source, from, lang, polite, aiKey) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() } }
             }
             val t = runCatching { uk.ccez.keys.Stats.ai.incrementAndGet(); engine.translateAi(source, from, to, polite, aiKey) }
@@ -302,7 +312,7 @@ class Strip(private val ui: UiState) {
                 return@launch
             }
             remember(key, t)
-            others.awaitAll().forEach { (lang, v) -> if (v != null) remember("$from|$lang|$polite|$source", v) }
+            others.awaitAll().forEach { (lang, v) -> if (v != null) remember("$from|$lang|$polite|${bare(source)}", v) }
             if (ui.strip?.lang == to && this@Strip.source == source) redraw()
         }
         return true

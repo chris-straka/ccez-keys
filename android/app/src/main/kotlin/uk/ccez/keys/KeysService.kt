@@ -127,7 +127,9 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         val clip = runCatching { clipboard?.primaryClip }.getOrNull() ?: return
         val sensitive = Build.VERSION.SDK_INT >= 33 &&
             clip.description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
-        if (sensitive || clip.itemCount == 0) { ui.clip = null; return }
+        // A picture (a screenshot put there from the panel): no text chip for it.
+        val picture = clip.description.hasMimeType("image/*") || (clip.itemCount > 0 && clip.getItemAt(0).uri != null && clip.getItemAt(0).text == null)
+        if (sensitive || clip.itemCount == 0 || picture) { ui.clip = null; return }
         val text = clip.getItemAt(0).coerceToText(this)?.toString()?.trim().orEmpty().take(10_000)
         ui.clip = text.ifEmpty { null }
         if (text.isNotEmpty()) uk.ccez.keys.learn.Clips.add(this, text)

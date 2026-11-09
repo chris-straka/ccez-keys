@@ -511,6 +511,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             jamo.setLength(0)
             jamoBase = ""
             telexRaw.setLength(0)
+            if (word.isEmpty()) resumeWord(ic)
             word.append(t)
             ic.setComposingText(word, 1)
             if (shift == Shift.ONCE) setShift(Shift.OFF)
@@ -522,6 +523,22 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (shift == Shift.ONCE) setShift(Shift.OFF)
         if (text in ".!?") updateShift()
         updateBar()
+    }
+
+    /**
+     * Letters typed right after a word (the cursor put back at its end) go on
+     * with it: "swim" + "m" is "swimm", and the bar offers "swimming".
+     */
+    private fun resumeWord(ic: InputConnection) {
+        if (noSpaces()) return
+        val before = ic.getTextBeforeCursor(40, 0)?.toString().orEmpty()
+        val tail = before.takeLastWhile(::isWordChar)
+        if (tail.isEmpty() || tail.length >= 40) return
+        // Not inside a word (letters after the cursor too): that stays as it is.
+        val after = ic.getTextAfterCursor(1, 0)?.toString().orEmpty()
+        if (after.isNotEmpty() && isWordChar(after[0])) return
+        ic.deleteSurroundingText(tail.length, 0)
+        word.append(tail)
     }
 
     /** After a word we spaced ourselves, ".,!?" go before that space. */
@@ -783,6 +800,15 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         updateBar()
     }
 
+    /** A screenshot from the clipboard panel: into the app as an image, or onto the clipboard. */
+    fun sendShot(uri: android.net.Uri): Boolean {
+        val ic = ic ?: return false
+        val ed = editor ?: return false
+        acted()
+        endWord(correct = false)
+        return runCatching { uk.ccez.keys.learn.Shots.send(service, ic, ed, uri) }.getOrDefault(false)
+    }
+
     fun paste(text: String) {
         acted()
         endWord(correct = false)
@@ -910,6 +936,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /** The sentence being typed (the last one, when the cursor sits just after its end). */
     private fun sentence(): String {
         val before = ic?.getTextBeforeCursor(300, 0)?.toString().orEmpty()
+        // At the start of a line (an empty one too): nothing yet.
+        if (before.trimEnd(' ', '\t').endsWith("\n")) return ""
         val t = before.trimEnd()
         val ends = ".!?。！？\n"
         val body = if (t.isNotEmpty() && t.last() in ends) t.dropLast(1) else t

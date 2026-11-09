@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -108,22 +109,19 @@ fun StripRow(s: StripView, typist: Typist) {
             modifier = Modifier.weight(1f),
             label = "strip",
         ) { v -> Row(verticalAlignment = Alignment.CenterVertically) { StripLine(v, typist) } }
-        // The AI at work (a soft violet pulse) or its wording in place (✦);
-        // nothing: ML Kit's quick translation.
-        if (s.pending) {
-            // A slow blink, two frames a second (a smooth pulse drew 120 a second while Muse thought).
-            var bright by remember { mutableStateOf(true) }
-            androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(550); bright = !bright } }
-            val pulse = if (bright) 1f else 0.3f
-            Box(Modifier.padding(horizontal = 6.dp).size(6.dp).graphicsLayer { alpha = pulse }.clip(RoundedCornerShape(3.dp)).background(VIOLET))
-        } else if (s.refined) {
-            // Tap: ask Muse about this wording. Hold: this app's wording polite or
-            // casual (the star brighter when polite).
-            Box(
-                Modifier.size(30.dp).clip(RoundedCornerShape(15.dp))
-                    .combinedClickable(onClick = { typist.openAsk("${s.source} → ${s.text}") }, onLongClick = { typist.flipRegister() }),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.spark, "Ask Muse", tint = if (typist.polite()) VIOLET else VIOLET.copy(alpha = 0.6f), modifier = Modifier.size(13.dp)) }
+        // The AI at work (a slow violet blink) or its wording in place (✦), in a
+        // slot always there: appearing, they pushed the words (owner, 2026-11-08).
+        Box(Modifier.size(30.dp).clip(RoundedCornerShape(15.dp)).let { m ->
+            // Tap: ask Muse about this wording. Hold: this app's wording polite or casual.
+            if (s.refined) m.combinedClickable(onClick = { typist.openAsk("${s.source} → ${s.text}") }, onLongClick = { typist.flipRegister() }) else m
+        }, contentAlignment = Alignment.Center) {
+            if (s.pending) {
+                var bright by remember { mutableStateOf(true) }
+                androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(550); bright = !bright } }
+                Box(Modifier.size(6.dp).graphicsLayer { alpha = if (bright) 1f else 0.3f }.clip(RoundedCornerShape(3.dp)).background(VIOLET))
+            } else if (s.refined) {
+                Icon(Icons.spark, "Ask Muse", tint = if (typist.polite()) VIOLET else VIOLET.copy(alpha = 0.6f), modifier = Modifier.size(13.dp))
+            }
         }
         // No speaker here: the cards have one (owner, 2026-11-08).
     }
@@ -148,7 +146,7 @@ internal fun MutedFlag(flag: String, size: Int) {
 
 /** Its children in a row, the first always, the rest while they fit whole. */
 @Composable
-private fun FitRow(modifier: Modifier, content: @Composable () -> Unit) {
+private fun FitRow(modifier: Modifier, shift: Float = 0f, content: @Composable () -> Unit) {
     androidx.compose.ui.layout.Layout(content, modifier) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity)
         val placeables = measurables.map { it.measure(loose) }
@@ -161,8 +159,10 @@ private fun FitRow(modifier: Modifier, content: @Composable () -> Unit) {
         }
         val h = shown.maxOfOrNull { it.height } ?: 0
         layout(constraints.maxWidth, h.coerceIn(constraints.minHeight, constraints.maxHeight)) {
-            // A first one longer than the line: its end shows (the words being typed).
-            var x = minOf(0, constraints.maxWidth - shown.first().width)
+            // A first one longer than the line: its end shows (the words being typed),
+            // unless held and dragged back.
+            val far = minOf(0, constraints.maxWidth - shown.first().width)
+            var x = (far + shift.toInt()).coerceIn(far, 0)
             shown.forEach { p -> p.placeRelative(x, (h - p.height) / 2); x += p.width }
         }
     }
@@ -190,7 +190,16 @@ private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, 
     if (more.isNotEmpty()) {
         // The same in the next languages, "chat | Katze | gato", as many as fit;
         // each word taps to its card, in its language.
-        FitRow(Modifier.weight(1f).clipToBounds()) {
+        var shift by remember(s.text) { mutableFloatStateOf(0f) }
+        FitRow(
+            Modifier.weight(1f).clipToBounds().pointerInput(s.text) {
+                detectDragGesturesAfterLongPress(onDragStart = { typist.holdBuzz() }) { change, d ->
+                    change.consume()
+                    shift += d.x
+                }
+            },
+            shift,
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) { s.words.forEach { w -> Word(w, s.lang, typist, readings) } }
             more.forEach { seg ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -208,7 +217,16 @@ private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, 
     val scroll = androidx.compose.foundation.rememberScrollState()
     androidx.compose.runtime.LaunchedEffect(s.text) { scroll.scrollTo(scroll.maxValue) }
     CompositionLocalProvider(LocalLayoutDirection provides if (s.lang in RTL) LayoutDirection.Rtl else LayoutDirection.Ltr) {
-        Row(Modifier.weight(1f).horizontalScroll(scroll, enabled = false), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.weight(1f).horizontalScroll(scroll, enabled = false).pointerInput(s.text) {
+                // Hold, then drag: the line moves (a plain swipe changes language).
+                detectDragGesturesAfterLongPress(onDragStart = { typist.holdBuzz() }) { change, d ->
+                    change.consume()
+                    scroll.dispatchRawDelta(-d.x)
+                }
+            },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             s.words.forEach { w -> Word(w, s.lang, typist, readings) }
         }
     }
@@ -231,10 +249,9 @@ private fun Word(w: StripWord, lang: String, typist: Typist, readings: Boolean) 
     Row(
         Modifier.let { m ->
             if (!w.word) m else m.clip(RoundedCornerShape(4.dp)).combinedClickable(
-                // Tap or hold: the card (Learning / Known); a hold buzzes (owner, 2026-11-08:
-                // a hold that saved straight to Learning was a surprise).
+                // Tap: the card (Learning / Known), and the word said. A hold drags
+                // the line instead (owner, 2026-11-08: to see a long sentence's start).
                 onClick = { typist.strip.open(lang, w) },
-                onLongClick = { typist.holdBuzz(); typist.strip.open(lang, w) },
             )
         },
     ) {

@@ -64,6 +64,15 @@
 
         <!-- `keys` on the Mac, over adb (adb shell content call). Only the
              shell user and this app may call it (checked in Control). -->
+        <!-- Screenshots handed to the app being typed in (pasted from the clipboard panel). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="uk.ccez.keys.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/files" />
+        </provider>
+
         <provider
             android:name=".Control"
             android:authorities="uk.ccez.keys.control"
