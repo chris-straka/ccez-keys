@@ -251,6 +251,11 @@ impl Engine {
         (kana.chars().count() >= 3 && !kana.chars().any(|c| c.is_ascii()) && typing::is_word(ja, &kana)).then_some(kana)
     }
 
+    /// Whether `word` is among the commonest 10,000 of `lang` (true when its words aren't loaded).
+    pub fn common_word(&self, lang: String, word: String) -> bool {
+        self.lock().langs.get(&lang).map(|l| typing::common(l, &word)).unwrap_or(true)
+    }
+
     /// The words likely next (data/next/<lang>.txt), for a language whose words are loaded.
     pub fn load_next(&self, lang: String, text: String) -> u32 {
         let next = typing::parse_next(&text);

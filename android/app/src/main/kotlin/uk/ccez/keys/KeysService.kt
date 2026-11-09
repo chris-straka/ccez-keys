@@ -36,7 +36,6 @@ class UiState {
     var password by mutableStateOf(false)
     var keysHeightDp by mutableFloatStateOf(212f)
     var strip by mutableStateOf<uk.ccez.keys.learn.StripView?>(null)
-    var glosses by mutableStateOf<List<uk.ccez.keys.learn.Gloss>>(emptyList())
     var card by mutableStateOf<uk.ccez.keys.learn.CardView?>(null)
     var tip by mutableStateOf<uk.ccez.keys.learn.Tip?>(null)
     /** A kaomoji worth offering (chat apps). */

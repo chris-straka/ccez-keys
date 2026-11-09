@@ -805,9 +805,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val sentence = if (password) "" else sentence()
         strip.update(sentence, lang, allowed = !password, polite = polite(), ai = !noLearn)
         tips.update(sentence, lang, allowed = !password && !noLearn, ended = sentence.trimEnd().lastOrNull()?.let { it in ".!?。！？" } == true)
-        if (password) { ui.bar = Bar.Buttons; ui.glosses = emptyList(); return }
+        if (password) { ui.bar = Bar.Buttons; return }
         updateWords()
-        strip.gloss((ui.bar as? Bar.Words)?.mid?.takeIf { word.isNotEmpty() }, lang)
         ui.face = if (ui.chatApp && engine.settingBool("buttons.face")) uk.ccez.keys.learn.Kaomoji.suggest(service, sentence, uk.ccez.keys.ui.Faces.recent(service)) else null
     }
 
@@ -941,13 +940,6 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     fun engineStatus(lang: String, word: String) = engine.wordStatus(lang, word)
 
-    /** The glosses under a held suggestion, each to Learning in its language. */
-    fun learnGlosses(glosses: List<uk.ccez.keys.learn.Gloss>) {
-        if (noLearn) return
-        buzz(HapticFeedbackConstants.CONTEXT_CLICK)
-        glosses.forEach { engine.setWordStatus(it.lang, it.word, uk.ccez.keys.core.WordStatus.LEARNING) }
-        uk.ccez.keys.learn.WordSync.soon()
-    }
 
     /** The word before the cursor, skipping `skip` characters of the word being typed. */
     private fun prevWord(skip: Int): String {

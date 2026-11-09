@@ -2,6 +2,8 @@ package uk.ccez.keys.learn
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,9 +37,6 @@ data class StripView(
 /** One language's translation of a single word, after the first. */
 data class Segment(val lang: String, val flag: String, val words: List<StripWord>, val text: String)
 
-/** A word under a suggestion, in a language being learned. */
-data class Gloss(val lang: String, val flag: String, val word: String)
-
 /** A tapped word's card. */
 data class CardView(val lang: String, val word: String, val lemma: String, val card: Card?, val meaning: String?)
 
@@ -51,7 +50,6 @@ class Strip(private val ui: UiState) {
     private val app = App.instance
     private val engine get() = app.engine
     private var job: Job? = null
-    private var glossJob: Job? = null
     private var index = 0
     /** The way the last change of language went (1 down the list, -1 up). */
     private var moved = 1
@@ -70,9 +68,35 @@ class Strip(private val ui: UiState) {
 
     private var polite = false
     private var refineJob: Job? = null
-    /** AI wordings already fetched: (from, to, polite, text) → translation. */
-    private val refined = object : LinkedHashMap<String, String>(32, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 64
+    /**
+     * AI wordings already fetched: (from, to, polite, text) → translation. Kept
+     * on disk, so going back to a sentence (or the keyboard restarting) never
+     * asks Muse twice.
+     */
+    private val refined = object : LinkedHashMap<String, String>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 500
+    }
+    private val refinedFile by lazy { java.io.File(app.filesDir, "refined.json") }
+    private var saveJob: Job? = null
+
+    init {
+        app.scope.launch {
+            runCatching {
+                val o = org.json.JSONObject(refinedFile.readText())
+                synchronized(refined) { o.keys().forEach { k -> if (!refined.containsKey(k)) refined[k] = o.getString(k) } }
+            }
+        }
+    }
+
+    private fun remember(key: String, value: String) {
+        synchronized(refined) { refined[key] = value }
+        saveJob?.cancel()
+        saveJob = app.scope.launch {
+            delay(2000)
+            val text = synchronized(refined) { org.json.JSONObject(refined as Map<*, *>).toString() }
+            val tmp = java.io.File(refinedFile.path + ".tmp")
+            runCatching { tmp.writeText(text); tmp.renameTo(refinedFile) }
+        }
     }
 
     /** `ai`: the AI may reword it (never in a field that asks for no learning). */
@@ -131,11 +155,15 @@ class Strip(private val ui: UiState) {
         val key = "$typing|$lang|$polite|$source"
         val better = synchronized(refined) { refined[key] }
         val text = better ?: Translator.translate(source, typing, lang) ?: return
-        val pending = better == null && refine(key, source, typing, lang)
+        val pending = better == null && refine(key, source, typing, lang, all)
         val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }
         val next = emptyList<String>()
-        withContext(Dispatchers.Main) { ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = source, moved = moved) }
+        withContext(Dispatchers.Main) {
+            // The other languages stay as they were until their new wording is ready (no blink per key).
+            val keep = ui.strip?.takeIf { it.lang == lang }?.more.orEmpty()
+            ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = source, moved = moved, more = keep)
+        }
         if (pending) {
             // Shown as pending once the pause has come and the AI is asked.
             app.scope.launch {
@@ -171,16 +199,18 @@ class Strip(private val ui: UiState) {
             if (room <= 0 || segs.size >= 5) break
             val lang = all[(index + k) % all.size]
             // Only models already on the phone: no downloads for these.
-            val t = Translator.translate(src, typing, lang, download = false)?.trim()?.trimEnd('.', '!', '?', '。', '！', '？') ?: continue
+            val ai = synchronized(refined) { refined["$typing|$lang|$polite|$src"] }
+            val t = (ai ?: Translator.translate(src, typing, lang, download = false))?.trim()?.trimEnd('.', '!', '?', '。', '！', '？') ?: continue
             if (t.isEmpty() || t.equals(src, ignoreCase = true)) continue
             val words = engine.stripWords(lang, t)
             val ws = words.filter { it.word }
             if (ws.isNotEmpty() && ws.all { it.status == WordStatus.KNOWN }) continue
             segs += Segment(lang, flag(lang), words, t)
             room -= t.length + 4
-            val now = segs.toList()
-            withContext(Dispatchers.Main) { ui.strip?.takeIf { it.source == src && it.lang == shownLang }?.let { ui.strip = it.copy(more = now) } }
         }
+        // All at once: one change to the line, not one per language.
+        if (segs.isEmpty()) return
+        withContext(Dispatchers.Main) { ui.strip?.takeIf { it.source == src && it.lang == shownLang }?.let { ui.strip = it.copy(more = segs.toList()) } }
     }
 
     /** The languages either side, translated ahead so a swipe shows them at once. */
@@ -199,17 +229,28 @@ class Strip(private val ui: UiState) {
      * replaces ML Kit's literal one.
      */
     /** True when the AI will be asked. */
-    private fun refine(key: String, source: String, from: String, to: String): Boolean {
+    private fun refine(key: String, source: String, from: String, to: String, all: List<String>): Boolean {
         refineJob?.cancel()
         if (!ai || !engine.settingBool("learning.refine") || synchronized(refined) { refined.containsKey(key) }) return false
-        // Sentences only: a word or two gets ML Kit's plain translation (owner, 2026-11-08:
+        // Sentences, and single uncommon words ("gerrymandering": ML Kit made it a verb).
+        // A common word or two keeps ML Kit's plain translation (owner, 2026-11-08:
         // "worth" became a whole phrase).
-        if (source.split(Regex("\\s+")).count { it.isNotBlank() } < 3 && source.none { it in '\u3040'..'\u9fff' }) return false
-        if (source.none { it.isWhitespace() } && source.length < 6) return false
+        val single = source.none { it.isWhitespace() }
+        val rare = single && source.length >= 6 && !engine.commonWord(from, source)
+        if (!rare) {
+            if (source.split(Regex("\\s+")).count { it.isNotBlank() } < 3 && source.none { it in '\u3040'..'\u9fff' }) return false
+            if (single && source.length < 6) return false
+        }
+        // A rare word: the languages after it on the line too, all replaced at once.
+        val also = if (rare) (1 until minOf(all.size, 5)).map { all[(index + it) % all.size] } else emptyList()
         val aiKey = Secrets.get(app) ?: return false
         val polite = polite
         refineJob = app.scope.launch {
             delay(1200)
+            // The other languages asked alongside (one wait, one change on the line).
+            val others = also.filter { lang -> synchronized(refined) { !refined.containsKey("$from|$lang|$polite|$source") } }.map { lang ->
+                async { lang to runCatching { engine.translateAi(source, from, lang, polite, aiKey) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() } }
+            }
             val t = runCatching { engine.translateAi(source, from, to, polite, aiKey) }
                 .onFailure { app.log("warn", "refine-failed", "error" to it.message) }
                 .getOrNull()?.takeIf { it.isNotBlank() }
@@ -218,28 +259,11 @@ class Strip(private val ui: UiState) {
                 withContext(Dispatchers.Main) { ui.strip?.takeIf { it.pending && it.source == source }?.let { ui.strip = it.copy(pending = false) } }
                 return@launch
             }
-            synchronized(refined) { refined[key] = t }
+            remember(key, t)
+            others.awaitAll().forEach { (lang, v) -> if (v != null) remember("$from|$lang|$polite|$source", v) }
             if (ui.strip?.lang == to && this@Strip.source == source) redraw()
         }
         return true
-    }
-
-    /** The bold suggestion in up to two languages being learned, skipping ones where it's known. */
-    fun gloss(word: String?, typingLang: String) {
-        glossJob?.cancel()
-        if (word == null || !engine.settingBool("learning.strip") || !Translator.supports(typingLang)) { ui.glosses = emptyList(); return }
-        glossJob = app.scope.launch {
-            delay(250)
-            val out = mutableListOf<Gloss>()
-            for (lang in targets(typingLang).take(4)) {
-                if (out.size == 2) break
-                val t = Translator.translate(word, typingLang, lang, download = false)?.trim()?.trimEnd('.', '!', '?') ?: continue
-                if (t.isEmpty() || t.equals(word, ignoreCase = true) || t.count { it == ' ' } > 2) continue
-                if (engine.wordStatus(lang, t) == WordStatus.KNOWN) continue
-                out += Gloss(lang, Langs.of(app, lang)?.flag ?: lang, t)
-            }
-            withContext(Dispatchers.Main) { ui.glosses = out }
-        }
     }
 
     fun open(lang: String, w: StripWord) {
@@ -253,8 +277,6 @@ class Strip(private val ui: UiState) {
     fun setStatus(lang: String, word: String, status: WordStatus) {
         engine.setWordStatus(lang, word, status)
         WordSync.soon()
-        // A word now known leaves the line under the suggestion at once.
-        if (status == WordStatus.KNOWN) ui.glosses = ui.glosses.filterNot { it.lang == lang && it.word.equals(word, ignoreCase = true) }
         if (status == WordStatus.KNOWN && ui.strip?.lang == lang) {
             // Everything shown now known: on to the next language.
             job?.cancel()

@@ -85,7 +85,6 @@ import uk.ccez.keys.core.KeyKind
 import uk.ccez.keys.core.StripWord
 import uk.ccez.keys.core.WordStatus
 import uk.ccez.keys.learn.CardView
-import uk.ccez.keys.learn.Gloss
 import uk.ccez.keys.learn.Speaker
 import uk.ccez.keys.learn.StripView
 
@@ -185,7 +184,7 @@ private fun BarRow(ui: UiState, typist: Typist) {
         if (bar is Bar.Words && ui.panel == Panel.KEYS) {
             Cell(bar.left, false, bar.typed, typist, 1f)
             Divider()
-            Cell(bar.mid, true, bar.typed, typist, 1.25f, ui.glosses)
+            Cell(bar.mid, true, bar.typed, typist, 1.25f)
             Divider()
             val face = ui.face
             if (face != null) FaceCell(face, typist) else Cell(bar.right, false, bar.typed, typist, 1f)
@@ -242,14 +241,10 @@ private fun BarRow(ui: UiState, typist: Typist) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: Typist, weight: Float, glosses: List<Gloss> = emptyList()) {
+private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: Typist, weight: Float) {
     Column(
         Modifier.weight(weight).fillMaxHeight().let { m ->
-            if (text == null) m else m.combinedClickable(
-                onClick = { typist.pick(text, text == typed) },
-                // Hold: the words under it go to Learning, each in its language.
-                onLongClick = { if (glosses.isNotEmpty()) typist.learnGlosses(glosses) },
-            )
+            if (text == null) m else m.combinedClickable(onClick = { typist.pick(text, text == typed) })
         },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -264,16 +259,6 @@ private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: T
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
-            if (glosses.isNotEmpty()) {
-                // Dimmed flags, as on the strip.
-                Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    glosses.forEachIndexed { i, g ->
-                        if (i > 0) Text(" · ", color = Colors.muted, fontSize = 10.sp)
-                        MutedFlag(g.flag, 10)
-                        Text(" ${g.word}", color = Colors.muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
         }
     }
 }
