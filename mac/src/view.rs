@@ -10,7 +10,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
-use crate::ax::Rect;
+use crate::ax::{Place, Rect};
 
 /// Widest the line may be, in points: longer, the start gives way to "…".
 const MAX_W: f64 = 560.0;
@@ -151,6 +151,37 @@ fn new_panel(mtm: MainThreadMarker) -> (Retained<NSPanel>, Retained<NSBox>) {
     (panel, bg)
 }
 
+/// Where the preview goes, in Cocoa's coordinates (from the foot of the main
+/// screen): `place` is in Accessibility's (from the top of the primary
+/// screen, `primary_h` tall), `vis` is the screen's visible area in Cocoa's.
+pub fn spot((w, h): (f64, f64), place: Place, primary_h: f64, vis: Rect) -> (f64, f64) {
+    let (floor, ceil) = (vis.y + 4.0, vis.y + vis.h - 4.0);
+    let (left, right) = (vis.x + 4.0, vis.x + vis.w - 4.0);
+    // A box small enough to step around (a message or search box); a
+    // document is too big, so its cursor's line is what's kept clear.
+    let anchor = match (place.frame, place.caret) {
+        (Some(f), _) if f.h <= 220.0 => Some(f),
+        (_, Some(c)) => Some(c),
+        (f, None) => f,
+    };
+    let Some(a) = anchor else {
+        return (vis.x + (vis.w - w) / 2.0, vis.y + 24.0);
+    };
+    let (top, bottom) = (primary_h - a.y, primary_h - (a.y + a.h));
+    let below = bottom - h - 6.0;
+    let above = top + 6.0;
+    let y = if below >= floor {
+        below
+    } else if above + h <= ceil {
+        above
+    } else {
+        // A box filling the screen top to foot: inside it, at its foot.
+        floor
+    };
+    let x0 = place.caret.map(|c| c.x - 6.0).unwrap_or(a.x);
+    (x0.min(right - w).max(left), y)
+}
+
 impl View {
     pub fn new(mtm: MainThreadMarker) -> View {
         let (panel, bg) = new_panel(mtm);
@@ -204,7 +235,7 @@ impl View {
                     let b = word_button(mtm, &self.clicker, t, size, (ri * 1000 + ti) as isize);
                     objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(b))
                 } else {
-                    objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(label(mtm, &t.text, size, false)))
+                    objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(label(mtm, &t.text, size, t.text == "…")))
                 };
                 let vw = v.frame().size.width;
                 let rl = (!t.reading.is_empty()).then(|| label(mtm, &t.reading, READING, true));
@@ -246,10 +277,12 @@ impl View {
         (w, h)
     }
 
-    /// Puts `rows` up (one language each, the first on top), under `caret`
-    /// (top-left screen points), over it when there's no room below, or at the
-    /// foot of the screen.
-    pub fn show(&self, mtm: MainThreadMarker, rows: &[Row], caret: Option<Rect>) {
+    /// Puts `rows` up (one language each, the first on top) where they cover
+    /// neither the text being typed nor the box it's in: under the box (a
+    /// message box, a search field), or over it when there's no room below; in
+    /// a big document, under the cursor's line (over it near the screen's
+    /// foot). With nothing to go by, at the foot of the screen.
+    pub fn show(&self, mtm: MainThreadMarker, rows: &[Row], place: Place) {
         if rows.is_empty() {
             return self.hide();
         }
@@ -261,19 +294,13 @@ impl View {
         let (w, h) = self.size.get();
         let screens = NSScreen::screens(mtm);
         let primary_h = screens.firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
-        let (x, y) = match caret {
-            Some(c) => {
-                let below = primary_h - (c.y + c.h) - h - 6.0;
-                let floor = NSScreen::mainScreen(mtm).map(|m| m.visibleFrame().origin.y).unwrap_or(0.0);
-                let y = if below < floor + 4.0 { primary_h - c.y + 6.0 } else { below };
-                let right = NSScreen::mainScreen(mtm).map(|m| { let f = m.visibleFrame(); f.origin.x + f.size.width }).unwrap_or(1e9);
-                ((c.x - 6.0).min(right - w - 4.0), y)
-            }
-            None => {
-                let f = NSScreen::mainScreen(mtm).map(|m| m.visibleFrame()).unwrap_or(rect(0.0, 0.0, 1200.0, 800.0));
-                (f.origin.x + (f.size.width - w) / 2.0, f.origin.y + 24.0)
-            }
-        };
+        let vis = NSScreen::mainScreen(mtm).map(|m| m.visibleFrame()).unwrap_or(rect(0.0, 0.0, 1200.0, 800.0));
+        let (x, y) = spot(
+            (w, h),
+            place,
+            primary_h,
+            Rect { x: vis.origin.x, y: vis.origin.y, w: vis.size.width, h: vis.size.height },
+        );
         self.panel.setFrame_display(rect(x, y, w, h), true);
         self.bg.setFrame(rect(0.0, 0.0, w, h));
         if !self.shown.get() {
@@ -334,5 +361,69 @@ impl View {
     pub fn close_card(&self) {
         self.card.orderOut(None);
         self.card_open.set(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 1920×1080 screen, menu bar 30 pt, no dock.
+    const H: f64 = 1080.0;
+    const VIS: Rect = Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1050.0 };
+    const SIZE: (f64, f64) = (400.0, 150.0);
+
+    /// The panel's top and bottom in Accessibility's coordinates.
+    fn span(y: f64) -> (f64, f64) {
+        (H - (y + SIZE.1), H - y)
+    }
+
+    #[test]
+    fn a_message_box_at_the_foot_is_kept_clear() {
+        // Claude's box, no cursor position given: over the box, not on it.
+        let frame = Rect { x: 672.0, y: 979.0, w: 921.0, h: 53.0 };
+        let (x, y) = spot(SIZE, Place { caret: None, frame: Some(frame) }, H, VIS);
+        let (_, bottom) = span(y);
+        assert!(bottom <= frame.y, "covers the box: {bottom} > {}", frame.y);
+        assert_eq!(x, frame.x);
+        // With a cursor in it: still clear of the whole box, at the cursor's x.
+        let caret = Rect { x: 900.0, y: 995.0, w: 1.0, h: 18.0 };
+        let (x, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
+        assert!(span(y).1 <= frame.y);
+        assert_eq!(x, 894.0);
+    }
+
+    #[test]
+    fn a_search_box_at_the_top_has_it_under() {
+        let frame = Rect { x: 100.0, y: 60.0, w: 300.0, h: 28.0 };
+        let caret = Rect { x: 150.0, y: 65.0, w: 1.0, h: 18.0 };
+        let (_, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
+        assert!(span(y).0 >= frame.y + frame.h);
+    }
+
+    #[test]
+    fn a_document_keeps_the_cursor_line_clear() {
+        // TextEdit's page is far too big to step around: under the line typed on.
+        let frame = Rect { x: 200.0, y: 80.0, w: 900.0, h: 2400.0 };
+        let caret = Rect { x: 500.0, y: 300.0, w: 1.0, h: 16.0 };
+        let (_, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
+        assert!(span(y).0 >= caret.y + caret.h);
+        // Near the foot of the screen: over the line instead.
+        let caret = Rect { x: 500.0, y: 1000.0, w: 1.0, h: 16.0 };
+        let (_, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
+        assert!(span(y).1 <= caret.y);
+    }
+
+    #[test]
+    fn nothing_to_go_by_is_the_foot_of_the_screen() {
+        let (x, y) = spot(SIZE, Place::default(), H, VIS);
+        assert_eq!((x, y), (760.0, 24.0));
+    }
+
+    #[test]
+    fn never_off_the_right_edge() {
+        let caret = Rect { x: 1900.0, y: 300.0, w: 1.0, h: 16.0 };
+        let (x, _) = spot(SIZE, Place { caret: Some(caret), frame: None }, H, VIS);
+        assert!(x + SIZE.0 <= VIS.w);
     }
 }

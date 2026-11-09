@@ -12,6 +12,12 @@ fn the_sentence_typed() {
     assert_eq!(sentence_of("First line.\n".into()), "");
     assert_eq!(sentence_of("First line.\n\n".into()), "");
     assert_eq!(sentence_of("".into()), "");
+    // Any line break ends the line before, full stop or not.
+    assert_eq!(sentence_of("First line\nNew".into()), "New");
+    assert_eq!(sentence_of("First line.\r".into()), "");
+    assert_eq!(sentence_of("First line.\r\n  ".into()), "");
+    assert_eq!(sentence_of("First line\u{2029}".into()), "");
+    assert_eq!(sentence_of("First line.\n   \t".into()), "");
 }
 
 #[test]

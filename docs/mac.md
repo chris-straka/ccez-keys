@@ -33,7 +33,7 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
 ## Built so far
 
 - Each language on its own line (2/4/6/8/All, default 6), furigana and
-  per-character pinyin, flips above the caret, lingers 4 s.
+  per-character pinyin, kept clear of the box being typed in (under it, or over it when there is no room), lingers 8 s; a language still coming holds its line with "…".
 - Known words are skipped: a language whose words are all known isn't shown.
 - Words are coloured by status (Learning tinted); clicking one opens a card
   (meaning, Learning / Known) without taking focus. Statuses sync with

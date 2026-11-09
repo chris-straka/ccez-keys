@@ -31,10 +31,11 @@ const ENDS: &[char] = &['.', '!', '?', '。', '！', '？', '\n'];
 /// a line, an empty one too.
 #[uniffi::export]
 pub fn sentence_of(before: String) -> String {
-    if before.trim_end_matches([' ', '\t']).ends_with('\n') {
-        return String::new();
-    }
-    let t = before.trim_end();
+    // Only the line being typed on: a line break ends what came before, with
+    // or without a full stop (Electron and web fields use \r and U+2028/9 too).
+    const BREAKS: [char; 4] = ['\n', '\r', '\u{2028}', '\u{2029}'];
+    let line = before.rfind(BREAKS).map(|i| &before[i + before[i..].chars().next().map_or(1, char::len_utf8)..]).unwrap_or(&before);
+    let t = line.trim_end();
     let body = match t.chars().last() {
         Some(c) if ENDS.contains(&c) => &t[..t.len() - c.len_utf8()],
         _ => t,

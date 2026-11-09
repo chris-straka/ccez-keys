@@ -67,6 +67,9 @@ fn toks(engine: &ccez_keys_core::Engine, lang: &str, text: &str, ruby: &[(String
 pub struct Shown {
     pub seq: u64,
     pub lines: Vec<Line>,
+    /// Languages still being translated, as many as there's room for: their
+    /// lines are held open so the preview doesn't grow as they come.
+    pub pending: Vec<String>,
 }
 
 pub struct Worker {
@@ -131,7 +134,7 @@ impl Worker {
                     ask = newer;
                 }
                 let mut lines = Vec::new();
-                'langs: for lang in &ask.langs {
+                'langs: for (i, lang) in ask.langs.iter().enumerate() {
                     // A newer sentence: this one's done with.
                     if let Ok(newer) = rx.try_recv() {
                         let mut n = newer;
@@ -172,13 +175,16 @@ impl Worker {
                             lines.push(Line { lang: lang.clone(), toks });
                         }
                     }
-                    // Each language as it comes (Apple's translator does one at a time, ~0.3 s each).
-                    *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines: lines.clone() });
+                    // Each language as it comes (Apple's translator does one at a
+                    // time, ~0.35 s each, even across processes).
+                    let room = ask.max.saturating_sub(lines.len());
+                    let pending = ask.langs[i + 1..].iter().take(room).cloned().collect();
+                    *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines: lines.clone(), pending });
                     if lines.len() >= ask.max {
                         break;
                     }
                 }
-                *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines });
+                *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines, pending: Vec::new() });
                 if cache.len() > 2000 {
                     cache.clear();
                 }

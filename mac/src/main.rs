@@ -38,7 +38,7 @@ mod app {
     use crate::{ax, worker};
 
     /// How long the preview stays after typing stops (⌥ brings it back).
-    const LINGER: Duration = Duration::from_secs(4);
+    const LINGER: Duration = Duration::from_secs(8);
     /** The pause in typing that asks for a translation. */
     const PAUSE: Duration = Duration::from_millis(200);
 
@@ -64,7 +64,7 @@ mod app {
         /** The app being typed in (bundle id, name): the menu's "Off in …" is about it. */
         typing_in: RefCell<Option<(String, String)>>,
         sentence: RefCell<String>,
-        caret: Cell<Option<ax::Rect>>,
+        caret: Cell<ax::Place>,
         changed: Cell<Instant>,
         seq: Cell<u64>,
         asked: Cell<bool>,
@@ -133,11 +133,20 @@ mod app {
             app.line.borrow_mut().clear();
             return;
         };
-        let sentence = sentence_of(field.before.clone());
+        // A finished sentence and a space after it: the next one starts blank.
+        let ended = {
+            let t = field.before.trim_end();
+            t.len() < field.before.len() && t.ends_with(['.', '!', '?', '。', '！', '？', '…'])
+        };
+        let sentence = if ended { String::new() } else { sentence_of(field.before.clone()) };
         // Nothing secret is ever shown or translated: the sentence, or what's near it.
         let tail: String = field.before.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
         if sentence.trim().is_empty() || looks_secret(tail) {
             app.view.hide();
+            if !app.sentence.borrow().is_empty() {
+                // An answer still on its way for the old sentence is dropped.
+                app.seq.set(app.seq.get() + 1);
+            }
             app.sentence.borrow_mut().clear();
             // A new or emptied field starts blank, not with the last translation.
             app.line.borrow_mut().clear();
@@ -151,11 +160,13 @@ mod app {
                 app.line.borrow_mut().clear();
             }
             *app.sentence.borrow_mut() = sentence.clone();
-            app.caret.set(field.caret);
+            // Answers for what was there before don't belong to this one.
+            app.seq.set(app.seq.get() + 1);
+            app.caret.set(ax::Place { caret: field.caret, frame: field.frame });
             app.changed.set(Instant::now());
             app.asked.set(false);
-        } else if field.caret.is_some() {
-            app.caret.set(field.caret);
+        } else if field.caret.is_some() || field.frame.is_some() {
+            app.caret.set(ax::Place { caret: field.caret, frame: field.frame });
         }
         // Translated once typing pauses a moment, not for every letter.
         if !app.asked.get() && app.changed.get().elapsed() >= PAUSE {
@@ -188,20 +199,25 @@ mod app {
     /// and Chinese with their readings over the words.
     fn render(app: &App, shown: &worker::Shown) -> Vec<crate::view::Row> {
         let p = app.prefs.borrow();
-        shown
+        let max = if p.shown == 0 { usize::MAX } else { p.shown };
+        let row = |lang: &str, toks: Vec<crate::view::Tok>| crate::view::Row {
+            lang: lang.to_string(),
+            flag: app.flags.get(lang).cloned().unwrap_or_else(|| lang.to_string()),
+            toks,
+        };
+        let mut rows: Vec<crate::view::Row> = shown
             .lines
             .iter()
-            .take(if p.shown == 0 { usize::MAX } else { p.shown })
-            .map(|l| crate::view::Row {
-                lang: l.lang.clone(),
-                flag: app.flags.get(&l.lang).cloned().unwrap_or_else(|| l.lang.clone()),
-                toks: l
-                    .toks
-                    .iter()
-                    .map(|t| crate::view::Tok { reading: if p.readings { t.reading.clone() } else { String::new() }, ..t.clone() })
-                    .collect(),
-            })
-            .collect()
+            .take(max)
+            .map(|l| row(&l.lang, l.toks.iter().map(|t| crate::view::Tok { reading: if p.readings { t.reading.clone() } else { String::new() }, ..t.clone() }).collect()))
+            .collect();
+        // Languages still coming: a dim "…" in their place, as tall as they'll be.
+        for lang in shown.pending.iter().take(max.saturating_sub(rows.len())) {
+            let cjk = matches!(lang.as_str(), "ja" | "zh" | "zh-Hans" | "zh-Hant");
+            let reading = if cjk && p.readings { " ".to_string() } else { String::new() };
+            rows.push(row(lang, vec![crate::view::Tok { text: "…".into(), reading, word: false, key: String::new(), status: 0 }]));
+        }
+        rows
     }    /// `--demo "line"`: the preview with that line at the screen's foot for a few
     /// seconds, for screenshots (no permission, no translation needed).
     fn demo(mtm: MainThreadMarker, line: String) {
@@ -216,7 +232,7 @@ mod app {
                 toks: vec![crate::view::Tok { text: t.to_string(), reading: String::new(), word: true, key: t.to_string(), status: 0 }],
             })
             .collect();
-        view.show(mtm, &lines, Some(ax::Rect { x: 300.0, y: 300.0, w: 2.0, h: 18.0 }));
+        view.show(mtm, &lines, ax::Place { caret: Some(ax::Rect { x: 300.0, y: 300.0, w: 2.0, h: 18.0 }), frame: None });
         let quit = RcBlock::new(move |_t: NonNull<NSTimer>| std::process::exit(0));
         unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(6.0, false, &quit) };
         nsapp.run();
@@ -255,6 +271,20 @@ mod app {
         let mtm = MainThreadMarker::new().expect("main thread");
         let args: Vec<String> = std::env::args().collect();
         // `--click x y` (screen points, top-left): a click there, for checks.
+        // `--probe`: what the focused field reports (frame, cursor, length), to
+        // the log; reads only, never its text.
+        if args.iter().any(|a| a == "--probe") {
+            let f = ax::focused();
+            let line = match f {
+                Some(f) => format!("probe front={:?} secure={} chars={} caret={:?} frame={:?}", frontmost(), f.secure, f.before.chars().count(), f.caret, f.frame),
+                None => format!("probe front={:?} no text field: {}", frontmost(), ax::describe()),
+            };
+            if let Ok(mut out) = std::fs::OpenOptions::new().create(true).append(true).open(dirs().join("mac.log")) {
+                use std::io::Write;
+                let _ = writeln!(out, "{line}");
+            }
+            return;
+        }
         if let Some(i) = args.iter().position(|a| a == "--click") {
             use std::ffi::c_void;
             #[repr(C)]
@@ -297,7 +327,7 @@ mod app {
             prefs: RefCell::new(crate::prefs::Prefs::load(&dirs())),
             typing_in: RefCell::default(),
             sentence: RefCell::default(),
-            caret: Cell::new(None),
+            caret: Cell::new(ax::Place::default()),
             changed: Cell::new(Instant::now()),
             seq: Cell::new(0),
             asked: Cell::new(true),
