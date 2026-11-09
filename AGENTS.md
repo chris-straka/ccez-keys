@@ -30,7 +30,9 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
   changed (`keys word <lang> <word> new`): statuses sync to all their apps.
   A word a check taught the keyboard (an undone correction or switch):
   `keys forget <lang> <word>`. Clear the test field when done.
-  If the owner is typing (`dumpsys input_method` mInputShown=true), only look.
+  mInputShown=true doesn't mean the owner is typing (the keyboard stays
+  up in an idle app); in a session with the owner, go ahead (owner,
+  2026-11-08: "just cut me off, I'm not using it").
 - Never `am force-stop uk.ccez.keys` while it's the chosen keyboard:
   Android falls back to Samsung Keyboard. ccez-keys is the owner's
   keyboard: if a check switched away, put it back
