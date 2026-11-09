@@ -283,13 +283,25 @@ class Strip(private val ui: UiState) {
     fun open(lang: String, w: StripWord) {
         // The same word again: its card closes.
         ui.card?.let { c -> if (c.lang == lang && c.word == w.text) { ui.card = null; return } }
+        val said = source
         app.scope.launch {
-            val card = engine.wordCard(lang, w.text, w.lemma)
+            val card = engine.wordCard(lang, w.text, w.lemma)?.let { c -> c.copy(meanings = inContext(c.meanings, said)) }
             val meaning = if (card?.meanings.isNullOrEmpty()) Translator.translate(w.lemma.ifEmpty { w.text }, lang, defaultLang()) else null
             // Furigana or pinyin, now only on the card (owner, 2026-11-08: a shorter line).
             val reading = w.ruby.joinToString("") { it.rt.ifEmpty { it.text } }.takeIf { r -> w.ruby.any { it.rt.isNotEmpty() } }.orEmpty()
             withContext(Dispatchers.Main) { ui.card = CardView(lang, w.text, w.lemma, card, meaning, reading) }
         }
+    }
+
+    /**
+     * The meanings that match a word of the sentence typed come first: "I read
+     * a book" puts livre's "book" before "delivers".
+     */
+    private fun inContext(meanings: List<String>, said: String): List<String> {
+        val words = said.lowercase().split(Regex("[^\\p{L}']+")).filter { it.length >= 3 }.toSet()
+        if (words.isEmpty()) return meanings
+        fun hits(m: String) = m.lowercase().split(Regex("[^\\p{L}']+")).count { it in words || words.any { w -> it.length >= 4 && (w.startsWith(it) || it.startsWith(w)) } }
+        return meanings.withIndex().sortedWith(compareByDescending<IndexedValue<String>> { hits(it.value) > 0 }.thenBy { it.index }).map { it.value }
     }
 
     fun setStatus(lang: String, word: String, status: WordStatus) {

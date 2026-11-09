@@ -132,7 +132,7 @@ impl Learn {
         let rest = e.senses.iter().flat_map(|s| s.meanings.iter().skip(1).cloned());
         for m in firsts.into_iter().chain(rest) {
             let m = &m;
-            if meanings.len() == 4 {
+            if meanings.len() == 8 {
                 break;
             }
             if !meanings.iter().any(|x| x.eq_ignore_ascii_case(m)) {

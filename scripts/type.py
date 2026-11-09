@@ -11,7 +11,16 @@ def keymap():
     out = subprocess.run(["cargo", "run", "-q", "--release", "-p", "ccez-keys-cli", "--bin", "keys", "--", "keymap"],
                          capture_output=True, text=True, cwd=os.path.join(here, ".."), env={**os.environ}).stdout
     return json.loads(out)
-keys = keymap()
+# The keyboard may still be coming up: a few tries.
+keys = []
+for _ in range(10):
+    try:
+        keys = keymap()
+    except ValueError:
+        keys = []
+    if keys: break
+    time.sleep(0.5)
+if not keys: sys.exit("keyboard not up")
 def find(kind, text=None, alt=None):
     for k in keys:
         if k["kind"] == kind and (text is None or k["text"] == text) and (alt is None or k["alt"] == alt):
