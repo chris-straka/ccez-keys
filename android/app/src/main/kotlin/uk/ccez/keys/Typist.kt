@@ -368,6 +368,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     private fun handleKey(key: Key) {
         acted()
+        ui.tools = false
         swiped = null
         if (key.kind != KeyKind.BACKSPACE) romajiSwitch = null
         if (key.kind != KeyKind.BACKSPACE) fix = null
@@ -599,7 +600,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (password || !w.any { it.isLetter() }) return
         recent.addLast(w)
         while (recent.size > 2) recent.removeFirst()
-        val to = engine.detectLanguage(lang, recent.toList()) ?: return
+        // One clearly foreign word, else the last two together.
+        val to = engine.detectLanguage(lang, listOf(w)) ?: engine.detectLanguage(lang, recent.toList()) ?: return
         lang = to
         engine.setCurrentLanguage(to)
         app.scope.launch { app.ensureWords(to) }

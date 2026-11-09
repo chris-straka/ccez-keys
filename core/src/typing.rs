@@ -134,6 +134,11 @@ pub fn fit(lang: &Lang, words: &[String]) -> f32 {
     words.iter().map(|w| own_logf(lang, w).unwrap_or(-12.0)).sum()
 }
 
+/// Among the language's 3000 commonest words, as written (case aside).
+pub fn very_common(lang: &Lang, word: &str) -> bool {
+    own_logf(lang, word).is_some_and(|f| f > -(3_000f32).ln())
+}
+
 /// Whether `w` is a word here, as written (case aside).
 pub fn is_word(lang: &Lang, w: &str) -> bool {
     own_logf(lang, w).is_some()

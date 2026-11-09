@@ -35,6 +35,13 @@ class Control : ContentProvider() {
         try {
             val result = when (method) {
                 "status" -> status(app)
+                // Where each key is on screen (tests tap any layout with it).
+                "keymap" -> {
+                    val f = app.keymap ?: error("keyboard not up")
+                    val q = java.util.concurrent.ArrayBlockingQueue<String>(1)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post { q.put(runCatching { f() }.getOrDefault("[]")) }
+                    q.poll(2, java.util.concurrent.TimeUnit.SECONDS) ?: error("keyboard busy")
+                }
                 "get" -> if (arg == null) engine.settingsJson() else engine.setting(arg)
                 "set" -> {
                     val key = arg ?: error("set needs a setting name")

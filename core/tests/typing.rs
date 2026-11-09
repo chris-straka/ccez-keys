@@ -178,10 +178,11 @@ fn notices_the_language_typed() {
     assert_eq!(d("en", &["je", "suis"]).as_deref(), Some("fr"));
     assert_eq!(d("en", &["ich", "bin"]).as_deref(), Some("de"));
     assert_eq!(d("fr", &["estoy", "cansado"]).as_deref(), Some("es"));
-    // English words while on English, names, one word: stay.
+    // English words while on English, names: stay. One clearly French word
+    // switches (owner, 2026-11-08: "chez" should switch to French).
     assert_eq!(d("en", &["see", "you"]), None);
     assert_eq!(d("en", &["Tchoupi", "Doudou"]), None);
-    assert_eq!(d("en", &["bonjour"]), None);
+    assert_eq!(d("en", &["bonjour"]).as_deref(), Some("fr"));
 }
 
 #[test]
@@ -255,4 +256,17 @@ fn bench_findings_stay_fixed() {
     assert_ne!(fix(&e, "en", "foood").as_deref(), Some("for"));
     // An accent typed stays.
     assert_eq!(fix(&e, "fr", "mesuré"), None);
+}
+
+#[test]
+fn one_foreign_word_switches() {
+    let e = engine(&["en", "fr", "es", "de"]);
+    let d = |w: &str| e.detect_language("en".into(), vec![w.into()]);
+    assert_eq!(d("chez").as_deref(), Some("fr"));
+    assert_eq!(d("merci").as_deref(), Some("fr"));
+    assert_eq!(d("gracias").as_deref(), Some("es"));
+    // English words, names and typos stay.
+    for w in ["the", "chef", "cafe", "hello", "teh", "anime"] {
+        assert_eq!(d(w), None, "{w}");
+    }
 }

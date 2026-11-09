@@ -23,6 +23,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (method, arg, value) = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["status"] => ("status", None, None),
+        ["keymap"] => ("keymap", None, None),
         ["get"] => ("get", None, None),
         ["get", key] => ("get", Some(key.to_string()), None),
         ["set", key, value] => ("set", Some(key.to_string()), Some(value.to_string())),

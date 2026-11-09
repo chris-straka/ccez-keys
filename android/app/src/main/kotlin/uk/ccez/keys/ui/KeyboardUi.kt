@@ -194,7 +194,14 @@ private fun BarRow(ui: UiState, typist: Typist) {
             }
             return@Row
         }
-        if (bar is Bar.Words && ui.panel == Panel.KEYS) {
+        if (bar is Bar.Words && ui.panel == Panel.KEYS && !ui.tools) {
+            // The buttons are one tap away while words show (the clipboard icon,
+            // lit, when something was just copied).
+            val fresh = ui.clip != null && !ui.password
+            Box(
+                Modifier.width(40.dp).fillMaxHeight().combinedClickable(onClick = { ui.tools = true }),
+                contentAlignment = Alignment.Center,
+            ) { Icon(if (fresh) Icons.clip else Icons.tools, "Buttons", tint = if (fresh) Colors.accent else Colors.muted, modifier = Modifier.size(18.dp)) }
             Cell(bar.left, false, bar.typed, typist, 1f)
             Divider()
             Cell(bar.mid, true, bar.typed, typist, 1.25f)
@@ -928,6 +935,7 @@ internal object Icons {
         }
     }.build()
 
+    val tools = stroke("M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z")
     val clip = stroke("M7 4h10a2 2 0 0 1 2 2v13a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-13a2 2 0 0 1 2 -2z", "M9 4V3h6v1", "M9 10h6M9 14h6")
     val gear = stroke(
         "M15 12a3 3 0 1 1 -6 0a3 3 0 1 1 6 0z",

@@ -276,6 +276,17 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
+    /** Each key's text, kind and centre on the screen, as JSON (for `keys keymap`: tests tap any layout). */
+    fun keymap(): String {
+        val at = IntArray(2).also { getLocationOnScreen(it) }
+        val a = org.json.JSONArray()
+        placed.forEach { p ->
+            a.put(org.json.JSONObject().put("kind", p.key.kind.name.lowercase()).put("text", p.key.text).put("alt", p.key.alt)
+                .put("x", (at[0] + p.cell.centerX()).toInt()).put("y", (at[1] + p.cell.centerY()).toInt()))
+        }
+        return a.toString()
+    }
+
     private fun keyAt(x: Float, y: Float): Placed? {
         placed.firstOrNull { it.cell.contains(x, y) }?.let { return it }
         // Between or beyond the keys: the nearest one.

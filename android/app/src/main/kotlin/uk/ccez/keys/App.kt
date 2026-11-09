@@ -109,6 +109,9 @@ class App : Application() {
         }
     }
 
+    /** The keys on screen now, as JSON (`keys keymap`); set by the keyboard while it's up. */
+    @Volatile var keymap: (() -> String)? = null
+
     /** Hides the clipboard chip (after the AI key was pasted from it). */
     @Volatile var clearClipChip: (() -> Unit)? = null
 

@@ -213,10 +213,26 @@ impl Engine {
     /// `current`: all of them common there, and together far likelier
     /// there than here ("ich bin": German, though "bin" is English too).
     pub fn detect_language(&self, current: String, words: Vec<String>) -> Option<String> {
-        if words.len() < 2 {
+        if words.is_empty() {
             return None;
         }
         let s = self.lock();
+        // One word is enough when it's no word here and common there
+        // ("chez", "merci", "gracias" on English).
+        if let [w] = words.as_slice() {
+            let here = s.langs.get(&current)?;
+            if w.chars().count() < 3 || typing::is_word(here, w) {
+                return None;
+            }
+            let found: Vec<String> = self
+                .typing_languages_of(&s.settings)
+                .into_iter()
+                .filter(|l| *l != current)
+                .filter(|l| s.langs.get(l).is_some_and(|x| typing::very_common(x, w)))
+                .collect();
+            // Only when one language claims it.
+            return if found.len() == 1 { found.into_iter().next() } else { None };
+        }
         let here = typing::fit(s.langs.get(&current)?, &words);
         self.typing_languages_of(&s.settings)
             .into_iter()

@@ -30,6 +30,8 @@ class UiState {
     var popup by mutableStateOf<Popup?>(null)
     /** The newest copy, until it's pasted or something else is copied. */
     var clip by mutableStateOf<String?>(null)
+    /** The buttons (clipboard, camera, mic, settings) shown over the words until the next key. */
+    var tools by mutableStateOf(false)
     var chatApp by mutableStateOf(false)
     /** The strip's translations are polite in this app. */
     var polite by mutableStateOf(false)
@@ -64,6 +66,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         typist = Typist(this, ui)
         App.instance.clearClipChip = { ui.clip = null }
+        App.instance.keymap = { typist.view.keymap() }
         App.instance.onRecovered = { runCatching { ui.panel = Panel.KEYS; ui.popup = null; typist.recover() } }
         clipboard = getSystemService(ClipboardManager::class.java)?.also { it.addPrimaryClipChangedListener(onClip) }
         App.instance.log("info", "keyboard-created")

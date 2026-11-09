@@ -130,7 +130,8 @@ class Strip(private val ui: UiState) {
 
     /** The language `sentence` is in, among those typed; the keyboard's when unsure. */
     private suspend fun written(sentence: String, keyboard: String): String {
-        if (sentence.length < 4) return keyboard
+        // One word: the keyboard's language (it switches itself when the word is clearly another's).
+        if (sentence.length < 4 || sentence.none { it.isWhitespace() }) return keyboard
         val typed = engine.typingLanguages()
         val found = runCatching { langId.identifyPossibleLanguages(sentence).await() }.getOrNull().orEmpty()
         val best = found.filter { it.languageTag in typed }.maxByOrNull { it.confidence } ?: return keyboard
@@ -280,6 +281,8 @@ class Strip(private val ui: UiState) {
     }
 
     fun open(lang: String, w: StripWord) {
+        // The same word again: its card closes.
+        ui.card?.let { c -> if (c.lang == lang && c.word == w.text) { ui.card = null; return } }
         app.scope.launch {
             val card = engine.wordCard(lang, w.text, w.lemma)
             val meaning = if (card?.meanings.isNullOrEmpty()) Translator.translate(w.lemma.ifEmpty { w.text }, lang, defaultLang()) else null
