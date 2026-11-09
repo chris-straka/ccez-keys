@@ -94,7 +94,7 @@ class Tips(private val ui: UiState) {
         synchronized(seen) { if (seen.containsKey(sentence)) { seen[sentence]?.let { ui.tip = Tip(sentence, lang, it) }; return } }
         job = app.scope.launch {
             delay(if (ended) 300 else 1500)
-            val fix = runCatching { e.correct(lang, sentence, key) }
+            val fix = runCatching { uk.ccez.keys.Stats.ai.incrementAndGet(); e.correct(lang, sentence, key) }
                 .onFailure { app.log("warn", "correction-failed", "error" to it.message) }
                 .getOrElse { return@launch }
             synchronized(seen) { seen[sentence] = fix }

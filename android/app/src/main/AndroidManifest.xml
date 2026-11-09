@@ -30,6 +30,8 @@
         android:label="ccez-keys"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <!-- simpleperf from the Mac (scripts/perf.sh): profiling by the shell only. -->
+        <profileable android:shell="true" />
 
         <activity
             android:name=".MainActivity"

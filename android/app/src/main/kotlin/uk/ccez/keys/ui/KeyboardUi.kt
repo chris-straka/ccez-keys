@@ -113,22 +113,11 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
         // The strip's room is always there (while the strip is on): a band that
         // came and went resized the keyboard window, which Android redraws a
         // beat late, so the keys jumped (owner, 2026-11-08). Only what's in it changes.
-        if (ask == null && ui.panel == Panel.KEYS && !ui.password && App.instance.engine.settingBool("learning.strip")) {
-            Box(Modifier.fillMaxWidth().height(STRIP_H).background(Color(0xFF181818))) {
-                val tip = ui.tip
-                val strip = ui.strip
-                Crossfade(if (tip != null) 2 else if (strip != null) 1 else 0, animationSpec = tween(120), label = "strip") { which ->
-                    when (which) {
-                        2 -> tip?.let { TipNote(it, typist) }
-                        1 -> strip?.let { StripRow(it, typist) }
-                        else -> Box(Modifier.fillMaxSize())
-                    }
-                }
-            }
-        }
+        val stripOn = remember(version) { App.instance.engine.settingBool("learning.strip") }
+        if (ask == null && ui.panel == Panel.KEYS && !ui.password && stripOn) StripBand(ui, typist)
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
-            if (ui.ask == null) Crossfade(ui.bar is Bar.Words && ui.panel == Panel.KEYS, animationSpec = tween(90), label = "bar") { _ -> BarRow(ui, typist) }
+            if (ui.ask == null) BarArea(ui, typist)
             AnimatedContent(ui.panel, transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(90)) }, label = "panel") { panel ->
                 when (panel) {
                     Panel.KEYS -> AndroidView(
@@ -147,6 +136,30 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
         ui.card?.let { CardOverlay(it, ui, typist) }
     }
     }
+}
+
+/**
+ * The strip's band. Its own composable (as is the bar's), so what changes
+ * with every key redraws only itself, not the whole keyboard.
+ */
+@Composable
+private fun StripBand(ui: UiState, typist: Typist) {
+    Box(Modifier.fillMaxWidth().height(STRIP_H).background(Color(0xFF181818))) {
+        val tip = ui.tip
+        val strip = ui.strip
+        Crossfade(if (tip != null) 2 else if (strip != null) 1 else 0, animationSpec = tween(120), label = "strip") { which ->
+            when (which) {
+                2 -> tip?.let { TipNote(it, typist) }
+                1 -> strip?.let { StripRow(it, typist) }
+                else -> Box(Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
+@Composable
+private fun BarArea(ui: UiState, typist: Typist) {
+    Crossfade(ui.bar is Bar.Words && ui.panel == Panel.KEYS, animationSpec = tween(90), label = "bar") { _ -> BarRow(ui, typist) }
 }
 
 @Composable

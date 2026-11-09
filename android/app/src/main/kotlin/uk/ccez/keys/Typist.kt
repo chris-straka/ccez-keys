@@ -198,6 +198,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     fun finish() {
+        Stats.flush()
         rememberLang()
         // What's composing stays as typed (it'd be replaced by the next field's text otherwise).
         runCatching { if (conv.isNotEmpty() || romaji.isNotEmpty()) commitConv() else if (word.isNotEmpty()) ic?.finishComposingText() }
@@ -361,6 +362,11 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     override fun onKey(key: Key) {
+        val t0 = System.nanoTime()
+        try { handleKey(key) } finally { Stats.key(System.nanoTime() - t0) }
+    }
+
+    private fun handleKey(key: Key) {
         acted()
         swiped = null
         if (key.kind != KeyKind.BACKSPACE) romajiSwitch = null

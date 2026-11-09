@@ -262,9 +262,9 @@ class Strip(private val ui: UiState) {
             delay(1200)
             // The other languages asked alongside (one wait, one change on the line).
             val others = also.filter { lang -> synchronized(refined) { !refined.containsKey("$from|$lang|$polite|$source") } }.map { lang ->
-                async { lang to runCatching { engine.translateAi(source, from, lang, polite, aiKey) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() } }
+                async { lang to runCatching { uk.ccez.keys.Stats.ai.incrementAndGet(); engine.translateAi(source, from, lang, polite, aiKey) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() } }
             }
-            val t = runCatching { engine.translateAi(source, from, to, polite, aiKey) }
+            val t = runCatching { uk.ccez.keys.Stats.ai.incrementAndGet(); engine.translateAi(source, from, to, polite, aiKey) }
                 .onFailure { app.log("warn", "refine-failed", "error" to it.message) }
                 .getOrNull()?.takeIf { it.isNotBlank() }
             if (t == null) {

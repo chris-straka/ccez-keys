@@ -127,3 +127,26 @@ class App : Application() {
             private set
     }
 }
+
+/**
+ * Counts for one field, logged when it closes as "typing-speed": how long
+ * keys took to handle (main thread), translations run and AI calls made.
+ * Never what was typed.
+ */
+object Stats {
+    private val keyNs = ArrayList<Long>()
+    val translations = java.util.concurrent.atomic.AtomicInteger()
+    val ai = java.util.concurrent.atomic.AtomicInteger()
+
+    @Synchronized fun key(ns: Long) { if (keyNs.size < 5000) keyNs += ns }
+
+    @Synchronized fun flush() {
+        val t = translations.getAndSet(0)
+        val a = ai.getAndSet(0)
+        if (keyNs.isEmpty()) return
+        val ms = keyNs.sorted().map { it / 1_000_000.0 }
+        keyNs.clear()
+        fun pct(p: Double) = "%.1f".format(ms[((ms.size - 1) * p).toInt()])
+        App.instance.log("info", "typing-speed", "keys" to ms.size, "p50_ms" to pct(0.5), "p95_ms" to pct(0.95), "max_ms" to pct(1.0), "translations" to t, "ai" to a)
+    }
+}

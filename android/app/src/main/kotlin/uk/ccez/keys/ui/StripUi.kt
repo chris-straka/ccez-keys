@@ -31,6 +31,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -110,9 +111,10 @@ fun StripRow(s: StripView, typist: Typist) {
         // The AI at work (a soft violet pulse) or its wording in place (✦);
         // nothing: ML Kit's quick translation.
         if (s.pending) {
-            val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "ai").animateFloat(
-                0.25f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(600), androidx.compose.animation.core.RepeatMode.Reverse), label = "ai",
-            )
+            // A slow blink, two frames a second (a smooth pulse drew 120 a second while Muse thought).
+            var bright by remember { mutableStateOf(true) }
+            androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(550); bright = !bright } }
+            val pulse = if (bright) 1f else 0.3f
             Box(Modifier.padding(horizontal = 6.dp).size(6.dp).graphicsLayer { alpha = pulse }.clip(RoundedCornerShape(3.dp)).background(VIOLET))
         } else if (s.refined) {
             // Tap: ask Muse about this wording. Hold: this app's wording polite or

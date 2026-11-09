@@ -95,6 +95,7 @@ object Translator {
             if (!models(download, from, to)) return null
             val client = Translation.getClient(TranslatorOptions.Builder().setSourceLanguage(source).setTargetLanguage(target).build())
             try {
+                uk.ccez.keys.Stats.translations.incrementAndGet()
                 ONE.withLock { client.translate(text).await() }
             } finally {
                 client.close()
