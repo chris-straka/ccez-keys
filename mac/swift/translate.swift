@@ -22,11 +22,20 @@ func ruby(_ text: String, _ lang: String) -> [[String]] {
         let r = CFStringTokenizerGetCurrentTokenRange(tok)
         if r.location > at { out.append([ns.substring(with: NSRange(location: at, length: r.location - at)), ""]) }
         let piece = ns.substring(with: NSRange(location: r.location, length: r.length))
-        var reading = ""
-        if han(piece), let latin = CFStringTokenizerCopyCurrentTokenAttribute(tok, kCFStringTokenizerAttributeLatinTranscription) as? String {
-            reading = lang.hasPrefix("ja") ? (latin.applyingTransform(.latinToHiragana, reverse: false) ?? latin) : latin
+        if lang.hasPrefix("zh") && han(piece) {
+            // Chinese: a syllable over each character, evenly spaced (owner, 2026-11-09:
+            // pinyin over whole words left uneven gaps and read badly).
+            for ch in piece {
+                let c = String(ch)
+                out.append([c, han(c) ? (c.applyingTransform(.mandarinToLatin, reverse: false) ?? "") : ""])
+            }
+        } else {
+            var reading = ""
+            if han(piece), let latin = CFStringTokenizerCopyCurrentTokenAttribute(tok, kCFStringTokenizerAttributeLatinTranscription) as? String {
+                reading = latin.applyingTransform(.latinToHiragana, reverse: false) ?? latin
+            }
+            out.append([piece, reading])
         }
-        out.append([piece, reading])
         at = r.location + r.length
     }
     if at < ns.length { out.append([ns.substring(from: at), ""]) }

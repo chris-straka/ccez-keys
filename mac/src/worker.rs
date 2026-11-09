@@ -14,6 +14,8 @@ pub struct Ask {
     pub text: String,
     pub from: String,
     pub langs: Vec<String>,
+    /// How many lines the preview shows.
+    pub max: usize,
 }
 
 /// What came back: each language's translation, in the order asked.
@@ -132,8 +134,7 @@ impl Worker {
                     }
                     // Each language as it comes (Apple's translator does one at a time, ~0.3 s each).
                     *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines: lines.clone() });
-                    // Four lines at most show.
-                    if lines.len() == 4 {
+                    if lines.len() >= ask.max {
                         break;
                     }
                 }

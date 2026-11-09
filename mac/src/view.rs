@@ -39,7 +39,9 @@ pub struct View {
 pub const LINES: usize = 4;
 const GAP: f64 = 4.0;
 const TEXT: f64 = 14.0;
-const READING: f64 = 9.5;
+/// Japanese and Chinese a size up, their readings clear (owner: hard to read).
+const CJK: f64 = 16.0;
+const READING: f64 = 10.5;
 
 fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
@@ -48,7 +50,7 @@ fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
 fn label(mtm: MainThreadMarker, text: &str, size: f64, grey: bool) -> Retained<NSTextField> {
     let l = NSTextField::labelWithString(&NSString::from_str(text), mtm);
     l.setFont(Some(&NSFont::systemFontOfSize(size)));
-    let c = if grey { 0.62 } else { 0.95 };
+    let c = if grey { 0.74 } else { 0.95 };
     l.setTextColor(Some(&NSColor::colorWithSRGBRed_green_blue_alpha(c, c, c, 1.0)));
     l.setUsesSingleLineMode(true);
     l.sizeToFit();
@@ -99,7 +101,7 @@ impl View {
             let fw = flag.frame().size.width;
             let has_ruby = r.ruby.iter().any(|(_, rd)| !rd.is_empty());
             let reading_h = if has_ruby { label(mtm, "あ", READING, true).frame().size.height - 2.0 } else { 0.0 };
-            let text_h = label(mtm, "Ag", TEXT, false).frame().size.height;
+            let text_h = label(mtm, "Ag", if has_ruby { CJK } else { TEXT }, false).frame().size.height;
             parts.push((flag, 0.0, 0.0));
             let mut x = fw + 6.0;
             if r.ruby.is_empty() {
@@ -114,7 +116,7 @@ impl View {
                 let mut words: Vec<(Retained<NSTextField>, Option<Retained<NSTextField>>, f64)> = Vec::new();
                 let mut used = 0.0;
                 for (t, rd) in r.ruby.iter().rev() {
-                    let tl = label(mtm, t, TEXT, false);
+                    let tl = label(mtm, t, CJK, false);
                     let rl = (!rd.is_empty()).then(|| label(mtm, rd, READING, true));
                     let w = tl.frame().size.width.max(rl.as_ref().map(|l| l.frame().size.width).unwrap_or(0.0));
                     if used + w > MAX_W - 2.0 * PAD_X - x - 14.0 && !words.is_empty() {
@@ -170,8 +172,16 @@ impl View {
         let screens = NSScreen::screens(mtm);
         let primary_h = screens.firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
         let (x, y) = match caret {
-            // AX: top-left origin on the primary screen; AppKit: bottom-left.
-            Some(c) => (c.x - 6.0, primary_h - (c.y + c.h) - h - 6.0),
+            // AX: top-left origin on the primary screen; AppKit: bottom-left. Under
+            // the cursor, or over it when there's no room below (a message box at
+            // the foot of the window): never on the line being typed.
+            Some(c) => {
+                let below = primary_h - (c.y + c.h) - h - 6.0;
+                let floor = NSScreen::mainScreen(mtm).map(|m| m.visibleFrame().origin.y).unwrap_or(0.0);
+                let y = if below < floor + 4.0 { primary_h - c.y + 6.0 } else { below };
+                let right = NSScreen::mainScreen(mtm).map(|m| { let f = m.visibleFrame(); f.origin.x + f.size.width }).unwrap_or(1e9);
+                ((c.x - 6.0).min(right - w - 4.0), y)
+            }
             None => {
                 let f = NSScreen::mainScreen(mtm).map(|m| m.visibleFrame()).unwrap_or(rect(0.0, 0.0, 1200.0, 800.0));
                 (f.origin.x + (f.size.width - w) / 2.0, f.origin.y + 24.0)

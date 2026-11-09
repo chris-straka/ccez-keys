@@ -34,6 +34,23 @@ unsafe extern "C" {
     fn AXValueCreate(kind: u32, value: *const c_void) -> Ref;
     fn AXIsProcessTrustedWithOptions(options: Ref) -> bool;
     fn AXUIElementSetMessagingTimeout(element: Ref, seconds: f32) -> i32;
+    fn AXUIElementCreateApplication(pid: i32) -> Ref;
+    fn AXUIElementSetAttributeValue(element: Ref, attribute: Ref, value: Ref) -> i32;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    static kCFBooleanTrue: Ref;
+}
+
+/// Electron and Chrome apps (Claude, Slack, Discord, VS Code…) share their
+/// text fields only once an assistive app asks: this asks, once per app.
+pub fn wake(pid: i32) {
+    let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
+    for name in ["AXManualAccessibility", "AXEnhancedUserInterface"] {
+        let n = s(name);
+        unsafe { AXUIElementSetAttributeValue(app.0, Retained::as_ptr(&n) as Ref, kCFBooleanTrue) };
+    }
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
