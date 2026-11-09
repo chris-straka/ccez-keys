@@ -42,3 +42,24 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
 - Dictionaries (ja, zh) come from ccez-lang-core's release, checked
   against SHA256SUMS.
 - Not yet: Muse rewording, the card's "here" meaning, hover to hear.
+
+## Next (owner, 2026-11-09)
+
+- Card meanings from Apple's on-device model (Foundation Models, macOS 26+):
+  the word's meaning in this sentence, free and offline, cached; the
+  dictionary's when the model isn't there. On the owner's Mac it reports
+  "not ready" (Apple Intelligence off or still downloading).
+- The menu's "ⓘ Translation languages…" opens System Settings' Language &
+  Region page (Translation Languages is there) and names any language the
+  Mac couldn't translate into.
+
+## Windows, later (owner, 2026-11-09)
+
+The same app for Microsoft Windows, sharing the Rust core and the menu's
+choices:
+- The focused field and its cursor through UI Automation (TextPattern2's
+  caret range and bounds), a tray icon in place of the menu bar.
+- Windows has no built-in offline translator for apps: Firefox's offline
+  models (Bergamot) bundled per language, or Windows' on-device AI where the
+  PC has it. The ⓘ item then opens the app's own language downloads.
+- Speech through Windows' own voices (natural ones where installed).

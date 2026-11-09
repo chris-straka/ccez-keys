@@ -75,6 +75,8 @@ pub struct Shown {
 pub struct Worker {
     tx: Sender<Ask>,
     pub out: Arc<Mutex<Option<Shown>>>,
+    /// Languages the Mac couldn't translate into (not downloaded), for the menu.
+    pub missing: Arc<Mutex<Vec<String>>>,
 }
 
 struct Helper {
@@ -119,13 +121,14 @@ impl Worker {
         let (tx, rx): (Sender<Ask>, Receiver<Ask>) = channel();
         let out: Arc<Mutex<Option<Shown>>> = Arc::default();
         let put = out.clone();
+        let missing_out: Arc<Mutex<Vec<String>>> = Arc::default();
+        let missing_put = missing_out.clone();
         std::thread::spawn(move || {
             let mut helper = Helper::start();
             if helper.is_none() {
                 log("error", "translator helper didn't start");
             }
             let mut cache: HashMap<(String, String), (String, Vec<(String, String)>)> = HashMap::new();
-            let mut missing: Vec<String> = Vec::new();
             let mut next: Option<Ask> = None;
             loop {
                 let Some(mut ask) = next.take().or_else(|| rx.recv().ok()) else { break };
@@ -150,16 +153,19 @@ impl Worker {
                     } else if let Some(h) = helper.as_mut() {
                         match h.translate(&ask.from, lang, &ask.text) {
                             Ok(t) => {
+                                missing_put.lock().unwrap().retain(|l| l != lang);
                                 cache.insert(key, t.clone());
                                 Some(t)
                             }
                             Err(e) => {
-                                if !missing.contains(lang) {
-                                    missing.push(lang.clone());
-                                    log("warn", &format!("{lang}: {e}"));
-                                }
                                 if e.contains("Broken pipe") {
                                     helper = Helper::start();
+                                } else {
+                                    let mut missing = missing_put.lock().unwrap();
+                                    if !missing.contains(lang) {
+                                        missing.push(lang.clone());
+                                        log("warn", &format!("{lang}: {e}"));
+                                    }
                                 }
                                 None
                             }
@@ -190,7 +196,7 @@ impl Worker {
                 }
             }
         });
-        Worker { tx, out }
+        Worker { tx, out, missing: missing_out }
     }
 
     pub fn ask(&self, a: Ask) {

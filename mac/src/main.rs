@@ -363,7 +363,9 @@ mod app {
         }
         let readings = CheckMenuItem::new("Readings over Japanese and Chinese", true, app.prefs.borrow().readings, None);
         let off_here = CheckMenuItem::new("Off in this app", true, false, None);
-        let languages = MenuItem::new("Translation languages…", true, None);
+        // Translations run on this Mac, in the languages downloaded in System
+        // Settings: this opens that page, and names any still missing.
+        let languages = MenuItem::new("ⓘ Translation languages…", true, None);
         let login = CheckMenuItem::new("Open at login", true, login_on(), None);
         let quit = MenuItem::new("Quit", true, None);
         let sep = PredefinedMenuItem::separator();
@@ -495,11 +497,15 @@ mod app {
                 }
                 // "Off in Claude": the menu names the app being typed in (every second or so).
                 menu_tick.set(menu_tick.get() + 1);
-                if menu_tick.get().is_multiple_of(7)
-                    && let Some((bundle, name)) = app.typing_in.borrow().clone() {
+                if menu_tick.get().is_multiple_of(7) {
+                    if let Some((bundle, name)) = app.typing_in.borrow().clone() {
                         off_here.set_text(format!("Off in {name}"));
                         off_here.set_checked(quiet(app, &bundle));
                     }
+                    let missing = app.worker.missing.lock().unwrap().clone();
+                    let flags: Vec<String> = missing.iter().map(|l| app.flags.get(l).cloned().unwrap_or_else(|| l.clone())).collect();
+                    languages.set_text(if flags.is_empty() { "ⓘ Translation languages…".to_string() } else { format!("ⓘ Translation languages… ({} missing)", flags.join(" ")) });
+                }
                 tick(mtm, app);
             })
         });
