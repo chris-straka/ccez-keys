@@ -9,6 +9,8 @@
 #[cfg(target_os = "macos")]
 mod ax;
 #[cfg(target_os = "macos")]
+mod learn;
+#[cfg(target_os = "macos")]
 mod prefs;
 #[cfg(target_os = "macos")]
 mod view;
@@ -55,6 +57,9 @@ mod app {
         langs: Vec<String>,
         flags: std::collections::HashMap<String, String>,
         paused: Cell<bool>,
+        engine: std::sync::Arc<ccez_keys_core::Engine>,
+        /** The word whose card is open: language, dictionary form, as shown. */
+        card: RefCell<Option<(String, String, String)>>,
         prefs: RefCell<crate::prefs::Prefs>,
         /** The app being typed in (bundle id, name): the menu's "Off in …" is about it. */
         typing_in: RefCell<Option<(String, String)>>,
@@ -117,11 +122,10 @@ mod app {
             return;
         }
         // Electron and Chrome apps: asked once to share their fields.
-        if let Some(pid) = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()) {
-            if app.woken.borrow_mut().insert(pid) {
+        if let Some(pid) = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())
+            && app.woken.borrow_mut().insert(pid) {
                 ax::wake(pid);
             }
-        }
         let field = ax::focused();
         let Some(field) = field.filter(|f| !f.secure) else {
             app.view.hide();
@@ -171,7 +175,7 @@ mod app {
             }
         }
         // From when it showed, not from the last key: translating takes a moment.
-        let fresh = app.changed.get().elapsed() < LINGER || app.appeared.get().elapsed() < LINGER || option_held();
+        let fresh = app.changed.get().elapsed() < LINGER || app.appeared.get().elapsed() < LINGER || option_held() || app.view.card_open.get();
         let line = app.line.borrow();
         if fresh && !line.is_empty() {
             app.view.show(mtm, &line, app.caret.get());
@@ -189,9 +193,13 @@ mod app {
             .iter()
             .take(if p.shown == 0 { usize::MAX } else { p.shown })
             .map(|l| crate::view::Row {
+                lang: l.lang.clone(),
                 flag: app.flags.get(&l.lang).cloned().unwrap_or_else(|| l.lang.clone()),
-                text: l.text.trim().to_string(),
-                ruby: if p.readings { l.ruby.clone() } else { vec![] },
+                toks: l
+                    .toks
+                    .iter()
+                    .map(|t| crate::view::Tok { reading: if p.readings { t.reading.clone() } else { String::new() }, ..t.clone() })
+                    .collect(),
             })
             .collect()
     }    /// `--demo "line"`: the preview with that line at the screen's foot for a few
@@ -200,7 +208,14 @@ mod app {
         let nsapp = NSApplication::sharedApplication(mtm);
         nsapp.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
         let view: &'static View = Box::leak(Box::new(View::new(mtm)));
-        let lines: Vec<crate::view::Row> = line.split('|').map(|t| crate::view::Row { flag: String::new(), text: t.to_string(), ruby: vec![] }).collect();
+        let lines: Vec<crate::view::Row> = line
+            .split('|')
+            .map(|t| crate::view::Row {
+                lang: "fr".into(),
+                flag: String::new(),
+                toks: vec![crate::view::Tok { text: t.to_string(), reading: String::new(), word: true, key: t.to_string(), status: 0 }],
+            })
+            .collect();
         view.show(mtm, &lines, Some(ax::Rect { x: 300.0, y: 300.0, w: 2.0, h: 18.0 }));
         let quit = RcBlock::new(move |_t: NonNull<NSTimer>| std::process::exit(0));
         unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(6.0, false, &quit) };
@@ -239,6 +254,24 @@ mod app {
     pub fn run() {
         let mtm = MainThreadMarker::new().expect("main thread");
         let args: Vec<String> = std::env::args().collect();
+        // `--click x y` (screen points, top-left): a click there, for checks.
+        if let Some(i) = args.iter().position(|a| a == "--click") {
+            use std::ffi::c_void;
+            #[repr(C)]
+            struct P { x: f64, y: f64 }
+            #[link(name = "CoreGraphics", kind = "framework")]
+            unsafe extern "C" {
+                fn CGEventCreateMouseEvent(source: *const c_void, kind: u32, at: P, button: u32) -> *mut c_void;
+                fn CGEventPost(tap: u32, event: *mut c_void);
+            }
+            let x: f64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+            let y: f64 = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+            for kind in [1u32, 2u32] {
+                unsafe { CGEventPost(0, CGEventCreateMouseEvent(std::ptr::null(), kind, P { x, y }, 0)) };
+                std::thread::sleep(std::time::Duration::from_millis(60));
+            }
+            return;
+        }
         if let Some(i) = args.iter().position(|a| a == "--type") {
             return type_text(args.get(i + 1).map(String::as_str).unwrap_or(""));
         }
@@ -252,9 +285,12 @@ mod app {
 
         let engine = ccez_keys_core::Engine::new(dirs().to_string_lossy().into_owned());
         let langs = engine.setting_strings("languages.learning".into());
+        crate::learn::start(engine.clone(), dirs(), log);
         let app: &'static App = Box::leak(Box::new(App {
             view: View::new(mtm),
-            worker: Worker::start(|l, w| log(l, w)),
+            worker: Worker::start(engine.clone(), log),
+            engine: engine.clone(),
+            card: RefCell::default(),
             langs,
             flags: flags(),
             paused: Cell::new(false),
@@ -314,6 +350,56 @@ mod app {
         let (readings_id, off_id) = (readings.id().clone(), off_here.id().clone());
         let menu_tick = Cell::new(0u32);
 
+        // A word clicked: its card; Learning / Known on the card set its status
+        // everywhere (ccez-words), and the preview redraws with it.
+        crate::view::CLICK.with(|c| {
+            *c.borrow_mut() = Some(Box::new(move |tag: isize| {
+                let Some(mtm) = MainThreadMarker::new() else { return };
+                match tag {
+                    -1 => {
+                        app.view.close_card();
+                        *app.card.borrow_mut() = None;
+                    }
+                    -2 | -3 => {
+                        let Some((lang, key, text)) = app.card.borrow().clone() else { return };
+                        let want = if tag == -2 { ccez_keys_core::WordStatus::Learning } else { ccez_keys_core::WordStatus::Known };
+                        let now = app.engine.word_status(lang.clone(), key.clone());
+                        let next = if now == want { ccez_keys_core::WordStatus::New } else { want };
+                        app.engine.set_word_status(lang.clone(), key.clone(), next);
+                        let e = app.engine.clone();
+                        std::thread::spawn(move || {
+                            let _ = e.sync_words("ccez-keys-mac".into());
+                        });
+                        log("info", &format!("status {lang} set"));
+                        let _ = text;
+                        app.view.close_card();
+                        *app.card.borrow_mut() = None;
+                        // Asked again: the cached translation comes back with the new status.
+                        app.sentence.borrow_mut().clear();
+                    }
+                    t if t >= 0 => {
+                        let rows = app.line.borrow().clone();
+                        let (ri, ti) = ((t / 1000) as usize, (t % 1000) as usize);
+                        let Some(tok) = rows.get(ri).and_then(|r| r.toks.get(ti).map(|tk| (r.lang.clone(), tk.clone()))) else { return };
+                        let (lang, tok) = tok;
+                        let card = app.engine.word_card(lang.clone(), tok.text.clone(), if tok.key != tok.text { tok.key.clone() } else { String::new() });
+                        let head = card.as_ref().map(|c| if c.lemma.is_empty() { tok.text.clone() } else { c.lemma.clone() }).unwrap_or_else(|| tok.key.clone());
+                        let head = if tok.reading.is_empty() { head } else { format!("{head}  {}", tok.reading) };
+                        let meaning = card.as_ref().and_then(|c| c.meanings.first().cloned()).unwrap_or_default();
+                        let key = card.as_ref().map(|c| if c.lemma.is_empty() { tok.text.clone() } else { c.lemma.clone() }).unwrap_or_else(|| tok.key.clone());
+                        let st = match app.engine.word_status(lang.clone(), key.clone()) {
+                            ccez_keys_core::WordStatus::Learning => 1,
+                            ccez_keys_core::WordStatus::Known => 2,
+                            _ => 0,
+                        };
+                        *app.card.borrow_mut() = Some((lang, key, tok.text.clone()));
+                        app.view.open_card(mtm, &head, &meaning, st);
+                    }
+                    _ => {}
+                }
+            }));
+        });
+
         let tick_block = RcBlock::new(move |_t: NonNull<NSTimer>| {
             autoreleasepool(|_| {
                 while let Ok(e) = MenuEvent::receiver().try_recv() {
@@ -354,12 +440,11 @@ mod app {
                 }
                 // "Off in Claude": the menu names the app being typed in (every second or so).
                 menu_tick.set(menu_tick.get() + 1);
-                if menu_tick.get() % 7 == 0 {
-                    if let Some((bundle, name)) = app.typing_in.borrow().clone() {
+                if menu_tick.get().is_multiple_of(7)
+                    && let Some((bundle, name)) = app.typing_in.borrow().clone() {
                         off_here.set_text(format!("Off in {name}"));
                         off_here.set_checked(quiet(app, &bundle));
                     }
-                }
                 tick(mtm, app);
             })
         });

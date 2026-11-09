@@ -5,8 +5,8 @@
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSBackingStoreType, NSBox, NSBoxType, NSColor, NSFont, NSLineBreakMode, NSPanel, NSScreen, NSTextField,
-    NSTitlePosition, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSFont, NSPanel, NSScreen, NSTextField, NSTitlePosition,
+    NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
@@ -17,14 +17,47 @@ const MAX_W: f64 = 560.0;
 const PAD_X: f64 = 12.0;
 const PAD_Y: f64 = 7.0;
 
-/// One language on the preview: its flag, the translation, and for Japanese
-/// and Chinese each word with its reading (furigana, pinyin) to put over it.
+/// A word on the preview (or a space or mark between words).
+#[derive(Clone, PartialEq, Debug)]
+pub struct Tok {
+    pub text: String,
+    /// Furigana or pinyin to put over it ("" for none).
+    pub reading: String,
+    /// A word (clickable), not a space or a mark.
+    pub word: bool,
+    /// Its dictionary form, for its status and card.
+    pub key: String,
+    /// 0 new, 1 learning, 2 known.
+    pub status: u8,
+}
+
+/// One language on the preview: its flag and its words.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Row {
+    pub lang: String,
     pub flag: String,
-    pub text: String,
-    pub ruby: Vec<(String, String)>,
+    pub toks: Vec<Tok>,
 }
+
+thread_local! {
+    /// What a click on a word or a card button does (set by the app).
+    pub static CLICK: std::cell::RefCell<Option<Box<dyn Fn(isize)>>> = const { std::cell::RefCell::new(None) };
+}
+
+objc2::define_class!(
+    #[unsafe(super(objc2_foundation::NSObject))]
+    #[thread_kind = objc2::MainThreadOnly]
+    #[name = "CcezKeysClicker"]
+    pub struct Clicker;
+
+    impl Clicker {
+        #[unsafe(method(clicked:))]
+        fn clicked(&self, sender: &NSButton) {
+            let tag = sender.tag();
+            CLICK.with(|c| if let Some(f) = c.borrow().as_ref() { f(tag) });
+        }
+    }
+);
 
 pub struct View {
     panel: Retained<NSPanel>,
@@ -33,10 +66,12 @@ pub struct View {
     /// What's laid out now (rebuilt only when it changes).
     rows: std::cell::RefCell<Vec<Row>>,
     size: std::cell::Cell<(f64, f64)>,
+    pub clicker: Retained<Clicker>,
+    card: Retained<NSPanel>,
+    card_bg: Retained<NSBox>,
+    pub card_open: std::cell::Cell<bool>,
 }
 
-/// Most languages shown at once.
-pub const LINES: usize = 4;
 const GAP: f64 = 4.0;
 const TEXT: f64 = 14.0;
 /// Japanese and Chinese a size up, their readings clear (owner: hard to read).
@@ -47,95 +82,150 @@ fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
 }
 
+fn rgb(r: f64, g: f64, b: f64) -> Retained<NSColor> {
+    NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, 1.0)
+}
+
 fn label(mtm: MainThreadMarker, text: &str, size: f64, grey: bool) -> Retained<NSTextField> {
     let l = NSTextField::labelWithString(&NSString::from_str(text), mtm);
     l.setFont(Some(&NSFont::systemFontOfSize(size)));
     let c = if grey { 0.74 } else { 0.95 };
-    l.setTextColor(Some(&NSColor::colorWithSRGBRed_green_blue_alpha(c, c, c, 1.0)));
+    l.setTextColor(Some(&rgb(c, c, c)));
     l.setUsesSingleLineMode(true);
     l.sizeToFit();
     l
 }
 
+/// A word as a borderless button: its colour says its status (learning tinted
+/// as on the phone, known dimmed); a click opens its card.
+fn word_button(mtm: MainThreadMarker, clicker: &Clicker, t: &Tok, size: f64, tag: isize) -> Retained<NSButton> {
+    use objc2_foundation::{NSAttributedString, NSDictionary};
+    let b = unsafe { NSButton::buttonWithTitle_target_action(&NSString::from_str(&t.text), Some(clicker), Some(objc2::sel!(clicked:)), mtm) };
+    b.setBordered(false);
+    b.setTag(tag);
+    let color = match t.status {
+        1 => rgb(0.98, 0.55, 0.45),
+        2 => rgb(0.55, 0.55, 0.58),
+        _ => rgb(0.95, 0.95, 0.95),
+    };
+    let font = NSFont::systemFontOfSize(size);
+    let attrs = unsafe {
+        NSDictionary::<objc2_foundation::NSString, objc2::runtime::AnyObject>::from_slices(
+            &[objc2_app_kit::NSFontAttributeName, objc2_app_kit::NSForegroundColorAttributeName],
+            &[&*font as &objc2::runtime::AnyObject, &*color as &objc2::runtime::AnyObject],
+        )
+    };
+    let title = unsafe { NSAttributedString::new_with_attributes(&NSString::from_str(&t.text), &attrs) };
+    b.setAttributedTitle(&title);
+    // As wide as the word itself: a button's own padding spread the words apart.
+    let w = objc2_app_kit::NSAttributedStringNSStringDrawing::size(&*title).width.ceil() + 1.0;
+    b.sizeToFit();
+    let h = b.frame().size.height;
+    b.setFrame(rect(0.0, 0.0, w, h));
+    b
+}
+
+fn new_panel(mtm: MainThreadMarker) -> (Retained<NSPanel>, Retained<NSBox>) {
+    let style = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
+    let panel =
+        NSPanel::initWithContentRect_styleMask_backing_defer(NSPanel::alloc(mtm), rect(0.0, 0.0, 200.0, 30.0), style, NSBackingStoreType::Buffered, false);
+    unsafe { panel.setReleasedWhenClosed(false) };
+    panel.setOpaque(false);
+    panel.setBackgroundColor(Some(&NSColor::clearColor()));
+    panel.setHasShadow(true);
+    panel.setLevel(101);
+    panel.setHidesOnDeactivate(false);
+    // Clicks reach the words without taking focus from the app being typed in.
+    panel.setBecomesKeyOnlyIfNeeded(true);
+    panel.setCollectionBehavior(
+        NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Transient,
+    );
+    let bg = NSBox::new(mtm);
+    bg.setBoxType(NSBoxType::Custom);
+    bg.setTitlePosition(NSTitlePosition::NoTitle);
+    bg.setBorderWidth(0.0);
+    bg.setCornerRadius(9.0);
+    bg.setFillColor(&NSColor::colorWithSRGBRed_green_blue_alpha(0.12, 0.12, 0.13, 0.97));
+    bg.setContentViewMargins(NSSize::new(0.0, 0.0));
+    panel.setContentView(Some(&bg));
+    (panel, bg)
+}
+
 impl View {
     pub fn new(mtm: MainThreadMarker) -> View {
-        let style = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
-        let panel =
-            NSPanel::initWithContentRect_styleMask_backing_defer(NSPanel::alloc(mtm), rect(0.0, 0.0, 200.0, 30.0), style, NSBackingStoreType::Buffered, false);
-        unsafe { panel.setReleasedWhenClosed(false) };
-        panel.setOpaque(false);
-        panel.setBackgroundColor(Some(&NSColor::clearColor()));
-        panel.setHasShadow(true);
-        panel.setLevel(101);
-        panel.setHidesOnDeactivate(false);
-        panel.setIgnoresMouseEvents(true);
-        panel.setCollectionBehavior(
-            NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Transient,
-        );
-        let bg = NSBox::new(mtm);
-        bg.setBoxType(NSBoxType::Custom);
-        bg.setTitlePosition(NSTitlePosition::NoTitle);
-        bg.setBorderWidth(0.0);
-        bg.setCornerRadius(9.0);
-        bg.setFillColor(&NSColor::colorWithSRGBRed_green_blue_alpha(0.12, 0.12, 0.13, 0.96));
-        bg.setContentViewMargins(NSSize::new(0.0, 0.0));
-        panel.setContentView(Some(&bg));
-        View { panel, bg, shown: std::cell::Cell::new(false), rows: Default::default(), size: std::cell::Cell::new((0.0, 0.0)) }
+        let (panel, bg) = new_panel(mtm);
+        let (card, card_bg) = new_panel(mtm);
+        let clicker: Retained<Clicker> = unsafe { objc2::msg_send![Clicker::alloc(mtm), init] };
+        View {
+            panel,
+            bg,
+            shown: std::cell::Cell::new(false),
+            rows: Default::default(),
+            size: std::cell::Cell::new((0.0, 0.0)),
+            clicker,
+            card,
+            card_bg,
+            card_open: std::cell::Cell::new(false),
+        }
     }
 
     /// Lays the rows out afresh: flag, then the words (readings over them).
+    /// Each word's button tag is row * 1000 + its index.
     fn build(&self, mtm: MainThreadMarker, rows: &[Row]) -> (f64, f64) {
-        let content = self.bg.contentView();
-        if let Some(c) = &content {
-            for v in c.subviews().iter() {
-                v.removeFromSuperview();
-            }
+        let Some(content) = self.bg.contentView() else { return (0.0, 0.0) };
+        for v in content.subviews().iter() {
+            v.removeFromSuperview();
         }
-        let Some(content) = content else { return (0.0, 0.0) };
-        // Each row: its labels, x positions from 0, its height.
-        let mut built: Vec<(Vec<(Retained<NSTextField>, f64, f64)>, f64)> = Vec::new();
+        let mut built: Vec<(Vec<(Retained<objc2_app_kit::NSView>, f64, f64)>, f64)> = Vec::new();
         let mut widest: f64 = 0.0;
-        for r in rows.iter().take(LINES) {
-            let mut parts: Vec<(Retained<NSTextField>, f64, f64)> = Vec::new();
+        for (ri, r) in rows.iter().enumerate() {
+            let mut parts: Vec<(Retained<objc2_app_kit::NSView>, f64, f64)> = Vec::new();
+            let cjk = r.toks.iter().any(|t| !t.reading.is_empty()) || matches!(r.lang.as_str(), "ja" | "zh");
+            let size = if cjk { CJK } else { TEXT };
             let flag = label(mtm, &r.flag, TEXT - 2.0, false);
             let fw = flag.frame().size.width;
-            let has_ruby = r.ruby.iter().any(|(_, rd)| !rd.is_empty());
+            let has_ruby = r.toks.iter().any(|t| !t.reading.is_empty());
             let reading_h = if has_ruby { label(mtm, "あ", READING, true).frame().size.height - 2.0 } else { 0.0 };
-            let text_h = label(mtm, "Ag", if has_ruby { CJK } else { TEXT }, false).frame().size.height;
-            parts.push((flag, 0.0, 0.0));
-            let mut x = fw + 6.0;
-            if r.ruby.is_empty() {
-                let t = label(mtm, &r.text, TEXT, false);
-                t.setLineBreakMode(NSLineBreakMode::ByTruncatingHead);
-                let w = t.frame().size.width.min(MAX_W - 2.0 * PAD_X - x);
-                t.setFrame(rect(0.0, 0.0, w, text_h));
-                parts.push((t, x, 0.0));
+            let text_h = label(mtm, "Ag", size, false).frame().size.height;
+            parts.push((objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(flag)), 0.0, 0.0));
+            let x0 = fw + 6.0;
+            // Words from the end back while they fit: the end is what's being typed.
+            let mut items: Vec<(Retained<objc2_app_kit::NSView>, Option<Retained<NSTextField>>, f64, f64)> = Vec::new();
+            let mut used = 0.0;
+            for (ti, t) in r.toks.iter().enumerate().rev() {
+                // A space is a space's width, not a label's (labels pad themselves).
+                if !t.word && t.text.trim().is_empty() {
+                    let gap = if cjk { 2.0 } else { size * 0.28 };
+                    used += gap;
+                    items.push((objc2_app_kit::NSView::new(mtm), None, gap, 0.0));
+                    continue;
+                }
+                let v: Retained<objc2_app_kit::NSView> = if t.word {
+                    let b = word_button(mtm, &self.clicker, t, size, (ri * 1000 + ti) as isize);
+                    objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(b))
+                } else {
+                    objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(label(mtm, &t.text, size, false)))
+                };
+                let vw = v.frame().size.width;
+                let rl = (!t.reading.is_empty()).then(|| label(mtm, &t.reading, READING, true));
+                let w = vw.max(rl.as_ref().map(|l| l.frame().size.width).unwrap_or(0.0)) + if cjk && t.word { 2.0 } else { 0.0 };
+                if used + w > MAX_W - 2.0 * PAD_X - x0 - 14.0 && !items.is_empty() {
+                    let dots = label(mtm, "…", size, false);
+                    let dw = dots.frame().size.width;
+                    items.push((objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(dots)), None, dw, dw));
+                    break;
+                }
+                used += w;
+                items.push((v, rl, w, vw));
+            }
+            let mut x = x0;
+            for (v, rl, w, vw) in items.into_iter().rev() {
+                parts.push((v, x + (w - vw) / 2.0, 0.0));
+                if let Some(rl) = rl {
+                    let rw = rl.frame().size.width;
+                    parts.push((objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(rl)), x + (w - rw) / 2.0, text_h - 3.0));
+                }
                 x += w;
-            } else {
-                // Words from the end back while they fit: the end is what's being typed.
-                let mut words: Vec<(Retained<NSTextField>, Option<Retained<NSTextField>>, f64)> = Vec::new();
-                let mut used = 0.0;
-                for (t, rd) in r.ruby.iter().rev() {
-                    let tl = label(mtm, t, CJK, false);
-                    let rl = (!rd.is_empty()).then(|| label(mtm, rd, READING, true));
-                    let w = tl.frame().size.width.max(rl.as_ref().map(|l| l.frame().size.width).unwrap_or(0.0));
-                    if used + w > MAX_W - 2.0 * PAD_X - x - 14.0 && !words.is_empty() {
-                        let dots = label(mtm, "…", TEXT, false);
-                        words.push((dots.clone(), None, dots.frame().size.width));
-                        break;
-                    }
-                    used += w;
-                    words.push((tl, rl, w));
-                }
-                for (tl, rl, w) in words.into_iter().rev() {
-                    let tw = tl.frame().size.width;
-                    parts.push((tl, x + (w - tw) / 2.0, 0.0));
-                    if let Some(rl) = rl {
-                        let rw = rl.frame().size.width;
-                        parts.push((rl, x + (w - rw) / 2.0, text_h - 3.0));
-                    }
-                    x += w;
-                }
             }
             widest = widest.max(x);
             built.push((parts, text_h + reading_h));
@@ -143,14 +233,13 @@ impl View {
         let w = (widest + 2.0 * PAD_X).min(MAX_W);
         let n = built.len() as f64;
         let h: f64 = built.iter().map(|(_, rh)| rh).sum::<f64>() + (n - 1.0).max(0.0) * GAP + 2.0 * PAD_Y;
-        // Top row first: AppKit counts y from the bottom.
         let mut top = h - PAD_Y;
         for (parts, rh) in built {
             let base = top - rh;
-            for (l, x, dy) in parts {
-                let f = l.frame().size;
-                l.setFrame(rect(PAD_X + x, base + dy, f.width, f.height));
-                content.addSubview(&l);
+            for (v, x, dy) in parts {
+                let f = v.frame().size;
+                v.setFrame(rect(PAD_X + x, base + dy, f.width, f.height));
+                content.addSubview(&v);
             }
             top = base - GAP;
         }
@@ -158,7 +247,8 @@ impl View {
     }
 
     /// Puts `rows` up (one language each, the first on top), under `caret`
-    /// (top-left screen points) or at the foot of the screen.
+    /// (top-left screen points), over it when there's no room below, or at the
+    /// foot of the screen.
     pub fn show(&self, mtm: MainThreadMarker, rows: &[Row], caret: Option<Rect>) {
         if rows.is_empty() {
             return self.hide();
@@ -172,9 +262,6 @@ impl View {
         let screens = NSScreen::screens(mtm);
         let primary_h = screens.firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
         let (x, y) = match caret {
-            // AX: top-left origin on the primary screen; AppKit: bottom-left. Under
-            // the cursor, or over it when there's no room below (a message box at
-            // the foot of the window): never on the line being typed.
             Some(c) => {
                 let below = primary_h - (c.y + c.h) - h - 6.0;
                 let floor = NSScreen::mainScreen(mtm).map(|m| m.visibleFrame().origin.y).unwrap_or(0.0);
@@ -196,9 +283,56 @@ impl View {
     }
 
     pub fn hide(&self) {
-        if self.shown.get() {
+        if self.shown.get() && !self.card_open.get() {
             self.panel.orderOut(None);
             self.shown.set(false);
         }
+    }
+
+    /// A word's card beside the preview: the word, what it means, Learning and
+    /// Known (lit when it is), and a way to close it. Button tags: -1 close,
+    /// -2 learning, -3 known.
+    pub fn open_card(&self, mtm: MainThreadMarker, head: &str, meaning: &str, status: u8) {
+        let Some(content) = self.card_bg.contentView() else { return };
+        for v in content.subviews().iter() {
+            v.removeFromSuperview();
+        }
+        let w = 300.0;
+        let word = label(mtm, head, 20.0, false);
+        word.setFont(Some(&NSFont::boldSystemFontOfSize(20.0)));
+        word.sizeToFit();
+        let mean = NSTextField::wrappingLabelWithString(&NSString::from_str(meaning), mtm);
+        mean.setFont(Some(&NSFont::systemFontOfSize(13.0)));
+        mean.setTextColor(Some(&rgb(0.85, 0.85, 0.87)));
+        mean.setPreferredMaxLayoutWidth(w - 24.0);
+        let mh = mean.sizeThatFits(NSSize::new(w - 24.0, 200.0)).height.min(70.0);
+        let btn = |title: &str, tag: isize, on: bool| {
+            let t = Tok { text: title.to_string(), reading: String::new(), word: true, key: String::new(), status: if on { 1 } else { 0 } };
+            word_button(mtm, &self.clicker, &t, 13.0, tag)
+        };
+        let learning = btn("Learning", -2, status == 1);
+        let known = btn("Known", -3, status == 2);
+        let close = btn("✕", -1, false);
+        let h = 12.0 + word.frame().size.height + 4.0 + mh + 10.0 + 22.0 + 10.0;
+        let mut y = h - 12.0 - word.frame().size.height;
+        word.setFrame(rect(12.0, y, w - 50.0, word.frame().size.height));
+        close.setFrame(rect(w - 30.0, h - 30.0, 20.0, 20.0));
+        y -= 4.0 + mh;
+        mean.setFrame(rect(12.0, y, w - 24.0, mh));
+        learning.setFrame(rect(12.0, 10.0, 90.0, 22.0));
+        known.setFrame(rect(110.0, 10.0, 90.0, 22.0));
+        for v in [&*word as &objc2_app_kit::NSView, &*mean, &*learning, &*known, &*close] {
+            content.addSubview(v);
+        }
+        let f = self.panel.frame();
+        self.card.setFrame_display(rect(f.origin.x, f.origin.y - h - 6.0, w, h), true);
+        self.card_bg.setFrame(rect(0.0, 0.0, w, h));
+        self.card.orderFrontRegardless();
+        self.card_open.set(true);
+    }
+
+    pub fn close_card(&self) {
+        self.card.orderOut(None);
+        self.card_open.set(false);
     }
 }

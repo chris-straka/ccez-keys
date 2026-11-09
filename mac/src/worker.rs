@@ -19,13 +19,48 @@ pub struct Ask {
 }
 
 /// What came back: each language's translation, in the order asked.
-/// One language's line: its code, the translation, and for Japanese and
-/// Chinese each word with its reading (empty for the rest).
+/// One language's line: its code and its words (with readings for Japanese
+/// and Chinese, and each word's status).
 #[derive(Clone)]
 pub struct Line {
     pub lang: String,
-    pub text: String,
-    pub ruby: Vec<(String, String)>,
+    pub toks: Vec<crate::view::Tok>,
+}
+
+fn status(s: ccez_keys_core::WordStatus) -> u8 {
+    match s {
+        ccez_keys_core::WordStatus::Learning => 1,
+        ccez_keys_core::WordStatus::Known => 2,
+        _ => 0,
+    }
+}
+
+/// The translation as words with statuses: Japanese and Chinese by macOS's
+/// words (readings over them), the rest through the dictionary (a form counts
+/// as its word).
+fn toks(engine: &ccez_keys_core::Engine, lang: &str, text: &str, ruby: &[(String, String)]) -> Vec<crate::view::Tok> {
+    use crate::view::Tok;
+    if !ruby.is_empty() {
+        return ruby
+            .iter()
+            .map(|(t, r)| {
+                let word = t.chars().any(char::is_alphanumeric);
+                let s = if word { status(engine.word_status(lang.into(), t.clone())) } else { 0 };
+                Tok { text: t.clone(), reading: r.clone(), word, key: t.clone(), status: s }
+            })
+            .collect();
+    }
+    engine
+        .strip_words(lang.into(), text.into())
+        .into_iter()
+        .map(|w| Tok {
+            key: if w.lemma.is_empty() { w.text.clone() } else { w.lemma.clone() },
+            text: w.text,
+            reading: String::new(),
+            word: w.word,
+            status: status(w.status),
+        })
+        .collect()
 }
 
 #[derive(Clone)]
@@ -77,7 +112,7 @@ impl Helper {
 }
 
 impl Worker {
-    pub fn start(log: impl Fn(&str, &str) + Send + 'static) -> Worker {
+    pub fn start(engine: std::sync::Arc<ccez_keys_core::Engine>, log: impl Fn(&str, &str) + Send + 'static) -> Worker {
         let (tx, rx): (Sender<Ask>, Receiver<Ask>) = channel();
         let out: Arc<Mutex<Option<Shown>>> = Arc::default();
         let put = out.clone();
@@ -130,7 +165,12 @@ impl Worker {
                         None
                     };
                     if let Some((t, ruby)) = got.filter(|(t, _)| !t.trim().eq_ignore_ascii_case(ask.text.trim())) {
-                        lines.push(Line { lang: lang.clone(), text: t, ruby });
+                        let toks = toks(&engine, lang, t.trim(), &ruby);
+                        // Every word known: that language has nothing to teach here (as on the phone).
+                        let words: Vec<_> = toks.iter().filter(|t| t.word).collect();
+                        if words.is_empty() || !words.iter().all(|t| t.status == 2) {
+                            lines.push(Line { lang: lang.clone(), toks });
+                        }
                     }
                     // Each language as it comes (Apple's translator does one at a time, ~0.3 s each).
                     *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines: lines.clone() });

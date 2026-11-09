@@ -29,3 +29,16 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
   selected range, bounds for the caret), never a key tap.
 - Apple's on-device translation (macOS 15+, Translation framework) through
   a small Swift helper; Muse rewords after a pause, answers cached.
+
+## Built so far
+
+- Each language on its own line (2/4/6/8/All, default 6), furigana and
+  per-character pinyin, flips above the caret, lingers 4 s.
+- Known words are skipped: a language whose words are all known isn't shown.
+- Words are coloured by status (Learning tinted); clicking one opens a card
+  (meaning, Learning / Known) without taking focus. Statuses sync with
+  ccez-words every 5 minutes; the server comes from
+  `~/.config/ccez-keys/words-server` (one line, outside the repo).
+- Dictionaries (ja, zh) come from ccez-lang-core's release, checked
+  against SHA256SUMS.
+- Not yet: Muse rewording, the card's "here" meaning, hover to hear.
