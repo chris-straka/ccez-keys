@@ -10,3 +10,10 @@ ccez-keys is MIT (LICENSE). It ships data from:
   `data/words/th.txt` and `hy.txt`. https://github.com/hermitdave/FrequencyWords
 - **JMdict** (EDRDG) and **CC-CEDICT**, CC BY-SA 4.0: the Japanese and Chinese
   converters, built on the phone from ccez-lang-core's dictionaries.
+
+## Next words
+
+`data/next/<lang>.txt`: which words tend to follow which, counted by
+`keys-next` from [Tatoeba](https://tatoeba.org)'s sentences (CC BY 2.0 FR).
+Tatoeba's stock names (Tom, Mary and others) are left out.
+

@@ -72,6 +72,8 @@ class App : Application() {
         }
         val extra = runCatching { assets.open("words/$lang-extra.txt").bufferedReader().readText() }.getOrDefault("")
         val n = engine.loadWords(lang, text + "\n" + extra)
+        // The words likely next (from Tatoeba), where there are some.
+        runCatching { assets.open("next/$lang.txt").bufferedReader().readText() }.getOrNull()?.let { engine.loadNext(lang, it) }
         log("info", "words", "lang" to lang, "count" to n.toLong(), "ms" to (System.nanoTime() - started) / 1_000_000)
     }
 

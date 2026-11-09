@@ -179,9 +179,10 @@ private fun Word(w: StripWord, lang: String, typist: Typist, readings: Boolean) 
     Row(
         Modifier.let { m ->
             if (!w.word) m else m.clip(RoundedCornerShape(4.dp)).combinedClickable(
-                // Tap: the card (Learning / Known). Hold does nothing (owner, 2026-11-08:
-                // a hold meant as "known" saved the word to Learning).
+                // Tap or hold: the card (Learning / Known); a hold buzzes (owner, 2026-11-08:
+                // a hold that saved straight to Learning was a surprise).
                 onClick = { typist.strip.open(lang, w) },
+                onLongClick = { typist.holdBuzz(); typist.strip.open(lang, w) },
             )
         },
     ) {

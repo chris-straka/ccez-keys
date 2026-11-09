@@ -926,6 +926,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         updateShift()
     }
 
+    /** The buzz of a hold. */
+    fun holdBuzz() = buzz(HapticFeedbackConstants.LONG_PRESS)
+
     fun markLearning(lang: String, word: String) {
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         setStatus(lang, word, uk.ccez.keys.core.WordStatus.LEARNING)

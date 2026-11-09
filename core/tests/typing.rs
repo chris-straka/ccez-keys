@@ -220,3 +220,23 @@ fn japanese_in_romaji_is_noticed() {
     }
     assert_eq!(e.romaji_word("ja".into(), "konnichiha".into()), None);
 }
+
+#[test]
+fn next_words_from_the_language_then_the_owner() {
+    let e = engine(&["fr", "en"]);
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../data/next/");
+    for l in ["fr", "en"] {
+        assert!(e.load_next(l.into(), std::fs::read_to_string(format!("{root}{l}.txt")).unwrap()) > 1000);
+    }
+    let p = |l: &str, w: &str| e.predict(l.into(), w.into());
+    assert_eq!(p("fr", "je")[..2], ["ne", "suis"]);
+    assert_eq!(p("en", "thank")[0], "you");
+    assert!(p("fr", "Je").contains(&"suis".to_string()));
+    // What the owner typed twice after a word comes first.
+    for _ in 0..2 {
+        e.learn("fr".into(), "je".into(), "pense".into(), false);
+    }
+    assert_eq!(p("fr", "je")[0], "pense");
+    // No Tatoeba stock names.
+    assert!(!p("en", "with").iter().any(|w| w == "Tom" || w == "Mary"));
+}

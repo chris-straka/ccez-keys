@@ -251,6 +251,16 @@ impl Engine {
         (kana.chars().count() >= 3 && !kana.chars().any(|c| c.is_ascii()) && typing::is_word(ja, &kana)).then_some(kana)
     }
 
+    /// The words likely next (data/next/<lang>.txt), for a language whose words are loaded.
+    pub fn load_next(&self, lang: String, text: String) -> u32 {
+        let next = typing::parse_next(&text);
+        let n = next.len() as u32;
+        if let Some(l) = self.lock().langs.get_mut(&lang) {
+            l.next = next;
+        }
+        n
+    }
+
     /// Words for a swipe over `path` (the letters passed, in order).
     pub fn swipe(&self, lang: String, path: String) -> Vec<String> {
         let s = self.lock();

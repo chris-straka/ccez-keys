@@ -26,11 +26,13 @@ pub struct UserWords {
 pub struct Lang {
     pub lex: Lexicon,
     pub user: UserWords,
+    /// Folded previous word → the words likely next, commonest first (data/next).
+    pub next: HashMap<String, Vec<String>>,
 }
 
 impl Lang {
     pub fn new(lex: Lexicon, user: UserWords) -> Self {
-        let mut lang = Lang { lex, user };
+        let mut lang = Lang { lex, user, next: HashMap::new() };
         let trusted: Vec<(String, u32)> = lang.user.words.iter().filter(|(_, n)| **n >= ACCEPT).map(|(w, n)| (w.clone(), *n)).collect();
         for (w, n) in trusted {
             lang.lex.insert(&w, user_logf(n));
@@ -234,9 +236,30 @@ pub fn learn(lang: &mut Lang, prev: &str, word: &str, strong: bool) {
 }
 
 /// Next words after `prev`, from what the owner has typed after it.
+/// The words likely after `prev`: the owner's own first (what followed it
+/// before), then the language's usual ones.
 pub fn predict(lang: &Lang, prev: &str) -> Vec<String> {
-    let Some(next) = lang.user.next.get(&fold(prev)) else { return vec![] };
-    let mut v: Vec<(&String, &u32)> = next.iter().collect();
-    v.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
-    v.into_iter().take(3).map(|(w, _)| w.clone()).collect()
+    let key = fold(prev);
+    let mut mine: Vec<(&String, &u32)> = lang.user.next.get(&key).map(|n| n.iter().collect()).unwrap_or_default();
+    mine.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+    // Typed twice or more before the usual ones; once, after them.
+    let (often, once): (Vec<_>, Vec<_>) = mine.into_iter().partition(|(_, n)| **n >= 2);
+    let mut out: Vec<String> = often.into_iter().map(|(w, _)| w.clone()).collect();
+    if let Some(base) = lang.next.get(&key) {
+        out.extend(base.iter().cloned());
+    }
+    out.extend(once.into_iter().map(|(w, _)| w.clone()));
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|w| seen.insert(w.to_lowercase()));
+    out.truncate(3);
+    out
+}
+
+/// Reads data/next/<lang>.txt (`previous \t next next…`).
+pub fn parse_next(text: &str) -> HashMap<String, Vec<String>> {
+    text.lines()
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(prev, next)| (fold(prev), next.split(' ').filter(|w| !w.is_empty()).map(String::from).collect()))
+        .collect()
 }
