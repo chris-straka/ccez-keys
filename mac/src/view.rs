@@ -70,6 +70,12 @@ pub struct View {
     card: Retained<NSPanel>,
     card_bg: Retained<NSBox>,
     pub card_open: std::cell::Cell<bool>,
+    card_size: std::cell::Cell<(f64, f64)>,
+}
+
+/// A row's click tag (-1000 - row): its flag and blank space read it aloud.
+pub fn row_tag(row: usize) -> isize {
+    -1000 - row as isize
 }
 
 const GAP: f64 = 4.0;
@@ -197,6 +203,7 @@ impl View {
             card,
             card_bg,
             card_open: std::cell::Cell::new(false),
+            card_size: std::cell::Cell::new((0.0, 0.0)),
         }
     }
 
@@ -213,7 +220,8 @@ impl View {
             let mut parts: Vec<(Retained<objc2_app_kit::NSView>, f64, f64)> = Vec::new();
             let cjk = r.toks.iter().any(|t| !t.reading.is_empty()) || matches!(r.lang.as_str(), "ja" | "zh");
             let size = if cjk { CJK } else { TEXT };
-            let flag = label(mtm, &r.flag, TEXT - 2.0, false);
+            // The flag reads the line aloud when clicked.
+            let flag = word_button(mtm, &self.clicker, &Tok { text: r.flag.clone(), reading: String::new(), word: true, key: String::new(), status: 0 }, TEXT - 2.0, row_tag(ri));
             let fw = flag.frame().size.width;
             let has_ruby = r.toks.iter().any(|t| !t.reading.is_empty());
             let reading_h = if has_ruby { label(mtm, "あ", READING, true).frame().size.height - 2.0 } else { 0.0 };
@@ -265,8 +273,15 @@ impl View {
         let n = built.len() as f64;
         let h: f64 = built.iter().map(|(_, rh)| rh).sum::<f64>() + (n - 1.0).max(0.0) * GAP + 2.0 * PAD_Y;
         let mut top = h - PAD_Y;
-        for (parts, rh) in built {
+        for (ri, (parts, rh)) in built.into_iter().enumerate() {
             let base = top - rh;
+            // Under the words: the rest of the line, which reads it aloud too.
+            let hit = unsafe { NSButton::buttonWithTitle_target_action(&NSString::from_str(""), Some(&*self.clicker), Some(objc2::sel!(clicked:)), mtm) };
+            hit.setBordered(false);
+            hit.setTransparent(true);
+            hit.setTag(row_tag(ri));
+            hit.setFrame(rect(0.0, base - GAP / 2.0, w, rh + GAP));
+            content.addSubview(&hit);
             for (v, x, dy) in parts {
                 let f = v.frame().size;
                 v.setFrame(rect(PAD_X + x, base + dy, f.width, f.height));
@@ -303,17 +318,34 @@ impl View {
         );
         self.panel.setFrame_display(rect(x, y, w, h), true);
         self.bg.setFrame(rect(0.0, 0.0, w, h));
+        if self.card_open.get() {
+            self.place_card(mtm);
+        }
         if !self.shown.get() {
             self.panel.orderFrontRegardless();
             self.shown.set(true);
         }
     }
 
+    /// Takes the preview down, and its card with it.
     pub fn hide(&self) {
-        if self.shown.get() && !self.card_open.get() {
+        if self.card_open.get() {
+            self.close_card();
+        }
+        if self.shown.get() {
             self.panel.orderOut(None);
             self.shown.set(false);
         }
+    }
+
+    /// The card beside the preview (right of it, or left at the screen's
+    /// edge), tops level: never under it, where the box being typed in may be.
+    fn place_card(&self, mtm: MainThreadMarker) {
+        let (w, h) = self.card_size.get();
+        let f = self.panel.frame();
+        let right = NSScreen::mainScreen(mtm).map(|m| { let v = m.visibleFrame(); v.origin.x + v.size.width }).unwrap_or(1e9);
+        let x = if f.origin.x + f.size.width + 6.0 + w <= right - 4.0 { f.origin.x + f.size.width + 6.0 } else { (f.origin.x - w - 6.0).max(4.0) };
+        self.card.setFrame_display(rect(x, f.origin.y + f.size.height - h, w, h), true);
     }
 
     /// A word's card beside the preview: the word, what it means, Learning and
@@ -351,8 +383,8 @@ impl View {
         for v in [&*word as &objc2_app_kit::NSView, &*mean, &*learning, &*known, &*close] {
             content.addSubview(v);
         }
-        let f = self.panel.frame();
-        self.card.setFrame_display(rect(f.origin.x, f.origin.y - h - 6.0, w, h), true);
+        self.card_size.set((w, h));
+        self.place_card(mtm);
         self.card_bg.setFrame(rect(0.0, 0.0, w, h));
         self.card.orderFrontRegardless();
         self.card_open.set(true);

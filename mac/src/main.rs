@@ -13,6 +13,8 @@ mod learn;
 #[cfg(target_os = "macos")]
 mod prefs;
 #[cfg(target_os = "macos")]
+mod speak;
+#[cfg(target_os = "macos")]
 mod view;
 mod worker;
 
@@ -37,8 +39,14 @@ mod app {
     use crate::worker::{Ask, Worker};
     use crate::{ax, worker};
 
-    /// How long the preview stays after typing stops (⌥ brings it back).
-    const LINGER: Duration = Duration::from_secs(8);
+    /// How long the preview stays after typing stops (⌥ brings it back): 8 s,
+    /// and a longer sentence longer, to read it (a tenth of a second a
+    /// character past 40, up to 20 s).
+    pub fn linger(chars: usize) -> Duration {
+        Duration::from_millis(8000 + (chars.saturating_sub(40) as u64 * 100).min(12_000))
+    }
+    /// The words of a line still being translated ("…" held in its place).
+    const PENDING: &str = "\u{1}pending";
     /** The pause in typing that asks for a translation. */
     const PAUSE: Duration = Duration::from_millis(200);
 
@@ -70,7 +78,7 @@ mod app {
         asked: Cell<bool>,
         woken: RefCell<std::collections::HashSet<i32>>,
         line: RefCell<Vec<crate::view::Row>>,
-        /** When the preview last changed on screen: it stays LINGER from then. */
+        /** When the preview last changed on screen: it stays `linger` from then. */
         appeared: Cell<Instant>,
     }
 
@@ -158,6 +166,10 @@ mod app {
             let n = old.chars().count().min(sentence.chars().count()).min(12);
             if n == 0 || old.chars().take(n).ne(sentence.chars().take(n)) {
                 app.line.borrow_mut().clear();
+                app.view.close_card();
+            } else {
+                // Typed on: lines still waiting were for the old words; the next answer brings them.
+                app.line.borrow_mut().retain(|r| !r.toks.iter().any(|t| t.key == PENDING));
             }
             *app.sentence.borrow_mut() = sentence.clone();
             // Answers for what was there before don't belong to this one.
@@ -186,7 +198,8 @@ mod app {
             }
         }
         // From when it showed, not from the last key: translating takes a moment.
-        let fresh = app.changed.get().elapsed() < LINGER || app.appeared.get().elapsed() < LINGER || option_held() || app.view.card_open.get();
+        let stay = linger(app.sentence.borrow().chars().count());
+        let fresh = app.changed.get().elapsed() < stay || app.appeared.get().elapsed() < stay || option_held();
         let line = app.line.borrow();
         if fresh && !line.is_empty() {
             app.view.show(mtm, &line, app.caret.get());
@@ -215,7 +228,7 @@ mod app {
         for lang in shown.pending.iter().take(max.saturating_sub(rows.len())) {
             let cjk = matches!(lang.as_str(), "ja" | "zh" | "zh-Hans" | "zh-Hant");
             let reading = if cjk && p.readings { " ".to_string() } else { String::new() };
-            rows.push(row(lang, vec![crate::view::Tok { text: "…".into(), reading, word: false, key: String::new(), status: 0 }]));
+            rows.push(row(lang, vec![crate::view::Tok { text: "…".into(), reading, word: false, key: PENDING.into(), status: 0 }]));
         }
         rows
     }    /// `--demo "line"`: the preview with that line at the screen's foot for a few
@@ -407,6 +420,15 @@ mod app {
                         // Asked again: the cached translation comes back with the new status.
                         app.sentence.borrow_mut().clear();
                     }
+                    t if t <= -1000 => {
+                        // A line's flag or blank space: the line read aloud.
+                        let rows = app.line.borrow().clone();
+                        if let Some(r) = rows.get((-1000 - t) as usize).filter(|r| !r.toks.iter().any(|t| t.key == PENDING)) {
+                            let text: String = r.toks.iter().map(|t| t.text.as_str()).collect();
+                            crate::speak::say(&r.lang, &text);
+                            app.appeared.set(Instant::now());
+                        }
+                    }
                     t if t >= 0 => {
                         let rows = app.line.borrow().clone();
                         let (ri, ti) = ((t / 1000) as usize, (t % 1000) as usize);
@@ -422,8 +444,11 @@ mod app {
                             ccez_keys_core::WordStatus::Known => 2,
                             _ => 0,
                         };
+                        crate::speak::say(&lang, &tok.text);
                         *app.card.borrow_mut() = Some((lang, key, tok.text.clone()));
                         app.view.open_card(mtm, &head, &meaning, st);
+                        // The card stays as long as the preview, counted from the click.
+                        app.appeared.set(Instant::now());
                     }
                     _ => {}
                 }
