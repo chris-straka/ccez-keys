@@ -6,8 +6,32 @@
 import Foundation
 import Translation
 
-struct Ask: Decodable { let id: Int; let from: String; let to: String; let text: String }
-struct Answer: Encodable { let id: Int; let text: String?; let error: String? }
+struct Ask: Decodable { let id: Int; let from: String; let to: String; let text: String; let readings: Bool? }
+struct Answer: Encodable { let id: Int; let text: String?; let error: String?; var ruby: [[String]]? = nil }
+
+/// Japanese and Chinese: each word with its reading (hiragana over kanji, pinyin
+/// over hanzi), from macOS's own transcription; pieces without Han get none.
+func ruby(_ text: String, _ lang: String) -> [[String]] {
+    let ns = text as NSString
+    let cf = text as CFString
+    let tok = CFStringTokenizerCreate(nil, cf, CFRange(location: 0, length: ns.length), kCFStringTokenizerUnitWordBoundary, Locale(identifier: lang) as CFLocale)
+    var out: [[String]] = []
+    var at = 0
+    let han = { (s: String) in s.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) || (0x3400...0x4DBF).contains($0.value) } }
+    while CFStringTokenizerAdvanceToNextToken(tok).rawValue != 0 {
+        let r = CFStringTokenizerGetCurrentTokenRange(tok)
+        if r.location > at { out.append([ns.substring(with: NSRange(location: at, length: r.location - at)), ""]) }
+        let piece = ns.substring(with: NSRange(location: r.location, length: r.length))
+        var reading = ""
+        if han(piece), let latin = CFStringTokenizerCopyCurrentTokenAttribute(tok, kCFStringTokenizerAttributeLatinTranscription) as? String {
+            reading = lang.hasPrefix("ja") ? (latin.applyingTransform(.latinToHiragana, reverse: false) ?? latin) : latin
+        }
+        out.append([piece, reading])
+        at = r.location + r.length
+    }
+    if at < ns.length { out.append([ns.substring(from: at), ""]) }
+    return out
+}
 
 actor Sessions {
     var open: [String: TranslationSession] = [:]
@@ -24,7 +48,8 @@ actor Sessions {
         let s = await session(a)
         do {
             let r = try await s.translate(a.text)
-            return Answer(id: a.id, text: r.targetText, error: nil)
+            let wantRuby = (a.readings ?? false) && (a.to.hasPrefix("ja") || a.to.hasPrefix("zh"))
+            return Answer(id: a.id, text: r.targetText, error: nil, ruby: wantRuby ? ruby(r.targetText, a.to) : nil)
         } catch {
             await drop(a)
             return Answer(id: a.id, text: nil, error: "\(error)")

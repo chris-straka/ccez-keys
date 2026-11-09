@@ -17,10 +17,19 @@ pub struct Ask {
 }
 
 /// What came back: each language's translation, in the order asked.
+/// One language's line: its code, the translation, and for Japanese and
+/// Chinese each word with its reading (empty for the rest).
+#[derive(Clone)]
+pub struct Line {
+    pub lang: String,
+    pub text: String,
+    pub ruby: Vec<(String, String)>,
+}
+
 #[derive(Clone)]
 pub struct Shown {
     pub seq: u64,
-    pub lines: Vec<(String, String)>,
+    pub lines: Vec<Line>,
 }
 
 pub struct Worker {
@@ -45,16 +54,21 @@ impl Helper {
         Some(Helper { _child: child, stdin, stdout, id: 0 })
     }
 
-    fn translate(&mut self, from: &str, to: &str, text: &str) -> Result<String, String> {
+    fn translate(&mut self, from: &str, to: &str, text: &str) -> Result<(String, Vec<(String, String)>), String> {
         self.id += 1;
-        let ask = serde_json::json!({"id": self.id, "from": from, "to": to, "text": text});
+        let ask = serde_json::json!({"id": self.id, "from": from, "to": to, "text": text, "readings": true});
         writeln!(self.stdin, "{ask}").map_err(|e| e.to_string())?;
         self.stdin.flush().map_err(|e| e.to_string())?;
         let mut line = String::new();
         self.stdout.read_line(&mut line).map_err(|e| e.to_string())?;
         let v: serde_json::Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
+        let ruby = v
+            .get("ruby")
+            .and_then(|r| r.as_array())
+            .map(|a| a.iter().filter_map(|p| Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_str()?.to_string()))).collect())
+            .unwrap_or_default();
         match v.get("text").and_then(|t| t.as_str()) {
-            Some(t) => Ok(t.to_string()),
+            Some(t) => Ok((t.to_string(), ruby)),
             None => Err(v.get("error").and_then(|e| e.as_str()).unwrap_or("no answer").to_string()),
         }
     }
@@ -70,7 +84,7 @@ impl Worker {
             if helper.is_none() {
                 log("error", "translator helper didn't start");
             }
-            let mut cache: HashMap<(String, String), String> = HashMap::new();
+            let mut cache: HashMap<(String, String), (String, Vec<(String, String)>)> = HashMap::new();
             let mut missing: Vec<String> = Vec::new();
             let mut next: Option<Ask> = None;
             loop {
@@ -113,8 +127,8 @@ impl Worker {
                     } else {
                         None
                     };
-                    if let Some(t) = got.filter(|t| !t.trim().eq_ignore_ascii_case(ask.text.trim())) {
-                        lines.push((lang.clone(), t));
+                    if let Some((t, ruby)) = got.filter(|(t, _)| !t.trim().eq_ignore_ascii_case(ask.text.trim())) {
+                        lines.push(Line { lang: lang.clone(), text: t, ruby });
                     }
                     // Each language as it comes (Apple's translator does one at a time, ~0.3 s each).
                     *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines: lines.clone() });

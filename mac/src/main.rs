@@ -34,7 +34,7 @@ mod app {
     use crate::{ax, worker};
 
     /// How long the preview stays after typing stops (⌥ brings it back).
-    const LINGER: Duration = Duration::from_secs(3);
+    const LINGER: Duration = Duration::from_secs(4);
     /** The pause in typing that asks for a translation. */
     const PAUSE: Duration = Duration::from_millis(200);
 
@@ -58,7 +58,9 @@ mod app {
         changed: Cell<Instant>,
         seq: Cell<u64>,
         asked: Cell<bool>,
-        line: RefCell<Vec<String>>,
+        line: RefCell<Vec<crate::view::Row>>,
+        /** When the preview last changed on screen: it stays LINGER from then. */
+        appeared: Cell<Instant>,
     }
 
     pub fn log(level: &str, what: &str) {
@@ -127,11 +129,13 @@ mod app {
             if shown.seq == app.seq.get() {
                 let line = render(app, &shown);
                 *app.line.borrow_mut() = line;
+                app.appeared.set(Instant::now());
             } else {
                 // An older sentence's: put back for nothing, wait for the newest.
             }
         }
-        let fresh = app.changed.get().elapsed() < LINGER || option_held();
+        // From when it showed, not from the last key: translating takes a moment.
+        let fresh = app.changed.get().elapsed() < LINGER || app.appeared.get().elapsed() < LINGER || option_held();
         let line = app.line.borrow();
         if fresh && !line.is_empty() {
             app.view.show(mtm, &line, app.caret.get());
@@ -140,22 +144,26 @@ mod app {
         }
     }
 
-    /// One line per language, in your order: "🇫🇷 je te retrouve …".
-    fn render(app: &App, shown: &worker::Shown) -> Vec<String> {
+    /// One line per language, in your order: "🇫🇷 je te retrouve …"; Japanese
+    /// and Chinese with their readings over the words.
+    fn render(app: &App, shown: &worker::Shown) -> Vec<crate::view::Row> {
         shown
             .lines
             .iter()
             .take(crate::view::LINES)
-            .map(|(lang, text)| format!("{} {}", app.flags.get(lang).map(String::as_str).unwrap_or(lang), text.trim()))
+            .map(|l| crate::view::Row {
+                flag: app.flags.get(&l.lang).cloned().unwrap_or_else(|| l.lang.clone()),
+                text: l.text.trim().to_string(),
+                ruby: l.ruby.clone(),
+            })
             .collect()
-    }
-    /// `--demo "line"`: the preview with that line at the screen's foot for a few
+    }    /// `--demo "line"`: the preview with that line at the screen's foot for a few
     /// seconds, for screenshots (no permission, no translation needed).
     fn demo(mtm: MainThreadMarker, line: String) {
         let nsapp = NSApplication::sharedApplication(mtm);
         nsapp.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
         let view: &'static View = Box::leak(Box::new(View::new(mtm)));
-        let lines: Vec<String> = line.split('|').map(str::to_string).collect();
+        let lines: Vec<crate::view::Row> = line.split('|').map(|t| crate::view::Row { flag: String::new(), text: t.to_string(), ruby: vec![] }).collect();
         view.show(mtm, &lines, Some(ax::Rect { x: 300.0, y: 300.0, w: 2.0, h: 18.0 }));
         let quit = RcBlock::new(move |_t: NonNull<NSTimer>| std::process::exit(0));
         unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(6.0, false, &quit) };
@@ -219,6 +227,7 @@ mod app {
             seq: Cell::new(0),
             asked: Cell::new(true),
             line: RefCell::default(),
+            appeared: Cell::new(Instant::now()),
         }));
 
         // The menu bar: on/off, the Mac's translation languages, open at login, quit.
