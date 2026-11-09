@@ -43,12 +43,10 @@ mod app {
     use crate::worker::{Ask, Worker};
     use crate::{ax, worker};
 
-    /// How long the preview stays after typing stops (⌥ brings it back): 8 s,
-    /// and a longer sentence longer, to read it (a tenth of a second a
-    /// character past 40, up to 20 s).
-    pub fn linger(chars: usize) -> Duration {
-        Duration::from_millis(8000 + (chars.saturating_sub(40) as u64 * 100).min(12_000))
-    }
+    /// How long the preview stays after typing stops (⌥ brings it back): a
+    /// minute (owner, 2026-11-09). It goes at once on leaving the field or
+    /// app, sending (the field empties) or a new line.
+    const LINGER: Duration = Duration::from_secs(60);
     /// The words of a line still being translated ("…" held in its place).
     const PENDING: &str = "\u{1}pending";
     /** The pause in typing that asks for a translation. */
@@ -86,7 +84,7 @@ mod app {
         asked: Cell<bool>,
         woken: RefCell<std::collections::HashSet<i32>>,
         line: RefCell<Vec<crate::view::Row>>,
-        /** When the preview last changed on screen: it stays `linger` from then. */
+        /** When the preview last changed on screen: it stays LINGER from then. */
         appeared: Cell<Instant>,
     }
 
@@ -211,8 +209,7 @@ mod app {
             }
         }
         // From when it showed, not from the last key: translating takes a moment.
-        let stay = linger(app.sentence.borrow().chars().count());
-        let fresh = app.changed.get().elapsed() < stay || app.appeared.get().elapsed() < stay || option_held();
+        let fresh = app.changed.get().elapsed() < LINGER || app.appeared.get().elapsed() < LINGER || option_held();
         let line = app.line.borrow();
         if fresh && !line.is_empty() {
             app.view.show(mtm, &line, app.caret.get());
