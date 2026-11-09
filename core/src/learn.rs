@@ -113,7 +113,32 @@ impl Learn {
                 pos.push(s.pos.clone());
             }
         }
-        let meanings: Vec<String> = e.senses.iter().flat_map(|s| s.meanings.iter().cloned()).take(4).collect();
+        // One meaning per sense first ("est": east, then "third-person singular
+        // of être"), no repeats, then the rest.
+        let mut meanings: Vec<String> = Vec::new();
+        // A form's note carries its word's meaning along: "… of être (to be)".
+        let first = |s: &ccez_lang_core::words::Sense| -> Option<String> {
+            let m = s.meanings.first()?;
+            match s.meanings.get(1) {
+                Some(next) if m.contains(" of ") && m.split_whitespace().count() <= 8 => {
+                    // Without a leading label: "(copulative) to be" → "to be".
+                    let next = next.strip_prefix('(').and_then(|r| r.split_once(") ")).map_or(next.as_str(), |(_, rest)| rest);
+                    Some(format!("{m} ({next})"))
+                }
+                _ => Some(m.clone()),
+            }
+        };
+        let firsts: Vec<String> = e.senses.iter().filter_map(first).collect();
+        let rest = e.senses.iter().flat_map(|s| s.meanings.iter().skip(1).cloned());
+        for m in firsts.into_iter().chain(rest) {
+            let m = &m;
+            if meanings.len() == 4 {
+                break;
+            }
+            if !meanings.iter().any(|x| x.eq_ignore_ascii_case(m)) {
+                meanings.push(m.clone());
+            }
+        }
         let key_lemma = e.lemma.clone().unwrap_or_default();
         Some(Card {
             status: self.status_of(lang, word, &key_lemma),
