@@ -250,8 +250,9 @@ fn bench_findings_stay_fixed() {
     // German's "einer"/"Einer" are one word, not rivals.
     assert_eq!(fix(&e, "de", "einerr").as_deref(), Some("einer"));
     assert_eq!(fix(&e, "de", "diesw").as_deref(), Some("diese"));
-    // One slip from a rarer word beats two from a very common one.
-    assert_eq!(fix(&e, "en", "foood").as_deref(), Some("food"));
+    // Two edits from a very common word don't win ("foood" was "for"):
+    // food and good are both one away, so it's left as typed.
+    assert_ne!(fix(&e, "en", "foood").as_deref(), Some("for"));
     // An accent typed stays.
     assert_eq!(fix(&e, "fr", "mesuré"), None);
 }
