@@ -583,26 +583,55 @@ private fun ClipsPanel(ui: UiState, typist: Typist) {
             }
             if (sent != null) Text("Copied", color = Colors.muted, fontSize = 12.sp)
         }
-        items.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { t ->
-                    Text(
-                        t.replace('\n', ' '),
-                        color = Colors.fg,
-                        fontSize = 13.5.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).heightIn(min = 52.dp).clip(RoundedCornerShape(10.dp)).background(Colors.chip)
-                            .combinedClickable(
-                                onClick = { typist.paste(t); typist.showKeys() },
-                                onLongClick = { uk.ccez.keys.learn.Clips.remove(ctx, t); items = uk.ccez.keys.learn.Clips.all(ctx) },
-                            )
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+        // Pinned first, then the rest: short copies as chips filling each row, long
+        // ones as two-line cards. Hold one: pin or delete it.
+        var pins by remember { mutableStateOf(uk.ccez.keys.learn.Clips.pinned(ctx)) }
+        var held by remember { mutableStateOf<String?>(null) }
+        fun refresh() { items = uk.ccez.keys.learn.Clips.all(ctx); pins = uk.ccez.keys.learn.Clips.pinned(ctx) }
+        @Composable
+        fun Clip(t: String, pinned: Boolean, wide: Boolean) {
+            val m = if (wide) Modifier.fillMaxWidth() else Modifier
+            Row(
+                m.clip(RoundedCornerShape(10.dp)).background(if (held == t) Color(0xFF3A3A3C) else Colors.chip)
+                    .combinedClickable(
+                        onClick = { if (held == t) held = null else { typist.paste(t); typist.showKeys() } },
+                        onLongClick = { typist.holdBuzz(); held = t },
                     )
+                    .padding(start = 12.dp, end = if (held == t) 4.dp else 12.dp, top = 9.dp, bottom = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (pinned && held != t) { Icon(Icons.pin, null, tint = Colors.accent, modifier = Modifier.size(12.dp)); Spacer(Modifier.width(6.dp)) }
+                Text(
+                    t.replace('\n', ' '),
+                    color = Colors.fg,
+                    fontSize = 13.5.sp,
+                    maxLines = if (wide) 2 else 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = if (wide) Modifier.weight(1f) else Modifier.widthIn(max = 220.dp),
+                )
+                if (held == t) {
+                    Box(Modifier.width(34.dp).height(16.dp).clip(RoundedCornerShape(6.dp)).combinedClickable(onClick = {
+                        uk.ccez.keys.learn.Clips.pin(ctx, t, !pinned); held = null; refresh()
+                    }), contentAlignment = Alignment.Center) { Icon(Icons.pin, if (pinned) "Unpin" else "Pin", tint = if (pinned) Colors.accent else Colors.muted, modifier = Modifier.size(16.dp)) }
+                    Box(Modifier.width(34.dp).height(16.dp).clip(RoundedCornerShape(6.dp)).combinedClickable(onClick = {
+                        uk.ccez.keys.learn.Clips.remove(ctx, t); held = null; refresh()
+                    }), contentAlignment = Alignment.Center) { Icon(Icons.trash, "Delete", tint = Colors.muted, modifier = Modifier.size(16.dp)) }
                 }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
+        @Composable
+        fun Group(list: List<String>, pinned: Boolean) {
+            val (short, long) = list.partition { it.length <= 28 && '\n' !in it }
+            if (short.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                short.forEach { Clip(it, pinned, wide = false) }
+            }
+            long.forEach { Clip(it, pinned, wide = true) }
+        }
+        if (pins.isNotEmpty()) {
+            Group(pins, pinned = true)
+            Box(Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(Color(0xFF2A2A2C)))
+        }
+        Group(items.filter { it !in pins }, pinned = false)
     }
 }
 
@@ -981,6 +1010,8 @@ internal object Icons {
     }.build()
 
     val tools = stroke("M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z")
+    val pin = stroke("M9 4h6l-1 5 3 3H7l3-3z", "M12 12v8")
+    val trash = stroke("M5 7h14", "M10 7V5h4v2", "M7 7l1 12h8l1-12")
     val clip = stroke("M7 4h10a2 2 0 0 1 2 2v13a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-13a2 2 0 0 1 2 -2z", "M9 4V3h6v1", "M9 10h6M9 14h6")
     val gear = stroke(
         "M15 12a3 3 0 1 1 -6 0a3 3 0 1 1 6 0z",
