@@ -149,12 +149,9 @@ mod app {
             app.line.borrow_mut().clear();
             return;
         };
-        // A finished sentence and a space after it: the next one starts blank.
-        let ended = {
-            let t = field.before.trim_end();
-            t.len() < field.before.len() && t.ends_with(['.', '!', '?', '。', '！', '？', '…'])
-        };
-        let sentence = if ended { String::new() } else { sentence_of(field.before.clone()) };
+        // The sentence typed, still shown after its full stop and a space (as on
+        // the phone); a new line or an emptied field starts blank (sentence_of).
+        let sentence = sentence_of(field.before.clone());
         // Nothing secret is ever shown or translated: the sentence, or what's near it.
         let tail: String = field.before.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
         if sentence.trim().is_empty() || looks_secret(tail) {
