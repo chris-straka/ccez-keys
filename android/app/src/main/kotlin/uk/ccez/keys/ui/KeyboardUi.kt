@@ -265,14 +265,14 @@ private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: T
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
             if (glosses.isNotEmpty()) {
-                Text(
-                    glosses.joinToString(" · ") { "${it.flag} ${it.word}" },
-                    color = Colors.muted,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
+                // Dimmed flags, as on the strip.
+                Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    glosses.forEachIndexed { i, g ->
+                        if (i > 0) Text(" · ", color = Colors.muted, fontSize = 10.sp)
+                        MutedFlag(g.flag, 10)
+                        Text(" ${g.word}", color = Colors.muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
             }
         }
     }

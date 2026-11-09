@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -92,11 +93,11 @@ fun StripRow(s: StripView, typist: Typist) {
                 val ease = androidx.compose.animation.core.FastOutSlowInEasing
                 if (initialState.lang != targetState.lang) {
                     val dir = targetState.moved
-                    (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280, easing = ease)) { w -> dir * w / 4 } +
-                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240, delayMillis = 40)))
+                    (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(170, easing = ease)) { w -> dir * w / 5 } +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150, delayMillis = 20)))
                         .togetherWith(
-                            androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280, easing = ease)) { w -> -dir * w / 4 } +
-                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)),
+                            androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(170, easing = ease)) { w -> -dir * w / 5 } +
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(110)),
                         )
                 } else {
                     androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(320, easing = ease))
@@ -114,7 +115,11 @@ fun StripRow(s: StripView, typist: Typist) {
             )
             Box(Modifier.padding(horizontal = 6.dp).size(6.dp).graphicsLayer { alpha = pulse }.clip(RoundedCornerShape(3.dp)).background(VIOLET))
         } else if (s.refined) {
-            Icon(Icons.spark, "Muse", tint = VIOLET.copy(alpha = 0.8f), modifier = Modifier.padding(horizontal = 4.dp).size(13.dp))
+            // Tap: ask Muse about this wording.
+            Box(
+                Modifier.size(30.dp).clip(RoundedCornerShape(15.dp)).combinedClickable(onClick = { typist.openAsk("${s.source} → ${s.text}") }),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.spark, "Ask Muse", tint = VIOLET.copy(alpha = 0.8f), modifier = Modifier.size(13.dp)) }
         }
         // Tap: hear it. Hold: this app's translations polite or casual (lit when polite).
         Box(
@@ -125,38 +130,84 @@ fun StripRow(s: StripView, typist: Typist) {
     }
 }
 
+/** A flag, faded and greyed (owner, 2026-11-08: a bright one drew the eye). */
+@Composable
+internal fun MutedFlag(flag: String, size: Int) {
+    Text(
+        flag,
+        fontSize = size.sp,
+        modifier = Modifier.graphicsLayer {
+            alpha = 0.55f
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                renderEffect = android.graphics.RenderEffect.createColorFilterEffect(
+                    android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.25f) }),
+                ).asComposeRenderEffect()
+            }
+        },
+    )
+}
+
+/** Its children in a row, the first always, the rest while they fit whole. */
+@Composable
+private fun FitRow(modifier: Modifier, content: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(content, modifier) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity)
+        val placeables = measurables.map { it.measure(loose) }
+        val shown = mutableListOf<androidx.compose.ui.layout.Placeable>()
+        var used = 0
+        for ((i, p) in placeables.withIndex()) {
+            if (i > 0 && used + p.width > constraints.maxWidth) break
+            shown += p
+            used += p.width
+        }
+        val h = shown.maxOfOrNull { it.height } ?: 0
+        layout(constraints.maxWidth, h.coerceIn(constraints.minHeight, constraints.maxHeight)) {
+            // A first one longer than the line: its end shows (the words being typed).
+            var x = minOf(0, constraints.maxWidth - shown.first().width)
+            shown.forEach { p -> p.placeRelative(x, (h - p.height) / 2); x += p.width }
+        }
+    }
+}
+
 /** The flag and the words: what slides when the language changes. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, typist: Typist) {
+    val more = if (s.lang in RTL) emptyList() else s.more
+    // Room over the words for furigana or pinyin, only when a word has some;
+    // flags and bars move down the same, so all sit level.
+    val readings = (listOf(s.words) + more.map { it.words }).flatten().any { w -> w.ruby.any { it.rt.isNotEmpty() } }
+    val level = Modifier.padding(top = if (readings) 12.dp else 0.dp)
     // The flag, muted (owner, 2026-11-08: it drew the eye; no flags for what's next).
     Box(
         Modifier.width(30.dp).clip(RoundedCornerShape(6.dp))
             .combinedClickable(onClick = { typist.strip.step(1) }, onLongClick = { typist.replaceSentence(s.text, of = s.source) }),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            s.flag,
-            fontSize = 15.sp,
-            modifier = Modifier.graphicsLayer {
-                alpha = 0.55f
-                if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    renderEffect = android.graphics.RenderEffect.createColorFilterEffect(
-                        android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.25f) }),
-                    ).asComposeRenderEffect()
-                }
-            },
-        )
+        Box(level) { MutedFlag(s.flag, 15) }
     }
     Spacer(Modifier.width(6.dp))
+    if (more.isNotEmpty()) {
+        // The same in the next languages, "chat | Katze | gato", as many as fit;
+        // each word taps to its card, in its language.
+        FitRow(Modifier.weight(1f).clipToBounds()) {
+            Row(verticalAlignment = Alignment.CenterVertically) { s.words.forEach { w -> Word(w, s.lang, typist, readings) } }
+            more.forEach { seg ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("|", color = Colors.dim, fontSize = 15.sp, modifier = level.padding(horizontal = 8.dp))
+                    Box(level) { MutedFlag(seg.flag, 12) }
+                    Spacer(Modifier.width(5.dp))
+                    seg.words.forEach { w -> Word(w, seg.lang, typist, readings) }
+                }
+            }
+        }
+        return
+    }
     // One line, kept scrolled to its end: the words being typed now show.
     val scroll = androidx.compose.foundation.rememberScrollState()
     androidx.compose.runtime.LaunchedEffect(s.text) { scroll.scrollTo(scroll.maxValue) }
     CompositionLocalProvider(LocalLayoutDirection provides if (s.lang in RTL) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         Row(Modifier.weight(1f).horizontalScroll(scroll, enabled = false), verticalAlignment = Alignment.CenterVertically) {
-            // Room for furigana or pinyin only when a word has some, so
-            // plain words sit level with the flag.
-            val readings = s.words.any { w -> w.ruby.any { it.rt.isNotEmpty() } }
             s.words.forEach { w -> Word(w, s.lang, typist, readings) }
         }
     }

@@ -28,7 +28,12 @@ data class StripView(
     val source: String = "",
     /** How it got this language: 1 on down the owner's list, -1 back up (for the slide). */
     val moved: Int = 1,
+    /** The same in the next languages, as many as fit ("chat | Katze | gato"). */
+    val more: List<Segment> = emptyList(),
 )
+
+/** One language's translation of a single word, after the first. */
+data class Segment(val lang: String, val flag: String, val words: List<StripWord>, val text: String)
 
 /** A word under a suggestion, in a language being learned. */
 data class Gloss(val lang: String, val flag: String, val word: String)
@@ -135,15 +140,57 @@ class Strip(private val ui: UiState) {
             // Shown as pending once the pause has come and the AI is asked.
             app.scope.launch {
                 delay(1200)
+                if (refineJob?.isActive != true) return@launch
                 withContext(Dispatchers.Main) { ui.strip?.takeIf { it.text == text && !it.refined }?.let { ui.strip = it.copy(pending = true) } }
             }
         }
+        prefetch(all)
         val known = words.filter { it.word }
         if (known.isNotEmpty() && known.all { it.status == WordStatus.KNOWN } && autoSteps < all.size - 1) {
             delay(pause)
             index = (index + 1) % all.size
             moved = 1
             show(autoSteps + 1)
+            return
+        }
+        addMore(all, lang, text)
+    }
+
+    private fun flag(lang: String) = Langs.of(app, lang)?.flag ?: lang
+
+    /**
+     * The sentence in the languages after the one shown, "… | Das Haus ist groß | …",
+     * skipping those where it's all known; the line shows what fits.
+     */
+    private suspend fun addMore(all: List<String>, shownLang: String, shownText: String) {
+        val src = source
+        val segs = mutableListOf<Segment>()
+        // About what the line holds, so languages that can't show aren't translated.
+        var room = 38 - shownText.length
+        for (k in 1 until all.size) {
+            if (room <= 0 || segs.size >= 5) break
+            val lang = all[(index + k) % all.size]
+            // Only models already on the phone: no downloads for these.
+            val t = Translator.translate(src, typing, lang, download = false)?.trim()?.trimEnd('.', '!', '?', '。', '！', '？') ?: continue
+            if (t.isEmpty() || t.equals(src, ignoreCase = true)) continue
+            val words = engine.stripWords(lang, t)
+            val ws = words.filter { it.word }
+            if (ws.isNotEmpty() && ws.all { it.status == WordStatus.KNOWN }) continue
+            segs += Segment(lang, flag(lang), words, t)
+            room -= t.length + 4
+            val now = segs.toList()
+            withContext(Dispatchers.Main) { ui.strip?.takeIf { it.source == src && it.lang == shownLang }?.let { ui.strip = it.copy(more = now) } }
+        }
+    }
+
+    /** The languages either side, translated ahead so a swipe shows them at once. */
+    private fun prefetch(all: List<String>) {
+        if (all.size < 2) return
+        val text = source
+        val from = typing
+        val n = all.size
+        app.scope.launch {
+            for (d in listOf(1, -1)) Translator.translate(text, from, all[((index + d) % n + n) % n], download = false)
         }
     }
 
@@ -165,7 +212,12 @@ class Strip(private val ui: UiState) {
             delay(1200)
             val t = runCatching { engine.translateAi(source, from, to, polite, aiKey) }
                 .onFailure { app.log("warn", "refine-failed", "error" to it.message) }
-                .getOrNull()?.takeIf { it.isNotBlank() } ?: return@launch
+                .getOrNull()?.takeIf { it.isNotBlank() }
+            if (t == null) {
+                // Offline or failed: ML Kit's wording stays, without the pulse.
+                withContext(Dispatchers.Main) { ui.strip?.takeIf { it.pending && it.source == source }?.let { ui.strip = it.copy(pending = false) } }
+                return@launch
+            }
             synchronized(refined) { refined[key] = t }
             if (ui.strip?.lang == to && this@Strip.source == source) redraw()
         }
