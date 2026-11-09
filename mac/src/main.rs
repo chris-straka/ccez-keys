@@ -589,7 +589,19 @@ mod app {
                         let rows = app.line.borrow().clone();
                         let (ri, ti) = ((t / 1000) as usize, (t % 1000) as usize);
                         let Some(tok) = rows.get(ri).and_then(|r| r.toks.get(ti).map(|tk| (r.lang.clone(), tk.clone()))) else { return };
-                        let (lang, tok) = tok;
+                        let (lang, mut tok) = tok;
+                        // Japanese and Chinese: a kanji or hanzi clicked is its whole word.
+                        if (lang.starts_with("ja") || lang.starts_with("zh")) && tok.key != tok.text && !tok.key.is_empty() {
+                            let word = tok.key.clone();
+                            // Its reading from its own pieces (the run around the one clicked).
+                            let toks = &rows[ri].toks;
+                            let (mut a, mut b) = (ti, ti);
+                            while a > 0 && toks[a - 1].key == word { a -= 1; }
+                            while b + 1 < toks.len() && toks[b + 1].key == word { b += 1; }
+                            let sep = if lang.starts_with("zh") { " " } else { "" };
+                            let reading = toks[a..=b].iter().map(|t| if t.reading.is_empty() { t.text.clone() } else { t.reading.clone() }).collect::<Vec<_>>().join(sep);
+                            tok = crate::view::Tok { text: word, reading, ..tok };
+                        }
                         let card = app.engine.word_card(lang.clone(), tok.text.clone(), if tok.key != tok.text { tok.key.clone() } else { String::new() });
                         let (head, sub, meaning) = card_face(&app.engine, &lang, &tok, card.as_ref());
                         let key = card.as_ref().map(|c| if c.lemma.is_empty() { tok.text.clone() } else { c.lemma.clone() }).unwrap_or_else(|| tok.key.clone());

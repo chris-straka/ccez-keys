@@ -13,6 +13,36 @@ struct Meaning: Decodable { let lang: String; let word: String; let sentence: St
 struct Ask: Decodable { let id: Int; let from: String?; let to: String?; let text: String?; let readings: Bool?; let meaning: Meaning? }
 struct Answer: Encodable { let id: Int; let text: String?; let error: String?; var ruby: [[String]]? = nil }
 
+/// A Japanese word's reading shared out over its kanji runs, the kana in it
+/// matched against the reading ("間に合わせ", "まにあわせ" → 間:ま に 合:あ わせ),
+/// each part with the whole word. Nil when it's all kanji or doesn't line up.
+func okurigana(_ word: String, _ reading: String, _ han: (String) -> Bool) -> [[String]]? {
+    var runs: [(String, Bool)] = []
+    for ch in word {
+        let k = han(String(ch))
+        if let last = runs.last, last.1 == k { runs[runs.count - 1].0 += String(ch) } else { runs.append((String(ch), k)) }
+    }
+    guard runs.count > 1, !reading.isEmpty else { return nil }
+    let hira = { (s: String) in s.applyingTransform(.hiraganaToKatakana, reverse: true) ?? s }
+    var pattern = "^"
+    for (text, kanji) in runs { pattern += kanji ? "(.+?)" : NSRegularExpression.escapedPattern(for: hira(text)) }
+    pattern += "$"
+    guard let re = try? NSRegularExpression(pattern: pattern),
+          let m = re.firstMatch(in: reading, range: NSRange(reading.startIndex..., in: reading)) else { return nil }
+    var out: [[String]] = []
+    var group = 1
+    for (text, kanji) in runs {
+        if kanji {
+            let r = Range(m.range(at: group), in: reading).map { String(reading[$0]) } ?? ""
+            out.append([text, r, word])
+            group += 1
+        } else {
+            out.append([text, "", word])
+        }
+    }
+    return out
+}
+
 /// Japanese and Chinese: each word with its reading (hiragana over kanji, pinyin
 /// over hanzi), from macOS's own transcription; pieces without Han get none.
 func ruby(_ text: String, _ lang: String) -> [[String]] {
@@ -21,7 +51,7 @@ func ruby(_ text: String, _ lang: String) -> [[String]] {
     let tok = CFStringTokenizerCreate(nil, cf, CFRange(location: 0, length: ns.length), kCFStringTokenizerUnitWordBoundary, Locale(identifier: lang) as CFLocale)
     var out: [[String]] = []
     var at = 0
-    let han = { (s: String) in s.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) || (0x3400...0x4DBF).contains($0.value) } }
+    let han = { (s: String) in s.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) || (0x3400...0x4DBF).contains($0.value) || $0.value == 0x3005 } }
     while CFStringTokenizerAdvanceToNextToken(tok).rawValue != 0 {
         let r = CFStringTokenizerGetCurrentTokenRange(tok)
         if r.location > at { out.append([ns.substring(with: NSRange(location: at, length: r.location - at)), ""]) }
@@ -29,16 +59,18 @@ func ruby(_ text: String, _ lang: String) -> [[String]] {
         if lang.hasPrefix("zh") && han(piece) {
             // Chinese: a syllable over each character, evenly spaced (owner, 2026-11-09:
             // pinyin over whole words left uneven gaps and read badly).
+            // Each character carries the word it's part of, so a click opens the word.
             for ch in piece {
                 let c = String(ch)
-                out.append([c, han(c) ? (c.applyingTransform(.mandarinToLatin, reverse: false) ?? "") : ""])
+                out.append([c, han(c) ? (c.applyingTransform(.mandarinToLatin, reverse: false) ?? "") : "", piece])
             }
         } else {
             var reading = ""
             if han(piece), let latin = CFStringTokenizerCopyCurrentTokenAttribute(tok, kCFStringTokenizerAttributeLatinTranscription) as? String {
                 reading = latin.applyingTransform(.latinToHiragana, reverse: false) ?? latin
             }
-            out.append([piece, reading])
+            // Furigana over the kanji only: 間に合わせ → 間(ま) に 合(あ) わせ.
+            if let parts = okurigana(piece, reading, han) { out += parts } else { out.append([piece, reading]) }
         }
         at = r.location + r.length
     }

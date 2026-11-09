@@ -282,7 +282,8 @@ impl View {
                 };
                 let vw = v.frame().size.width;
                 let rl = (!t.reading.is_empty()).then(|| label(mtm, &t.reading, READING, true));
-                let w = vw.max(rl.as_ref().map(|l| l.frame().size.width).unwrap_or(0.0)) + if rl.is_some() { 2.0 } else { 0.0 };
+                // A reading wider than its text gets a little room, so neighbours' don't touch.
+                let w = vw.max(rl.as_ref().map(|l| l.frame().size.width + 2.0).unwrap_or(0.0));
                 if used + w > MAX_W - 2.0 * PAD_X - x0 - 14.0 && !items.is_empty() {
                     let dots = label(mtm, "…", size, false);
                     let dw = dots.frame().size.width;

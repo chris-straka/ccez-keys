@@ -38,15 +38,18 @@ fn status(s: ccez_keys_core::WordStatus) -> u8 {
 /// The translation as words with statuses: Japanese and Chinese by macOS's
 /// words (readings over them), the rest through the dictionary (a form counts
 /// as its word).
-fn toks(engine: &ccez_keys_core::Engine, lang: &str, text: &str, ruby: &[(String, String)]) -> Vec<crate::view::Tok> {
+/// `ruby`: (text, reading, the word it's part of when a word is split up).
+fn toks(engine: &ccez_keys_core::Engine, lang: &str, text: &str, ruby: &[(String, String, String)]) -> Vec<crate::view::Tok> {
     use crate::view::Tok;
     if !ruby.is_empty() {
         return ruby
             .iter()
-            .map(|(t, r)| {
+            .map(|(t, r, whole)| {
                 let word = t.chars().any(char::is_alphanumeric);
-                let s = if word { status(engine.word_status(lang.into(), t.clone())) } else { 0 };
-                Tok { text: t.clone(), reading: r.clone(), word, key: t.clone(), status: s }
+                // A piece of a word (a kanji, a hanzi) stands for the whole word.
+                let key = if whole.is_empty() { t.clone() } else { whole.clone() };
+                let s = if word { status(engine.word_status(lang.into(), key.clone())) } else { 0 };
+                Tok { text: t.clone(), reading: r.clone(), word, key, status: s }
             })
             .collect();
     }
@@ -96,7 +99,7 @@ impl Helper {
         Some(Helper { _child: child, stdin, stdout, id: 0 })
     }
 
-    fn translate(&mut self, from: &str, to: &str, text: &str) -> Result<(String, Vec<(String, String)>), String> {
+    fn translate(&mut self, from: &str, to: &str, text: &str) -> Result<(String, Vec<(String, String, String)>), String> {
         self.id += 1;
         let ask = serde_json::json!({"id": self.id, "from": from, "to": to, "text": text, "readings": true});
         writeln!(self.stdin, "{ask}").map_err(|e| e.to_string())?;
@@ -107,7 +110,14 @@ impl Helper {
         let ruby = v
             .get("ruby")
             .and_then(|r| r.as_array())
-            .map(|a| a.iter().filter_map(|p| Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_str()?.to_string()))).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|p| {
+                        let whole = p.get(2).and_then(|w| w.as_str()).unwrap_or("").to_string();
+                        Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_str()?.to_string(), whole))
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
         match v.get("text").and_then(|t| t.as_str()) {
             Some(t) => Ok((t.to_string(), ruby)),
@@ -128,7 +138,7 @@ impl Worker {
             if helper.is_none() {
                 log("error", "translator helper didn't start");
             }
-            let mut cache: HashMap<(String, String), (String, Vec<(String, String)>)> = HashMap::new();
+            let mut cache: HashMap<(String, String), (String, Vec<(String, String, String)>)> = HashMap::new();
             let mut next: Option<Ask> = None;
             loop {
                 let Some(mut ask) = next.take().or_else(|| rx.recv().ok()) else { break };
