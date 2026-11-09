@@ -165,10 +165,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 text.color = Colors.MUTED
                 text.textSize = 13 * sp
                 c.drawText(spaceLabel, cx, baseline(cy), text)
-                if (auto) {
-                    fill.color = Colors.ACCENT
-                    c.drawCircle(cx + text.measureText(spaceLabel) / 2 + 6 * dp, cy - 3 * dp, 2.5f * dp, fill)
-                }
                 if (showArrows) {
                     text.color = Colors.DIM
                     text.textSize = 12 * sp
