@@ -19,7 +19,14 @@ import kotlin.math.min
 enum class Shift { OFF, ONCE, LOCK }
 
 /** How long delete is held before it takes whole words (ms). */
-const val WORDS_AFTER_MS = 700L
+/**
+ * Held delete, as SwiftKey does it (measured on the owner's S24): nothing
+ * letter by letter; a whole word once held 0.45 s, the next 0.5 s later,
+ * then one every 0.25 s.
+ */
+const val WORD_HOLD_MS = 450L
+const val WORD_SECOND_MS = 500L
+const val WORD_EVERY_MS = 250L
 
 /** A held key's choices, in this view's coordinates. */
 data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int, val codes: List<String> = emptyList(), val cols: Int = choices.size)
@@ -250,7 +257,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val holdTask = Runnable {
         val p = pressed ?: return@Runnable
         when (p.key.kind) {
-            KeyKind.BACKSPACE -> { repeats = 0; held = true; repeatTask.run() }
+            KeyKind.BACKSPACE -> { repeats = 0; held = true; handler.postDelayed(repeatTask, WORD_HOLD_MS - 400) }
             KeyKind.SPACE -> if (languages.size > 1) openLanguages(p)
             KeyKind.SYMBOLS -> { held = true; listener.onHoldSymbols() }
             else -> if (p.key.popups.isNotEmpty()) openPopup(p)
@@ -264,8 +271,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 repeats += 1
                 val held = android.os.SystemClock.uptimeMillis() - downAt
                 listener.onRepeat(p.key, held)
-                // Letters quickly, then (once held a moment) whole words, slower.
-                handler.postDelayed(this, if (held > WORDS_AFTER_MS) 140 else 50)
+                handler.postDelayed(this, if (repeats == 1) WORD_SECOND_MS else WORD_EVERY_MS)
             }
         }
     }

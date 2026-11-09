@@ -322,7 +322,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     override fun onRepeat(key: Key, heldMs: Long) {
         acted()
-        if (heldMs > WORDS_AFTER_MS) deleteWord() else backspace()
+        deleteWord()
         buzz(HapticFeedbackConstants.CLOCK_TICK)
     }
 
