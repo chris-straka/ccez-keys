@@ -176,7 +176,8 @@ private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, 
     val more = if (s.lang in RTL) emptyList() else s.more
     // Room over the words for furigana or pinyin, only when a word has some;
     // flags and bars move down the same, so all sit level.
-    val readings = (listOf(s.words) + more.map { it.words }).flatten().any { w -> w.ruby.any { it.rt.isNotEmpty() } }
+    // Furigana and pinyin are on the card, not over the line (owner, 2026-11-08: a shorter line).
+    val readings = false
     val level = Modifier.padding(top = if (readings) 12.dp else 0.dp)
     // The flag, muted (owner, 2026-11-08: it drew the eye; no flags for what's next).
     Box(
@@ -278,12 +279,13 @@ fun BoxScope.CardOverlay(c: CardView, ui: UiState, typist: Typist) {
             val head = card?.lemma?.ifEmpty { null } ?: c.lemma.ifEmpty { c.word }
             Row(verticalAlignment = Alignment.Bottom) {
                 Column {
-                    val reading = card?.reading.orEmpty()
+                    val reading = card?.reading?.ifEmpty { null } ?: c.reading
                     if (reading.isNotEmpty() && reading != head) Text(reading, color = Colors.muted, fontSize = 12.sp)
                     Row(verticalAlignment = Alignment.Bottom) {
                         val article = card?.article.orEmpty()
-                        if (article.isNotEmpty()) Text("$article ", color = Colors.dim, fontSize = 20.sp)
-                        Text(head, color = Colors.fg, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                        // On the same baseline as the word ("la prueba").
+                        if (article.isNotEmpty()) Text("$article ", color = Colors.dim, fontSize = 20.sp, modifier = Modifier.alignByBaseline())
+                        Text(head, color = Colors.fg, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.alignByBaseline())
                     }
                 }
                 Box(

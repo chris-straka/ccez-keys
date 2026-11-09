@@ -38,7 +38,10 @@ data class StripView(
 data class Segment(val lang: String, val flag: String, val words: List<StripWord>, val text: String)
 
 /** A tapped word's card. */
-data class CardView(val lang: String, val word: String, val lemma: String, val card: Card?, val meaning: String?)
+data class CardView(val lang: String, val word: String, val lemma: String, val card: Card?, val meaning: String?, val reading: String = "")
+
+/** Without punctuation left at the end ("テスト・", "chat."). */
+private fun bare(t: String) = t.trimEnd { it.isWhitespace() || Character.getType(it).toByte().let { k -> k == Character.OTHER_PUNCTUATION || k == Character.DASH_PUNCTUATION || k == Character.CONNECTOR_PUNCTUATION } }
 
 /**
  * The learning strip: the sentence being typed, in a language being
@@ -154,7 +157,8 @@ class Strip(private val ui: UiState) {
         app.scope.launch { if (Dictionaries.ensure(lang) && ui.strip?.lang == lang) redraw() }
         val key = "$typing|$lang|$polite|$source"
         val better = synchronized(refined) { refined[key] }
-        val text = better ?: Translator.translate(source, typing, lang) ?: return
+        val text = (better ?: Translator.translate(source, typing, lang) ?: return)
+            .let { if (source.none { c -> c.isWhitespace() }) bare(it) else it }
         val pending = better == null && refine(key, source, typing, lang, all)
         val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }
@@ -195,12 +199,20 @@ class Strip(private val ui: UiState) {
         val segs = mutableListOf<Segment>()
         // About what the line holds, so languages that can't show aren't translated.
         var room = 38 - shownText.length
+        var warmed = false
         for (k in 1 until all.size) {
             if (room <= 0 || segs.size >= 5) break
             val lang = all[(index + k) % all.size]
             // Only models already on the phone: no downloads for these.
             val ai = synchronized(refined) { refined["$typing|$lang|$polite|$src"] }
-            val t = (ai ?: Translator.translate(src, typing, lang, download = false))?.trim()?.trimEnd('.', '!', '?', '。', '！', '？') ?: continue
+            val got = ai ?: Translator.translate(src, typing, lang, download = false)
+            if (got == null) {
+                // Its model isn't on the phone yet: fetched quietly (one at a time, on Wi-Fi),
+                // the line fills in after.
+                if (!warmed) { warmed = true; Translator.warm(typing, lang) { if (source == src) redraw() } }
+                continue
+            }
+            val t = bare(got)
             if (t.isEmpty() || t.equals(src, ignoreCase = true)) continue
             val words = engine.stripWords(lang, t)
             val ws = words.filter { it.word }
@@ -270,7 +282,9 @@ class Strip(private val ui: UiState) {
         app.scope.launch {
             val card = engine.wordCard(lang, w.text, w.lemma)
             val meaning = if (card?.meanings.isNullOrEmpty()) Translator.translate(w.lemma.ifEmpty { w.text }, lang, defaultLang()) else null
-            withContext(Dispatchers.Main) { ui.card = CardView(lang, w.text, w.lemma, card, meaning) }
+            // Furigana or pinyin, now only on the card (owner, 2026-11-08: a shorter line).
+            val reading = w.ruby.joinToString("") { it.rt.ifEmpty { it.text } }.takeIf { r -> w.ruby.any { it.rt.isNotEmpty() } }.orEmpty()
+            withContext(Dispatchers.Main) { ui.card = CardView(lang, w.text, w.lemma, card, meaning, reading) }
         }
     }
 

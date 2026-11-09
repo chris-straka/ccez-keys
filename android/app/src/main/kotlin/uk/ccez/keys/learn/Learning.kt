@@ -49,7 +49,7 @@ object Translator {
     fun supports(lang: String) = TranslateLanguage.fromLanguageTag(lang) != null
 
     /** False when a model is missing and `download` is false. */
-    private suspend fun models(download: Boolean, vararg langs: String): Boolean {
+    private suspend fun models(download: Boolean, vararg langs: String, wifi: Boolean = false): Boolean {
         val manager = RemoteModelManager.getInstance()
         for (tag in langs) {
             val lang = TranslateLanguage.fromLanguageTag(tag) ?: continue
@@ -60,12 +60,28 @@ object Translator {
                 if (!manager.isModelDownloaded(model).await()) {
                     if (!download) return false
                     App.instance.log("info", "model-download", "lang" to tag)
-                    manager.download(model, DownloadConditions.Builder().build()).await()
+                    manager.download(model, DownloadConditions.Builder().apply { if (wifi) requireWifi() }.build()).await()
                 }
                 have += lang
             }
         }
         return true
+    }
+
+    /** Languages whose model is being fetched in the background. */
+    private val warming = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** Fetches the models for `from` → `to` in the background (once), then `done`. */
+    fun warm(from: String, to: String, done: () -> Unit) {
+        // One at a time, on Wi-Fi (each is about 30 MB).
+        if (warming.isNotEmpty() || !warming.add(to)) return
+        App.instance.scope.launch {
+            try {
+                if (runCatching { models(true, from, to, wifi = true) }.getOrDefault(false)) done()
+            } finally {
+                warming.remove(to)
+            }
+        }
     }
 
     /** `text` from one language into another, or null (no model yet, unsupported, failed). */

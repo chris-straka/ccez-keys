@@ -90,7 +90,7 @@ import uk.ccez.keys.learn.StripView
 
 private val BAR_H = 46.dp
 /** The learning strip's band, always this tall. */
-val STRIP_H = 58.dp
+val STRIP_H = 44.dp
 
 @Composable
 fun KeyboardUi(ui: UiState, typist: Typist) {
