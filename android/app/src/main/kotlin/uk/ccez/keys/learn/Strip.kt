@@ -50,7 +50,31 @@ data class CardView(
     val note: String? = null,
     /** Muse is being asked. */
     val asking: Boolean = false,
+    /** The article the sentence gives it ("une livre": la), over the dictionary's. */
+    val article: String? = null,
 )
+
+/**
+ * The definite article the word before shows ("une livre" → la, "un livre"
+ * → le), for French, Spanish, Italian and Portuguese; null when it says nothing.
+ */
+internal fun articleFrom(lang: String, before: String, word: String): String? {
+    val b = before.lowercase().trim().replace('’', '\'')
+    val vowel = word.firstOrNull()?.lowercaseChar()?.let { it in "aeiouyhàâéèêëîïôûœ" } == true
+    val g: Char = when (lang) {
+        "fr" -> when (b) { "un", "le", "ce", "cet", "mon", "ton", "son", "du", "au" -> 'm'; "une", "la", "cette", "ma", "ta", "sa" -> 'f'; else -> return null }
+        "es" -> when (b) { "un", "el", "este", "ese", "del", "al" -> 'm'; "una", "la", "esta", "esa" -> 'f'; else -> return null }
+        "it" -> when (b) { "un", "uno", "il", "lo", "del", "dello", "questo" -> 'm'; "una", "la", "della", "questa" -> 'f'; else -> return null }
+        "pt" -> when (b) { "um", "o", "do", "no", "este", "esse" -> 'm'; "uma", "a", "da", "na", "esta", "essa" -> 'f'; else -> return null }
+        else -> return null
+    }
+    return when (lang) {
+        "fr" -> if (vowel) "l'" else if (g == 'm') "le" else "la"
+        "es" -> if (g == 'm') "el" else "la"
+        "it" -> if (g == 'f') (if (vowel) "l'" else "la") else if (vowel) "l'" else "il"
+        else -> if (g == 'm') "o" else "a"
+    }
+}
 
 /**
  * The meanings that match a word of the sentence typed come first: "I read
@@ -336,7 +360,12 @@ class Strip(private val ui: UiState) {
             val aiKey = if (ai && context.isNotBlank() && app.flag("learning.refine")) Secrets.get(app) else null
             fun split(t: String) = t.lines().map { it.trim() }.filter { it.isNotEmpty() }.let { it.firstOrNull() to it.drop(1).joinToString(" ").ifEmpty { null } }
             val (here, note) = known?.let(::split) ?: (null to null)
-            val view = CardView(lang, w.text, w.lemma, card, meaning, reading, here, note, asking = known == null && aiKey != null)
+            // The word before it in the line, for its article.
+            val line = ui.strip?.let { s -> if (s.lang == lang) s.words else s.more.firstOrNull { it.lang == lang }?.words }.orEmpty()
+            val at = line.indexOfFirst { it === w }
+            val before = (at - 1 downTo 0).map { line[it] }.firstOrNull { it.word }?.text.orEmpty()
+            val article = articleFrom(lang, before, card?.lemma?.ifEmpty { null } ?: w.text)
+            val view = CardView(lang, w.text, w.lemma, card, meaning, reading, here, note, asking = known == null && aiKey != null, article = article)
             withContext(Dispatchers.Main) { ui.card = view }
             if (known != null || aiKey == null) return@launch
             val got = runCatching { uk.ccez.keys.Stats.ai.incrementAndGet(); engine.gloss(context, w.text, aiKey) }.getOrNull()?.takeIf { it.isNotBlank() }

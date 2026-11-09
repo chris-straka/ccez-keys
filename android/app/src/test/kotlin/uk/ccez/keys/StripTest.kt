@@ -2,6 +2,7 @@ package uk.ccez.keys
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import uk.ccez.keys.learn.articleFrom
 import uk.ccez.keys.learn.bare
 import uk.ccez.keys.learn.inContext
 
@@ -20,5 +21,15 @@ class StripTest {
         assertEquals(livre[2], inContext(livre, "they deliver it today")[0])
         // Nothing matching: the dictionary's order.
         assertEquals(livre, inContext(livre, "hello"))
+    }
+
+    @Test fun articleFromTheSentence() {
+        assertEquals("la", articleFrom("fr", "une", "livre"))
+        assertEquals("le", articleFrom("fr", "un", "livre"))
+        assertEquals("l'", articleFrom("fr", "une", "eau"))
+        assertEquals("el", articleFrom("es", "un", "libro"))
+        assertEquals("a", articleFrom("pt", "uma", "casa"))
+        assertEquals(null, articleFrom("fr", "les", "livres"))
+        assertEquals(null, articleFrom("de", "ein", "Buch"))
     }
 }

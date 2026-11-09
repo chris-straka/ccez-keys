@@ -299,9 +299,9 @@ fun BoxScope.CardOverlay(c: CardView, ui: UiState, typist: Typist) {
                     val reading = card?.reading?.ifEmpty { null } ?: c.reading
                     if (reading.isNotEmpty() && reading != head) Text(reading, color = Colors.muted, fontSize = 12.sp)
                     Row(verticalAlignment = Alignment.Bottom) {
-                        val article = card?.article.orEmpty()
+                        val article = c.article ?: card?.article.orEmpty()
                         // On the same baseline as the word ("la prueba").
-                        if (article.isNotEmpty()) Text("$article ", color = Colors.dim, fontSize = 20.sp, modifier = Modifier.alignByBaseline())
+                        if (article.isNotEmpty()) Text(if (article.endsWith("'")) article else "$article ", color = Colors.dim, fontSize = 20.sp, modifier = Modifier.alignByBaseline())
                         Text(head, color = Colors.fg, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.alignByBaseline())
                     }
                 }

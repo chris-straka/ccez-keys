@@ -1,0 +1,48 @@
+//! The text-only typing rules (core/src/text.rs).
+
+use ccez_keys_core::text::{delete_span, mark_after_space, sentence_of, space_makes_stop, word_before};
+
+#[test]
+fn the_sentence_typed() {
+    assert_eq!(sentence_of("Bonjour. Ça va ? ".into()), "Ça va ?");
+    assert_eq!(sentence_of("Bonjour. Ça va".into()), "Ça va");
+    assert_eq!(sentence_of("今日は。元気".into()), "元気");
+    assert_eq!(sentence_of("Hi!\nNew line".into()), "New line");
+    // The start of a line, an empty one too: nothing.
+    assert_eq!(sentence_of("First line.\n".into()), "");
+    assert_eq!(sentence_of("First line.\n\n".into()), "");
+    assert_eq!(sentence_of("".into()), "");
+}
+
+#[test]
+fn the_word_before() {
+    assert_eq!(word_before("j'aime l'été ".into(), 0), "l'été");
+    assert_eq!(word_before("aujourd'hui il".into(), 2), "aujourd'hui");
+    assert_eq!(word_before("नमस्ते ".into(), 0), "नमस्ते");
+    assert_eq!(word_before("hello, ".into(), 0), "");
+    assert_eq!(word_before("".into(), 3), "");
+}
+
+#[test]
+fn held_delete_takes() {
+    assert_eq!(delete_span("c'est-à-dire  ".into()), 14);
+    assert_eq!(delete_span("Salut !! ".into()), 3);
+    assert_eq!(delete_span("deux mots".into()), 4);
+    assert_eq!(delete_span("".into()), 0);
+}
+
+#[test]
+fn two_spaces() {
+    assert!(space_makes_stop("ok ".into()));
+    assert!(space_makes_stop("à 10 ".into()));
+    assert!(!space_makes_stop("vraiment? ".into()));
+    assert!(!space_makes_stop("  ".into()));
+}
+
+#[test]
+fn marks_after_a_spaced_word() {
+    assert_eq!(mark_after_space("fr".into(), "!".into()).as_deref(), Some("\u{a0}! "));
+    assert_eq!(mark_after_space("fr".into(), ".".into()).as_deref(), Some(". "));
+    assert_eq!(mark_after_space("en".into(), "?".into()).as_deref(), Some("? "));
+    assert_eq!(mark_after_space("en".into(), "a".into()), None);
+}

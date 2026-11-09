@@ -154,7 +154,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private var actedAt = 0L
     private fun acted() { actedAt = SystemClock.uptimeMillis() }
 
-    private val ic: InputConnection? get() = service.currentInputConnection
+    /** The field's connection, its text before the cursor remembered between edits (CachedInput). */
+    private var cached: CachedInput? = null
+    private val ic: InputConnection? get() {
+        val raw = service.currentInputConnection ?: return null
+        if (raw is CachedInput) return raw
+        return cached?.takeIf { it.base === raw } ?: CachedInput(raw).also { it.base = raw; cached = it }
+    }
 
     fun start(info: EditorInfo) {
         editor = info
@@ -351,15 +357,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             ic.setComposingText("", 1)
         } else {
             val before = ic.getTextBeforeCursor(64, 0)?.toString().orEmpty()
-            val trimmed = before.trimEnd()
-            val last = trimmed.lastOrNull()
-            val body = when {
-                last == null -> ""
-                isWordChar(last) -> trimmed.takeLastWhile(::isWordChar)
-                else -> trimmed.takeLastWhile { !isWordChar(it) && !it.isWhitespace() }
-            }
-            val n = before.length - trimmed.length + body.length
-            if (n > 0) ic.deleteSurroundingText(n, 0)
+            val n = uk.ccez.keys.core.deleteSpan(before).toInt()
+            if (n > 0) ic.deleteSurroundingTextInCodePoints(n, 0)
         }
         updateShift()
         updateBar()
@@ -464,6 +463,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val ic = ic ?: return
         if (rawKeys) {
             val t = if (shift != Shift.OFF) text.uppercase() else text
+            cached?.forget()
             t.forEach { service.sendKeyChar(it) }
             if (shift == Shift.ONCE) setShift(Shift.OFF)
             return
@@ -545,11 +545,11 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun autoSpaceSwap(text: String, ic: InputConnection): Boolean {
         if (!autoSpace || word.isNotEmpty()) { autoSpace = false; return false }
         autoSpace = false
-        if (text.length == 1 && text in ".,!?;:)") {
-            val french = lang == "fr" && text in "!?;:"
+        val swap = uk.ccez.keys.core.markAfterSpace(lang, text)
+        if (swap != null) {
             if (ic.getTextBeforeCursor(1, 0)?.toString() == " ") {
                 ic.deleteSurroundingText(1, 0)
-                ic.commitText((if (french) " " else "") + text + " ", 1)
+                ic.commitText(swap, 1)
                 if (text in ".!?") updateShift()
                 autoSpace = true
                 updateBar()
@@ -565,18 +565,18 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (conv.isNotEmpty() || romaji.isNotEmpty()) { commitConv(); return null }
         if (word.isEmpty()) return null
         val ic = ic ?: return null
-        val typed = word.toString()
-        val prev = prevWord(typed.length)
-        val fixed = if (correct && !noCorrect) suggestFor(typed).correction else null
-        val out = fixed ?: typed
+        val (head, typed) = lastWordOf(word.toString())
+        val prev = if (head.isNotEmpty()) lastWordOf(head).second else prevWord(word.length)
+        val fixed = if (correct && !noCorrect) suggestFor(typed).correction?.let { head + it } else null
+        val out = fixed ?: (head + typed)
         ic.commitText(out, 1)
-        fix = fixed?.let { typed to it }
+        fix = fixed?.let { (head + typed) to it }
         clearWord()
         // What was typed tells the language, not what it became; the word is
         // learned in the language it turned out to be ("chez" in French, never
         // in English, where it would stop counting as foreign).
         noticeLanguage(typed)
-        if (!noLearn) learn(lang, prev, out, false)
+        if (!noLearn) learn(lang, prev, lastWordOf(out).second, false)
         return out
     }
 
@@ -651,7 +651,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun space() {
         ui.ask?.let { a -> ui.ask = a.copy(input = a.input + " "); return }
         val ic = ic ?: return
-        if (rawKeys) { service.sendKeyChar(' '); return }
+        if (rawKeys) { cached?.forget(); service.sendKeyChar(' '); return }
         if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) {
             (ui.bar as? Bar.Convert)?.words?.firstOrNull()?.let { pickConversion(it) } ?: run { commitConv(); updateBar() }
             return
@@ -665,9 +665,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             ic.commitText(" ", 1)
         } else {
             val before = ic.getTextBeforeCursor(2, 0)?.toString().orEmpty()
-            if (app.flag("typing.double_space_period") && now - lastSpaceAt < 1000 &&
-                before.length == 2 && before[1] == ' ' && before[0].isLetterOrDigit()
-            ) {
+            if (app.flag("typing.double_space_period") && now - lastSpaceAt < 1000 && uk.ccez.keys.core.spaceMakesStop(before)) {
                 ic.deleteSurroundingText(1, 0)
                 ic.commitText(". ", 1)
             } else {
@@ -736,6 +734,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         } else {
             val before = ic.getTextBeforeCursor(16, 0)?.toString().orEmpty()
             if (before.isEmpty()) {
+                cached?.forget()
                 service.sendDownUpKeyEvents(android.view.KeyEvent.KEYCODE_DEL)
             } else {
                 // One whole character, emoji and flags included.
@@ -761,6 +760,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (!noAction && !multiLine && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             ic.performEditorAction(action)
         } else {
+            cached?.forget()
             service.sendKeyChar('\n')
         }
         updateShift()
@@ -786,11 +786,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 return
             }
         }
-        val prev = prevWord(word.length)
+        // Thai: the pick takes the last word's place; the words before it stay.
+        val head = lastWordOf(word.toString()).first
+        val prev = if (head.isNotEmpty()) lastWordOf(head).second else prevWord(word.length)
         // A prediction right after a word (no space yet) gets one; Japanese,
         // Chinese and Thai take none.
         val gap = if (word.isEmpty() && !noSpaces()) ic.getTextBeforeCursor(1, 0)?.toString()?.lastOrNull()?.takeIf(::isWordChar)?.let { " " } ?: "" else ""
-        ic.commitText(if (noSpaces()) text else "$gap$text ", 1)
+        ic.commitText(if (noSpaces()) head + text else "$gap$text ", 1)
         clearWord()
         fix = null
         if (!noLearn) learn(lang, prev, text, isTyped)
@@ -869,7 +871,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     private fun updateWords() {
         if (word.isNotEmpty()) {
-            val typed = word.toString()
+            val typed = lastWordOf(word.toString()).second
             val s = suggestFor(typed)
             val mid = s.correction ?: if (s.typedKnown) typed else s.words.firstOrNull() ?: typed
             val rest = s.words.filter { !it.equals(mid, ignoreCase = true) }
@@ -909,6 +911,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     fun onSelection(newStart: Int, newEnd: Int, candStart: Int, candEnd: Int) {
+        // The text may have changed without us (the app, another cursor): read it afresh.
+        cached?.forget()
         val now = selectionNow()
         // Old news (from an edit before the last keys): a newer report is on its way.
         if (now != null && (now.first != newStart || now.second != newEnd)) return
@@ -934,16 +938,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     /** The sentence being typed (the last one, when the cursor sits just after its end). */
-    private fun sentence(): String {
-        val before = ic?.getTextBeforeCursor(300, 0)?.toString().orEmpty()
-        // At the start of a line (an empty one too): nothing yet.
-        if (before.trimEnd(' ', '\t').endsWith("\n")) return ""
-        val t = before.trimEnd()
-        val ends = ".!?。！？\n"
-        val body = if (t.isNotEmpty() && t.last() in ends) t.dropLast(1) else t
-        val start = body.indexOfLast { it in ends } + 1
-        return t.substring(start).trim()
-    }
+    /** The sentence being typed (the rule is the core's: text.rs, tested there). */
+    private fun sentence(): String = uk.ccez.keys.core.sentenceOf(ic?.getTextBeforeCursor(300, 0)?.toString().orEmpty())
 
     /** The sentence before the cursor swapped for `text` (held strip flag). */
     fun replaceSentence(text: String, of: String? = null) {
@@ -1007,7 +1003,20 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             val start = it.preceding(t.length).coerceAtLeast(0)
             return t.substring(start)
         }
-        return t.takeLastWhile(::isWordChar)
+        return uk.ccez.keys.core.wordBefore(before, skip.toUInt())
+    }
+
+    /**
+     * Thai has no spaces between words, so what's being typed can run on for
+     * several: ICU finds the last one, which suggestions and fixes are for.
+     * Elsewhere the whole word is the last one.
+     */
+    private fun lastWordOf(w: String): Pair<String, String> {
+        if (lang != "th" || w.length < 2) return "" to w
+        val it = android.icu.text.BreakIterator.getWordInstance(android.icu.util.ULocale.forLanguageTag("th"))
+        it.setText(w)
+        val start = it.preceding(w.length).coerceAtLeast(0)
+        return w.substring(0, start) to w.substring(start)
     }
 
     /** Languages written without spaces between words. */

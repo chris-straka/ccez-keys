@@ -12,6 +12,7 @@ pub mod log;
 pub mod settings;
 pub mod swipe;
 pub mod telex;
+pub mod text;
 pub mod typing;
 pub mod words;
 
@@ -525,7 +526,8 @@ impl Engine {
         let p = self.provider()?;
         let m = ccez_lang_core::ai::ask_messages(&context, &word, None, false);
         let started = std::time::Instant::now();
-        let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, None, |_| {}));
+        // The least thinking the provider allows: a card wants its line quickly.
+        let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |_| {}));
         self.log.write("info", "gloss", &serde_json::json!({"ok": r.is_ok(), "ms": started.elapsed().as_millis() as u64}).to_string());
         r.map(|t| t.trim().to_string()).map_err(|e| KeysError::Bad(e.to_string()))
     }
