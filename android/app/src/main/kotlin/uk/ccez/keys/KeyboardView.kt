@@ -53,9 +53,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         set(v) { if (field != v) { field = v; invalidate() } }
     var spaceLabel = ""
         set(v) { if (field != v) { field = v; invalidate() } }
-    /** The language was picked by what was typed: a dot after its name. */
+    /** The language was just picked by what was typed: a dot after its name, gone after a second. */
     var auto = false
-        set(v) { if (field != v) { field = v; invalidate() } }
+        set(v) {
+            field = v
+            removeCallbacks(hideDot)
+            if (v) postDelayed(hideDot, 1000)
+            invalidate()
+        }
+    private val hideDot = Runnable { auto = false }
     var showArrows = false
         set(v) { if (field != v) { field = v; invalidate() } }
     /** Swipe typing (Settings). */
@@ -165,6 +171,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 text.color = Colors.MUTED
                 text.textSize = 13 * sp
                 c.drawText(spaceLabel, cx, baseline(cy), text)
+                if (auto) {
+                    fill.color = Colors.ACCENT
+                    c.drawCircle(cx + text.measureText(spaceLabel) / 2 + 6 * dp, cy - 3 * dp, 2.5f * dp, fill)
+                }
                 if (showArrows) {
                     text.color = Colors.DIM
                     text.textSize = 12 * sp
