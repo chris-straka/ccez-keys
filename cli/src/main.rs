@@ -32,6 +32,7 @@ fn main() {
         ["update"] => ("update", None, None),
         ["word", lang, word] => ("word", Some(format!("{lang} {word}")), None),
         ["word", lang, word, status] => ("word", Some(format!("{lang} {word} {status}")), None),
+        ["forget", lang, word] => ("forget", Some(format!("{lang} {word}")), None),
         ["log"] => ("log", Some("50".to_string()), None),
         ["log", "-n", n] => ("log", Some(n.to_string()), None),
         ["key"] => {

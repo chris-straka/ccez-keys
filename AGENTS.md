@@ -28,6 +28,8 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
 - Before a check on the owner's phone note `keys status` (current language)
   and put it back after (`keys use <lang>`); reset any word status you
   changed (`keys word <lang> <word> new`): statuses sync to all their apps.
+  A word a check taught the keyboard (an undone correction or switch):
+  `keys forget <lang> <word>`. Clear the test field when done.
   If the owner is typing (`dumpsys input_method` mInputShown=true), only look.
 - Never `am force-stop uk.ccez.keys` while it's the chosen keyboard:
   Android falls back to Samsung Keyboard. ccez-keys is the owner's

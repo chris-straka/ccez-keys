@@ -563,7 +563,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         refresh()
         conv.append(kana)
         romajiSwitch = before to typed
-        showConv()
+        updateBar()
         app.log("info", "romaji-noticed", "from" to before)
     }
 

@@ -271,6 +271,23 @@ impl Engine {
         }
     }
 
+    /// Forgets a word the owner's typing taught `lang` (and what followed it).
+    /// The list is unloaded: load it again for the change to show. True when it was there.
+    pub fn forget(&self, lang: String, word: String) -> bool {
+        let mut s = self.lock();
+        let Some(mut l) = s.langs.remove(&lang) else {
+            let mut user: typing::UserWords = fs::read_to_string(self.user_path(&lang)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+            let had = typing::forget(&mut user, &word);
+            if had { if let Ok(t) = serde_json::to_string(&user) { write_safely(&self.user_path(&lang), t); } }
+            return had;
+        };
+        let had = typing::forget(&mut l.user, &word);
+        if let Ok(t) = serde_json::to_string(&l.user) {
+            write_safely(&self.user_path(&lang), t);
+        }
+        had
+    }
+
     /// Writes the owner's words to disk (the keyboard calls it when a field closes).
     pub fn save(&self) {
         let s = self.lock();

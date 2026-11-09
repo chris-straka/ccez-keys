@@ -194,6 +194,17 @@ fn correct(typed: &str, n: usize, own: Option<f32>, other: Option<f32>, scored: 
     }
 }
 
+/// Drops `word` from the owner's words, and from what followed other words.
+pub fn forget(user: &mut UserWords, word: &str) -> bool {
+    let had = user.words.remove(word).is_some();
+    user.next.remove(&fold(word));
+    for next in user.next.values_mut() {
+        next.remove(word);
+    }
+    user.next.retain(|_, n| !n.is_empty());
+    had
+}
+
 /// A word the owner kept. `strong` when they undid a correction to keep
 /// it: trusted at once.
 pub fn learn(lang: &mut Lang, prev: &str, word: &str, strong: bool) {

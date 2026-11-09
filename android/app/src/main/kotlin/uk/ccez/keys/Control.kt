@@ -54,6 +54,14 @@ class Control : ContentProvider() {
                     }
                     engine.wordStatus(lang, w).name.lowercase()
                 }
+                // `keys forget en konnichiha`: a word typing taught the keyboard, forgotten.
+                "forget" -> {
+                    val parts = (arg ?: error("forget needs: lang word")).split(' ')
+                    if (parts.size != 2) error("forget needs: lang word")
+                    val had = engine.forget(parts[0], parts[1])
+                    app.ensureWords(parts[0])
+                    if (had) "forgot" else "not learned"
+                }
                 // Look for an update now.
                 "update" -> {
                     app.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("checked", 0).putLong("pinged", 0).apply()
