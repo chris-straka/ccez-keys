@@ -35,6 +35,13 @@ class Control : ContentProvider() {
         try {
             val result = when (method) {
                 "status" -> status(app)
+                // Asks Android to put the Learning widget on the home screen (for checks).
+                "widget" -> {
+                    val m = android.appwidget.AppWidgetManager.getInstance(app)
+                    val ok = m.isRequestPinAppWidgetSupported && m.requestPinAppWidget(android.content.ComponentName(app, uk.ccez.keys.learn.WordWidget::class.java), null, null)
+                    uk.ccez.keys.learn.WordWidget.refresh(app, advance = false)
+                    if (ok) "asked" else "not supported"
+                }
                 // Where each key is on screen (tests tap any layout with it).
                 "keymap" -> {
                     val f = app.keymap ?: error("keyboard not up")

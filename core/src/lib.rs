@@ -51,6 +51,13 @@ struct State {
     current: String,
 }
 
+/// A word saved as Learning, and its language.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct LearningWord {
+    pub lang: String,
+    pub word: String,
+}
+
 #[derive(uniffi::Object)]
 pub struct Engine {
     dir: PathBuf,
@@ -398,6 +405,20 @@ impl Engine {
 
     pub fn word_card(&self, lang: String, word: String, lemma: String) -> Option<Card> {
         self.learn.card(&lang, &word, &lemma)
+    }
+
+    /// The words saved as Learning, in the learning languages (in the owner's
+    /// order), for the home-screen widget.
+    pub fn learning_words(&self) -> Vec<LearningWord> {
+        let langs = self.lock().settings.strings("languages.learning");
+        langs
+            .into_iter()
+            .flat_map(|lang| {
+                let mut words = self.learn.statuses.words(&lang, ccez_lang_core::status::Status::Learning);
+                words.sort();
+                words.into_iter().map(move |word| LearningWord { lang: lang.clone(), word })
+            })
+            .collect()
     }
 
     pub fn word_status(&self, lang: String, word: String) -> WordStatus {

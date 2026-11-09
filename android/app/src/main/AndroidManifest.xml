@@ -62,6 +62,14 @@
 
         <receiver android:name=".Updater$Done" android:exported="false" />
 
+        <!-- The home-screen widget: a word being learned, Known / Later / Next. -->
+        <receiver android:name=".learn.WordWidget" android:exported="false" android:label="Learning">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/learn_widget" />
+        </receiver>
+
         <!-- `keys` on the Mac, over adb (adb shell content call). Only the
              shell user and this app may call it (checked in Control). -->
         <!-- Screenshots handed to the app being typed in (pasted from the clipboard panel). -->
