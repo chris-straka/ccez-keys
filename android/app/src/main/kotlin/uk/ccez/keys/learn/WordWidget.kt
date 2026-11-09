@@ -17,13 +17,23 @@ import uk.ccez.keys.ui.Langs
 
 /**
  * The home-screen widget: one word saved as Learning (from every app, through
- * ccez-words), with its reading and meaning. A new one every 30 minutes or
- * on Next. Known marks it known everywhere; Later hides it for a while that
+ * ccez-words), with its reading and meaning. A new one every 5 minutes
+ * while the phone is awake (its own timer: Android's widget one is 30
+ * minutes at best and late), or on Next. Known marks it known everywhere; Later hides it for a while that
  * grows each time (1, 3, 7, 14, then 30 days), like Anki's "easy". Tap the
  * word to hear it.
  */
 class WordWidget : AppWidgetProvider() {
-    override fun onUpdate(ctx: Context, manager: AppWidgetManager, ids: IntArray) = refresh(ctx, advance = true)
+    override fun onUpdate(ctx: Context, manager: AppWidgetManager, ids: IntArray) {
+        schedule(ctx)
+        refresh(ctx, advance = true)
+    }
+
+    override fun onEnabled(ctx: Context) = schedule(ctx)
+
+    override fun onDisabled(ctx: Context) {
+        ctx.getSystemService(android.app.AlarmManager::class.java)?.cancel(tick(ctx))
+    }
 
     override fun onReceive(ctx: Context, intent: Intent) {
         super.onReceive(ctx, intent)
@@ -53,6 +63,18 @@ class WordWidget : AppWidgetProvider() {
         private const val LATER = "uk.ccez.keys.widget.LATER"
         private const val SAY = "uk.ccez.keys.widget.SAY"
         private val DAYS = listOf(1L, 3L, 7L, 14L, 30L)
+        /** How often a new word comes in. */
+        private const val EVERY = 5 * 60 * 1000L
+
+        private fun tick(ctx: Context) = PendingIntent.getBroadcast(
+            ctx, 9, Intent(ctx, WordWidget::class.java).setAction(NEXT), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        /** The timer: never wakes the phone (asleep, the word waits for the screen). */
+        fun schedule(ctx: Context) {
+            val am = ctx.getSystemService(android.app.AlarmManager::class.java) ?: return
+            am.setInexactRepeating(android.app.AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + EVERY, EVERY, tick(ctx))
+        }
         private const val DAY = 24 * 3600 * 1000L
 
         private fun prefs(ctx: Context) = ctx.getSharedPreferences("widget", Context.MODE_PRIVATE)
