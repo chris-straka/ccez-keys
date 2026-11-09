@@ -110,7 +110,8 @@ class Strip(private val ui: UiState) {
         job = app.scope.launch { show(autoSteps = n) }
     }
 
-    private suspend fun show(autoSteps: Int) {
+    /** `pause`: how long an all-known sentence shows before the next language. */
+    private suspend fun show(autoSteps: Int, pause: Long = 1500) {
         val all = targets(typing)
         if (all.isEmpty()) return
         index %= all.size
@@ -134,7 +135,7 @@ class Strip(private val ui: UiState) {
         }
         val known = words.filter { it.word }
         if (known.isNotEmpty() && known.all { it.status == WordStatus.KNOWN } && autoSteps < all.size - 1) {
-            delay(1500)
+            delay(pause)
             index = (index + 1) % all.size
             show(autoSteps + 1)
         }
@@ -194,7 +195,13 @@ class Strip(private val ui: UiState) {
     fun setStatus(lang: String, word: String, status: WordStatus) {
         engine.setWordStatus(lang, word, status)
         WordSync.soon()
-        redraw()
+        if (status == WordStatus.KNOWN && ui.strip?.lang == lang) {
+            // Everything shown now known: on to the next language.
+            job?.cancel()
+            job = app.scope.launch { show(autoSteps = 0, pause = 300) }
+        } else {
+            redraw()
+        }
     }
 
     /** The same language again, without moving on. */
