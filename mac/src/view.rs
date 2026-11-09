@@ -243,11 +243,14 @@ impl View {
                     let b = word_button(mtm, &self.clicker, t, size, (ri * 1000 + ti) as isize);
                     objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(b))
                 } else {
-                    objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(label(mtm, &t.text, size, t.text == "…")))
+                    // Marks as tight as words (a label pads itself); a click reads the line.
+                    let mark = Tok { status: if t.text == "…" { 2 } else { 0 }, ..t.clone() };
+                    let b = word_button(mtm, &self.clicker, &mark, size, row_tag(ri));
+                    objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(b))
                 };
                 let vw = v.frame().size.width;
                 let rl = (!t.reading.is_empty()).then(|| label(mtm, &t.reading, READING, true));
-                let w = vw.max(rl.as_ref().map(|l| l.frame().size.width).unwrap_or(0.0)) + if cjk && t.word { 2.0 } else { 0.0 };
+                let w = vw.max(rl.as_ref().map(|l| l.frame().size.width).unwrap_or(0.0)) + if rl.is_some() { 2.0 } else { 0.0 };
                 if used + w > MAX_W - 2.0 * PAD_X - x0 - 14.0 && !items.is_empty() {
                     let dots = label(mtm, "…", size, false);
                     let dw = dots.frame().size.width;
