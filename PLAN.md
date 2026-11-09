@@ -185,6 +185,21 @@ Donate: only in a Play Store build (CCEZ_KEYS_STORE=1, CCEZ_KEYS_DONATE_URL).
   back as Known so the strip skips them (to verify: what AnkiDroid's API
   lets an app read).
 
+## Owner notes (keeps, 2026-11-08), what came of them
+
+- Star pushed the words left: it has a fixed place now.
+- A full stop re-asked Muse: its answers are kept without end marks.
+- Autocorrect sometimes left an obvious fix: the benchmark pass (core/tests/bench.rs)
+  raised fixes from ~70% to 81-90%; watch for more.
+- Clipboard layout: clips two to a row, screenshots on top. "A way to lay out
+  words": asked the owner what they meant.
+- Editing a word's end (swim → swimm): letters after a word go on with it.
+- The four-square button was jarring: swipe the bar for the buttons.
+- A long strip line couldn't be moved: hold and drag scrolls it.
+- Screenshots weren't in the clipboard: the panel shows the day's screenshots.
+- Hungarian on an empty line: a new line is empty; a new sentence starts at
+  the first language.
+
 ## Still open
 
 
