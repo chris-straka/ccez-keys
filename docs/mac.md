@@ -41,7 +41,7 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
   `~/.config/ccez-keys/words-server` (one line, outside the repo).
 - Dictionaries (ja, zh) come from ccez-lang-core's release, checked
   against SHA256SUMS.
-- Right-click a line: it replaces the sentence typed (Accessibility where the app takes it, else typed over; ⌘Z undoes it). Not yet: hover to hear.
+- Click a line's flag or blank space: read aloud and copied. Right-click a line: it replaces the sentence typed (Accessibility where the app takes it, else typed over; ⌘Z undoes it). Not yet: hover to hear.
 
 ## Next (owner, 2026-11-09)
 

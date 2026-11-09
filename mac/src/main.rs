@@ -294,6 +294,28 @@ mod app {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// Puts `text` on the clipboard, as plain text.
+    fn copy(text: &str) {
+        put(&objc2_app_kit::NSPasteboard::generalPasteboard(), text);
+    }
+
+    fn put(pb: &objc2_app_kit::NSPasteboard, text: &str) {
+        pb.clearContents();
+        pb.setString_forType(&objc2_foundation::NSString::from_str(text), unsafe { objc2_app_kit::NSPasteboardTypeString });
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn copies_any_script() {
+        // A pasteboard of its own: the owner's clipboard is left alone.
+        let pb = objc2_app_kit::NSPasteboard::pasteboardWithUniqueName();
+        for text in ["Je vais à la gare", "間に合わせられますか？", "我们要去车站"] {
+            put(&pb, text);
+            let got = pb.stringForType(unsafe { objc2_app_kit::NSPasteboardTypeString }).map(|s| s.to_string());
+            assert_eq!(got.as_deref(), Some(text));
+        }
+    }
+
     /// Right-click on a line: that translation in place of the sentence typed
     /// (spaces after it kept). Through Accessibility where the app takes it,
     /// otherwise selected and typed over, or deleted and typed; ⌘Z undoes it.
@@ -577,11 +599,12 @@ mod app {
                     }
                     t if t <= -1_000_000 => swap(app, (-1_000_000 - t) as usize),
                     t if t <= -1000 => {
-                        // A line's flag or blank space: the line read aloud.
+                        // A line's flag, marks or blank space: the line read aloud and copied.
                         let rows = app.line.borrow().clone();
                         if let Some(r) = rows.get((-1000 - t) as usize).filter(|r| !r.toks.iter().any(|t| t.key == PENDING)) {
-                            let text: String = r.toks.iter().map(|t| t.text.as_str()).collect();
+                            let text: String = r.toks.iter().map(|t| t.text.as_str()).collect::<String>().trim().to_string();
                             crate::speak::say(&r.lang, &text);
+                            copy(&text);
                             app.appeared.set(Instant::now());
                         }
                     }
