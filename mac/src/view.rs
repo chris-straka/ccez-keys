@@ -351,7 +351,7 @@ impl View {
     /// A word's card beside the preview: the word, what it means, Learning and
     /// Known (lit when it is), and a way to close it. Button tags: -1 close,
     /// -2 learning, -3 known.
-    pub fn open_card(&self, mtm: MainThreadMarker, head: &str, meaning: &str, status: u8) {
+    pub fn open_card(&self, mtm: MainThreadMarker, head: &str, sub: &str, meaning: &str, status: u8) {
         let Some(content) = self.card_bg.contentView() else { return };
         for v in content.subviews().iter() {
             v.removeFromSuperview();
@@ -364,7 +364,7 @@ impl View {
         mean.setFont(Some(&NSFont::systemFontOfSize(13.0)));
         mean.setTextColor(Some(&rgb(0.85, 0.85, 0.87)));
         mean.setPreferredMaxLayoutWidth(w - 24.0);
-        let mh = mean.sizeThatFits(NSSize::new(w - 24.0, 200.0)).height.min(70.0);
+        let mh = mean.sizeThatFits(NSSize::new(w - 24.0, 200.0)).height.min(90.0);
         let btn = |title: &str, tag: isize, on: bool| {
             let t = Tok { text: title.to_string(), reading: String::new(), word: true, key: String::new(), status: if on { 1 } else { 0 } };
             word_button(mtm, &self.clicker, &t, 13.0, tag)
@@ -372,10 +372,18 @@ impl View {
         let learning = btn("Learning", -2, status == 1);
         let known = btn("Known", -3, status == 2);
         let close = btn("✕", -1, false);
-        let h = 12.0 + word.frame().size.height + 4.0 + mh + 10.0 + 22.0 + 10.0;
+        // The reading and form, small and grey under the word.
+        let small = (!sub.is_empty()).then(|| label(mtm, sub, 11.5, true));
+        let sh = small.as_ref().map(|l| l.frame().size.height + 1.0).unwrap_or(0.0);
+        let h = 12.0 + word.frame().size.height + sh + 4.0 + mh + 10.0 + 22.0 + 10.0;
         let mut y = h - 12.0 - word.frame().size.height;
         word.setFrame(rect(12.0, y, w - 50.0, word.frame().size.height));
         close.setFrame(rect(w - 30.0, h - 30.0, 20.0, 20.0));
+        if let Some(l) = &small {
+            y -= sh;
+            l.setFrame(rect(12.0, y, w - 24.0, sh));
+            content.addSubview(l);
+        }
         y -= 4.0 + mh;
         mean.setFrame(rect(12.0, y, w - 24.0, mh));
         learning.setFrame(rect(12.0, 10.0, 90.0, 22.0));

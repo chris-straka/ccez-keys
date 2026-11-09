@@ -64,18 +64,8 @@ class WordWidget : AppWidgetProvider() {
         private const val SAY = "uk.ccez.keys.widget.SAY"
         private val DAYS = listOf(1L, 3L, 7L, 14L, 30L)
 
-        /** A meaning that only names its word's form ("past participle of unterhalten"), as ccez-lang tells them. */
-        private val POINTER = Regex("\\b(plural|singular|feminine|masculine|inflection|form|participle|tense|conjugation|spelling|variant|alternative|abbreviation|diminutive)\\b[^;]* of ", RegexOption.IGNORE_CASE)
-
-        /** "participle past of unterhalten" → "past participle · unterhalten". */
-        internal fun formTag(pointer: String): String {
-            val m = Regex("^(?:\\([^)]*\\) )?(.+?) of (\\S+)").find(pointer.trim()) ?: return pointer
-            var grammar = m.groupValues[1].lowercase()
-            val lemma = m.groupValues[2].trimEnd('.', ',', ';', ':')
-            // Wiktionary's tag order ("participle past") as said ("past participle").
-            for (t in listOf("past", "present", "perfect", "future")) grammar = grammar.replace("participle $t", "$t participle")
-            return "$grammar · $lemma"
-        }
+        /** A meaning that only names its word's form ("past participle of unterhalten"), as the core tags it. */
+        private fun isForm(meaning: String) = uk.ccez.keys.core.formTag(meaning).isNotEmpty()
         /** How often a new word comes in. */
         private const val EVERY = 5 * 60 * 1000L
 
@@ -142,14 +132,15 @@ class WordWidget : AppWidgetProvider() {
                     // As ccez-lang does: a "past participle of …" note is the form, not the
                     // meaning; it goes small on top, the meaning (its word's, if need be) below.
                     val meanings = card?.meanings.orEmpty()
-                    val pointer = meanings.firstOrNull { POINTER.containsMatchIn(it) }
                     val lemma = card?.lemma?.takeIf { it.isNotEmpty() && it != word }
-                    val meaning = meanings.firstOrNull { !POINTER.containsMatchIn(it) }
-                        ?: lemma?.let { l -> runCatching { app.engine.wordCard(lang, l, "") }.getOrNull()?.meanings?.firstOrNull { !POINTER.containsMatchIn(it) } }
+                    // Only a form of the card's own word is tagged ("gare" is a word, though also a form of "garer").
+                    val pointer = lemma?.let { l -> meanings.firstOrNull { uk.ccez.keys.core.formTag(it).endsWith(" · $l") } }
+                    val meaning = meanings.firstOrNull { !isForm(it) }
+                        ?: lemma?.let { l -> runCatching { app.engine.wordCard(lang, l, "") }.getOrNull()?.meanings?.firstOrNull { !isForm(it) } }
                         ?: withTimeoutOrNull(4000) { Translator.translate(word, lang, app.text("languages.default"), download = false) }
                         ?: ""
                     view.setTextViewText(R.id.flag, Langs.of(ctx, lang)?.flag ?: lang)
-                    val form = pointer?.let(::formTag)
+                    val form = pointer?.let { uk.ccez.keys.core.formTag(it) }
                     view.setTextViewText(R.id.reading, listOfNotNull(card?.reading?.takeIf { it.isNotEmpty() && it != word }, form).joinToString("  "))
                     view.setTextViewText(R.id.word, (card?.article?.takeIf { it.isNotEmpty() }?.let { if (it.endsWith("'")) it else "$it " } ?: "") + word)
                     view.setTextViewText(R.id.meaning, meaning)

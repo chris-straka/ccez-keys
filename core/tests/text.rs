@@ -1,6 +1,6 @@
 //! The text-only typing rules (core/src/text.rs).
 
-use ccez_keys_core::text::{looks_secret, delete_span, mark_after_space, sentence_of, space_makes_stop, word_before};
+use ccez_keys_core::text::{form_tag, looks_secret, delete_span, mark_after_space, sentence_of, space_makes_stop, word_before};
 
 #[test]
 fn the_sentence_typed() {
@@ -61,4 +61,15 @@ fn secrets_are_never_sent() {
     for t in ["I'll meet you at the library tomorrow", "internationalization is hard", "see https://example.com/abc123def456ghi", "call 514-555-0182", "Antidisestablishmentarianism"] {
         assert!(!looks_secret(t.into()), "{t}");
     }
+}
+
+#[test]
+fn form_tags() {
+    assert_eq!(form_tag("participle past of unterhalten".into()), "past participle · unterhalten");
+    assert_eq!(form_tag("third-person singular present indicative of être".into()), "third-person singular present indicative · être");
+    assert_eq!(form_tag("(archaic) plural of Buch.".into()), "plural · Buch");
+    // Real meanings stay meanings.
+    assert_eq!(form_tag("to entertain".into()), "");
+    assert_eq!(form_tag("the end of the line".into()), "");
+    assert_eq!(form_tag("a form; the shape of a thing".into()), "");
 }

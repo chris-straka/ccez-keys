@@ -72,7 +72,7 @@ mod app {
         card: RefCell<Option<(String, String, String)>>,
         /** What the open card shows: its word, the dictionary's meaning, its status, and
          * the key its meaning-here comes back under. */
-        card_view: RefCell<Option<(String, String, u8, String)>>,
+        card_view: RefCell<Option<(String, String, String, u8, String)>>,
         meanings: std::sync::Arc<crate::meaning::Meanings>,
         prefs: RefCell<crate::prefs::Prefs>,
         /** The app being typed in (bundle id, name): the menu's "Off in …" is about it. */
@@ -197,10 +197,10 @@ mod app {
         // A card's meaning-here, arriving after it opened.
         if let Some((k, here)) = app.meanings.out.lock().unwrap().take()
             && app.view.card_open.get()
-            && let Some((head, dict, st, key)) = app.card_view.borrow().clone()
+            && let Some((head, sub, dict, st, key)) = app.card_view.borrow().clone()
             && key == k
         {
-            app.view.open_card(mtm, &head, &card_text(Some(&here), &dict), st);
+            app.view.open_card(mtm, &head, &sub, &card_text(Some(&here), &dict), st);
         }
         if let Some(shown) = app.worker.out.lock().unwrap().take() {
             if shown.seq == app.seq.get() {
@@ -220,6 +220,66 @@ mod app {
         } else {
             app.view.hide();
         }
+    }
+
+    /// A card's face, as on the phone: the word with its article ("la gare";
+    /// the form typed when it's a form of another), a small line with its
+    /// reading and form ("past participle · unterhalten"), and up to three
+    /// dictionary meanings (its word's, when the form has none of its own).
+    fn card_face(engine: &ccez_keys_core::Engine, lang: &str, tok: &crate::view::Tok, card: Option<&ccez_keys_core::Card>) -> (String, String, String) {
+        use ccez_keys_core::text::form_tag;
+        let Some(c) = card else { return (tok.text.clone(), tok.reading.clone(), String::new()) };
+        let real = |ms: &[String]| ms.iter().filter(|m| form_tag((*m).clone()).is_empty()).take(3).cloned().collect::<Vec<_>>();
+        let mut meanings = real(&c.meanings);
+        // Only a form of the card's own word gets the tag ("gegangen" of
+        // "gehen"; "gare" is a word of its own, though also a form of "garer").
+        let form = (!c.lemma.is_empty() && c.lemma != tok.text)
+            .then(|| c.meanings.iter().map(|m| form_tag(m.clone())).find(|t| t.ends_with(&format!(" · {}", c.lemma))))
+            .flatten();
+        if meanings.is_empty() && !c.lemma.is_empty() && c.lemma != tok.text
+            && let Some(l) = engine.word_card(lang.into(), c.lemma.clone(), String::new()) {
+                meanings = real(&l.meanings);
+            }
+        let word = if form.is_some() || c.lemma.is_empty() { tok.text.clone() } else { c.lemma.clone() };
+        let head = match c.article.as_str() {
+            "" => word,
+            a if a.ends_with('\'') => format!("{a}{word}"),
+            a => format!("{a} {word}"),
+        };
+        let reading = if tok.reading.is_empty() { c.reading.clone() } else { tok.reading.clone() };
+        let sub: Vec<String> = [Some(reading).filter(|r| !r.is_empty() && *r != tok.text), form].into_iter().flatten().collect();
+        (head, sub.join("   "), meanings.join("; "))
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn card_faces_from_the_dictionaries() {
+        // The dictionaries this Mac downloaded, in a scratch folder of their own.
+        let dict = dirs().join("dict");
+        if !dict.exists() {
+            return;
+        }
+        let tmp = std::env::temp_dir().join(format!("ccez-keys-card-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp);
+        let _ = std::os::unix::fs::symlink(&dict, tmp.join("dict"));
+        let e = ccez_keys_core::Engine::new(tmp.to_string_lossy().into_owned());
+        let face = |lang: &str, word: &str| {
+            let tok = crate::view::Tok { text: word.into(), reading: String::new(), word: true, key: word.into(), status: 0 };
+            let c = e.word_card(lang.into(), word.into(), String::new());
+            let f = card_face(&e, lang, &tok, c.as_ref());
+            eprintln!("{lang} {word}: {f:?}");
+            f
+        };
+        let (head, sub, meaning) = face("fr", "gare");
+        assert_eq!((head.as_str(), sub.as_str()), ("la gare", ""));
+        assert!(!meaning.is_empty());
+        let (head, sub, meaning) = face("de", "gegangen");
+        assert_eq!(head, "gegangen");
+        assert!(sub.contains("participle"), "{sub}");
+        assert!(!meaning.is_empty());
+        face("es", "estación");
+        face("ja", "駅");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// The card's meaning: what it means here (on-device model) over the dictionary's.
@@ -462,9 +522,7 @@ mod app {
                         let Some(tok) = rows.get(ri).and_then(|r| r.toks.get(ti).map(|tk| (r.lang.clone(), tk.clone()))) else { return };
                         let (lang, tok) = tok;
                         let card = app.engine.word_card(lang.clone(), tok.text.clone(), if tok.key != tok.text { tok.key.clone() } else { String::new() });
-                        let head = card.as_ref().map(|c| if c.lemma.is_empty() { tok.text.clone() } else { c.lemma.clone() }).unwrap_or_else(|| tok.key.clone());
-                        let head = if tok.reading.is_empty() { head } else { format!("{head}  {}", tok.reading) };
-                        let meaning = card.as_ref().and_then(|c| c.meanings.first().cloned()).unwrap_or_default();
+                        let (head, sub, meaning) = card_face(&app.engine, &lang, &tok, card.as_ref());
                         let key = card.as_ref().map(|c| if c.lemma.is_empty() { tok.text.clone() } else { c.lemma.clone() }).unwrap_or_else(|| tok.key.clone());
                         let st = match app.engine.word_status(lang.clone(), key.clone()) {
                             ccez_keys_core::WordStatus::Learning => 1,
@@ -479,8 +537,8 @@ mod app {
                         if here.is_none() {
                             app.meanings.ask(lang.clone(), tok.text.clone(), sentence);
                         }
-                        app.view.open_card(mtm, &head, &card_text(here.as_deref(), &meaning), st);
-                        *app.card_view.borrow_mut() = Some((head, meaning, st, mkey));
+                        app.view.open_card(mtm, &head, &sub, &card_text(here.as_deref(), &meaning), st);
+                        *app.card_view.borrow_mut() = Some((head, sub, meaning, st, mkey));
                         *app.card.borrow_mut() = Some((lang, key, tok.text.clone()));
                         // The card stays as long as the preview, counted from the click.
                         app.appeared.set(Instant::now());

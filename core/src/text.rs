@@ -111,3 +111,32 @@ pub fn looks_secret(text: String) -> bool {
         n >= 16 && t.is_ascii() && !t.contains("://") && letters > 0 && (digits >= 2 || (upper >= 3 && upper < letters)) && t.chars().all(|c| c.is_ascii_graphic())
     })
 }
+
+/// Words a dictionary meaning uses when it only names its word's form.
+const FORM_WORDS: [&str; 14] = [
+    "plural", "singular", "feminine", "masculine", "inflection", "form", "participle", "tense", "conjugation", "spelling", "variant",
+    "alternative", "abbreviation", "diminutive",
+];
+
+/// A meaning that only names the word's form, as a short tag: "participle
+/// past of unterhalten" → "past participle · unterhalten"; "" for a real
+/// meaning ("to entertain").
+#[uniffi::export]
+pub fn form_tag(meaning: String) -> String {
+    let t = meaning.trim();
+    // A leading note in brackets ("(archaic) …") isn't part of it.
+    let t = if t.starts_with('(') { t.find(") ").map_or(t, |i| &t[i + 2..]) } else { t };
+    let Some(of) = t.find(" of ") else { return String::new() };
+    let grammar = t[..of].to_lowercase();
+    // The form words, as whole words, in the same clause.
+    if grammar.contains(';') || !grammar.split(|c: char| !c.is_alphanumeric() && c != '-').any(|w| FORM_WORDS.contains(&w)) {
+        return String::new();
+    }
+    let Some(lemma) = t[of + 4..].split_whitespace().next().map(|w| w.trim_end_matches(['.', ',', ';', ':'])) else { return String::new() };
+    let mut grammar = grammar;
+    // Wiktionary's tag order ("participle past") as said ("past participle").
+    for tense in ["past", "present", "perfect", "future"] {
+        grammar = grammar.replace(&format!("participle {tense}"), &format!("{tense} participle"));
+    }
+    format!("{grammar} · {lemma}")
+}
