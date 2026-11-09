@@ -22,11 +22,14 @@ enum class Shift { OFF, ONCE, LOCK }
 /**
  * Held delete, as SwiftKey does it (measured on the owner's S24): nothing
  * letter by letter; a whole word once held 0.45 s, the next 0.5 s later,
- * then one every 0.25 s.
+ * then one every 0.25 s, quickening from the fifth word to one every
+ * 0.12 s.
  */
 const val WORD_HOLD_MS = 450L
 const val WORD_SECOND_MS = 500L
-const val WORD_EVERY_MS = 250L
+
+/** The wait before the next word, after `n` words gone. */
+fun wordGap(n: Int): Long = if (n == 1) WORD_SECOND_MS else (250L - 30L * maxOf(0, n - 4)).coerceIn(120L, 250L)
 
 /** A held key's choices, in this view's coordinates. */
 data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int, val codes: List<String> = emptyList(), val cols: Int = choices.size)
@@ -271,7 +274,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 repeats += 1
                 val held = android.os.SystemClock.uptimeMillis() - downAt
                 listener.onRepeat(p.key, held)
-                handler.postDelayed(this, if (repeats == 1) WORD_SECOND_MS else WORD_EVERY_MS)
+                handler.postDelayed(this, wordGap(repeats))
             }
         }
     }
