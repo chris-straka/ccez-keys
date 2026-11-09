@@ -198,7 +198,8 @@ class Strip(private val ui: UiState) {
         val src = source
         val segs = mutableListOf<Segment>()
         // About what the line holds, so languages that can't show aren't translated.
-        var room = 38 - shownText.length
+        // (A bit more than fits: the line itself drops what doesn't.)
+        var room = 52 - shownText.length
         var warmed = false
         for (k in 1 until all.size) {
             if (room <= 0 || segs.size >= 5) break
