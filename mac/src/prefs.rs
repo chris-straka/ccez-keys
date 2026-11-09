@@ -12,11 +12,14 @@ pub struct Prefs {
     pub off: Vec<String>,
     /// Quiet-by-default apps turned back on.
     pub on: Vec<String>,
+    /// "Open at login" was set on the first start (on, as decided); after
+    /// that it's the owner's, from the menu.
+    pub login_set: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { shown: 6, readings: true, off: vec![], on: vec![] }
+        Prefs { shown: 6, readings: true, off: vec![], on: vec![], login_set: false }
     }
 }
 
@@ -35,11 +38,12 @@ impl Prefs {
             readings: v["readings"].as_bool().unwrap_or(d.readings),
             off: list("off"),
             on: list("on"),
+            login_set: v["login_set"].as_bool().unwrap_or(false),
         }
     }
 
     pub fn save(&self, dir: &std::path::Path) {
-        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on});
+        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "login_set": self.login_set});
         let tmp = path(dir).with_extension("tmp");
         if std::fs::write(&tmp, v.to_string()).is_ok() {
             let _ = std::fs::rename(&tmp, path(dir));

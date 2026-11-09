@@ -17,6 +17,8 @@ mod meaning;
 #[cfg(target_os = "macos")]
 mod speak;
 #[cfg(target_os = "macos")]
+mod update;
+#[cfg(target_os = "macos")]
 mod view;
 mod worker;
 
@@ -381,6 +383,13 @@ mod app {
             }
             return;
         }
+        // `--update-now`: one look for a newer release, replacing this app if
+        // there is one (not started again), for checks.
+        if args.iter().any(|a| a == "--update-now") {
+            let replaced = crate::update::check(&|l, w| println!("{l} {w}"), false);
+            println!("replaced: {replaced}");
+            return;
+        }
         if let Some(i) = args.iter().position(|a| a == "--click") {
             use std::ffi::c_void;
             #[repr(C)]
@@ -412,6 +421,16 @@ mod app {
         let engine = ccez_keys_core::Engine::new(dirs().to_string_lossy().into_owned());
         let langs = engine.setting_strings("languages.learning".into());
         crate::learn::start(engine.clone(), dirs(), log);
+        crate::update::start(log);
+        // On at login from the first start, as decided; the menu changes it after.
+        {
+            let mut p = crate::prefs::Prefs::load(&dirs());
+            if !p.login_set {
+                set_login(true);
+                p.login_set = true;
+                p.save(&dirs());
+            }
+        }
         let app: &'static App = Box::leak(Box::new(App {
             view: View::new(mtm),
             worker: Worker::start(engine.clone(), log),
