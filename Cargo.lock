@@ -705,7 +705,7 @@ dependencies = [
 [[package]]
 name = "ccez-lang-core"
 version = "0.1.0"
-source = "git+https://github.com/chris-straka/ccez-lang-core?tag=v0.1.0#7defdbac5c73ef3d5e3bcb2930bd7f28ab2914a5"
+source = "git+https://github.com/chris-straka/ccez-lang-core?tag=v0.1.1#ab24c89c931564ced4514a662b1cd119ac3cb5f0"
 dependencies = [
  "ccez-lexicon",
  "flate2",
@@ -720,7 +720,7 @@ dependencies = [
 [[package]]
 name = "ccez-lexicon"
 version = "0.1.0"
-source = "git+https://github.com/chris-straka/ccez-lang-core?tag=v0.1.0#7defdbac5c73ef3d5e3bcb2930bd7f28ab2914a5"
+source = "git+https://github.com/chris-straka/ccez-lang-core?tag=v0.1.1#ab24c89c931564ced4514a662b1cd119ac3cb5f0"
 dependencies = [
  "serde_json",
 ]
@@ -4493,7 +4493,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.6",
  "windows-sys 0.61.2",

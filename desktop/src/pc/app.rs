@@ -52,6 +52,7 @@ struct App {
     wanted: bool,
     size: Vec2,
     ticked: Instant,
+    pictures: crate::pc::flags::Flags,
     #[cfg(windows)]
     hwnd: Option<isize>,
 }
@@ -256,7 +257,10 @@ impl App {
             for (ri, r) in rows.iter().enumerate() {
                 let cjk = r.toks.iter().any(|t| !t.reading.is_empty());
                 ui.horizontal(|ui| {
-                    let flag = ui.add(Label::new(RichText::new(&r.flag).size(13.0)).sense(Sense::click()));
+                    let flag = match self.pictures.get(ui.ctx(), &r.lang) {
+                        Some(t) => ui.add(egui::Image::new((t.id(), Vec2::new(18.0, 18.0))).tint(Color32::from_white_alpha(150)).sense(Sense::click())),
+                        None => ui.add(Label::new(RichText::new(&r.lang).size(11.0).color(Color32::from_rgb(140, 140, 148))).sense(Sense::click())),
+                    };
                     if flag.clicked() {
                         clicked = Some((ri, None, false));
                     }
@@ -446,6 +450,7 @@ pub fn run() {
                 wanted: false,
                 size: Vec2::new(320.0, 80.0),
                 ticked: Instant::now() - TICK,
+                pictures: Default::default(),
                 #[cfg(windows)]
                 hwnd,
             }))

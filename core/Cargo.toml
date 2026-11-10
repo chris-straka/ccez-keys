@@ -21,7 +21,7 @@ cli = ["uniffi/cli"]
 [dependencies]
 # Dictionaries, readings, word statuses and ccez-words sync, the AI client:
 # the library ccez-tube's learning code moved into.
-ccez-lang-core = { git = "https://github.com/chris-straka/ccez-lang-core", tag = "v0.1.0", features = ["ja"] }
+ccez-lang-core = { git = "https://github.com/chris-straka/ccez-lang-core", tag = "v0.1.1", features = ["ja"] }
 tokio = { version = "1", features = ["rt", "time"] }
 flate2 = "1"
 serde = { version = "1", features = ["derive"] }

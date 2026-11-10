@@ -4,6 +4,7 @@
 //! each system's accessibility API (AT-SPI on Linux, UI Automation on Windows).
 
 mod app;
+mod flags;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]

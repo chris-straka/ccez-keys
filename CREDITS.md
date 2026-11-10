@@ -17,3 +17,12 @@ ccez-keys is MIT (LICENSE). It ships data from:
 `keys-next` from [Tatoeba](https://tatoeba.org)'s sentences (CC BY 2.0 FR).
 Tatoeba's stock names (Tom, Mary and others) are left out.
 
+
+## Desktop app (Linux and Windows)
+
+- Translation models: Mozilla's [Firefox Translations](https://github.com/mozilla/firefox-translations-models)
+  models (MPL-2.0), unchanged, served from this repo's `models-firefox-1`
+  release (`scripts/desktop-models.py`), run by
+  [fxtranslate](https://github.com/gregtatum/translations) (MPL-2.0).
+- Flags in `desktop/assets/flags/`: [Twemoji](https://github.com/jdecked/twemoji)
+  graphics (CC-BY 4.0), copyright Twitter, Inc. and other contributors.
