@@ -139,7 +139,14 @@ impl App {
         let under_mouse = self.up && ctx.input(|i| i.pointer.hover_pos().is_some());
         let rows_for = |s: &crate::worker::Shown| crate::cards::rows(s, &self.prefs, &self.flags);
         let inputs = Inputs { now: Instant::now(), off, field, held: false, under_mouse, shown: self.prefs.shown, langs: &self.langs };
+        let debug = std::env::var_os("CCEZ_DEBUG").is_some();
+        if debug {
+            eprintln!("tick front={front:?} off={off} field={:?} answer={}", inputs.field.as_ref().map(|f| (f.secure, f.before.clone(), f.caret, f.frame)), answer.is_some());
+        }
         let out = self.preview.tick(inputs, answer, &rows_for);
+        if debug {
+            eprintln!("  -> show={} ask={:?} line={}", out.show, out.ask.as_ref().map(|a| &a.text), self.preview.line.len());
+        }
         if out.close_card {
             self.card = None;
         }
