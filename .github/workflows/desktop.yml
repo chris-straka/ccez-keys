@@ -1,0 +1,30 @@
+# The desktop app on Windows and Linux: built and its tests run on every
+# change to it (the repo is public: these runs cost nothing). No one can look
+# at the Windows build here; the tests are the check.
+name: desktop
+on:
+  push:
+    paths: ["desktop/**", "core/**", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev
+      - run: cargo build --release -p ccez-keys-desktop
+      - run: cargo test --release -p ccez-keys-desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ccez-keys-desktop-${{ runner.os }}
+          path: |
+            target/release/ccez-keys-desktop
+            target/release/ccez-keys-desktop.exe
