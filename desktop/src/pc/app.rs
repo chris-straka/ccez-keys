@@ -254,6 +254,8 @@ impl App {
         let mut clicked: Option<(usize, Option<usize>, bool)> = None;
         egui::Frame::new().fill(BG).corner_radius(9.0).inner_margin(egui::Margin::symmetric(12, 7)).show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
+            // Lines never wrap: the window grows to them.
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             for (ri, r) in rows.iter().enumerate() {
                 let cjk = r.toks.iter().any(|t| !t.reading.is_empty());
                 ui.horizontal(|ui| {
@@ -319,7 +321,10 @@ impl App {
                 if !c.sub.is_empty() {
                     ui.label(RichText::new(&c.sub).size(11.5).color(Color32::from_rgb(185, 185, 190)));
                 }
-                ui.add(Label::new(RichText::new(&c.meaning).size(13.0).color(Color32::from_rgb(218, 218, 222))).wrap());
+                ui.scope(|ui| {
+                    ui.set_max_width(300.0);
+                    ui.add(Label::new(RichText::new(&c.meaning).size(13.0).color(Color32::from_rgb(218, 218, 222))).wrap());
+                });
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 18.0;
                     let lit = |on: bool| if on { Color32::from_rgb(250, 140, 115) } else { Color32::from_rgb(242, 242, 242) };

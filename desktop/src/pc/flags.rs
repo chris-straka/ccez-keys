@@ -43,12 +43,17 @@ pub struct Flags {
 }
 
 fn decode(bytes: &[u8]) -> Option<ColorImage> {
-    let mut r = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().ok()?;
+    let mut d = png::Decoder::new(std::io::Cursor::new(bytes));
+    // Palette and 16-bit images as plain 8-bit colour.
+    d.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut r = d.read_info().ok()?;
     let mut buf = vec![0; r.output_buffer_size()];
     let info = r.next_frame(&mut buf).ok()?;
     let rgba: Vec<u8> = match info.color_type {
         png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
         png::ColorType::Rgb => buf[..info.buffer_size()].chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::GrayscaleAlpha => buf[..info.buffer_size()].chunks(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::Grayscale => buf[..info.buffer_size()].iter().flat_map(|&g| [g, g, g, 255]).collect(),
         _ => return None,
     };
     Some(ColorImage::from_rgba_unmultiplied([info.width as usize, info.height as usize], &rgba))
@@ -65,5 +70,16 @@ impl Flags {
                 Some(ctx.load_texture(format!("flag-{base}"), decode(bytes)?, TextureOptions::LINEAR))
             })
             .clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_flag_decodes() {
+        for (lang, bytes) in super::FLAGS {
+            let img = super::decode(bytes).unwrap_or_else(|| panic!("{lang}"));
+            assert!(img.size[0] > 0, "{lang}");
+        }
     }
 }
