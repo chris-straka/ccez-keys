@@ -98,6 +98,8 @@ mod app {
         line: RefCell<Vec<crate::view::Row>>,
         /** When the preview last changed on screen: it stays `linger` from then. */
         appeared: Cell<Instant>,
+        /** When the pointer was last over the preview: it stays while it is, and a moment after. */
+        hovered: Cell<Option<Instant>>,
     }
 
     pub fn log(level: &str, what: &str) {
@@ -241,7 +243,12 @@ mod app {
         let typing = app.changed.get().elapsed() < STILL;
         let stay = linger(app.sentence.borrow().chars().count());
         let recent = app.appeared.get().elapsed() < stay;
-        let fresh = (recent && !typing && app.complete.get()) || option_held();
+        if app.view.under_mouse(mtm) {
+            app.hovered.set(Some(Instant::now()));
+        }
+        // Under the pointer it stays (typing still takes it away).
+        let hovered = app.hovered.get().is_some_and(|t| t.elapsed() < Duration::from_secs(1));
+        let fresh = ((recent || hovered) && !typing && app.complete.get()) || option_held();
         let line = app.line.borrow();
         if fresh && !line.is_empty() {
             app.view.show(mtm, &line, app.caret.get());
@@ -542,6 +549,7 @@ mod app {
             woken: RefCell::default(),
             line: RefCell::default(),
             appeared: Cell::new(Instant::now()),
+            hovered: Cell::new(None),
         }));
 
         // The menu: pause, how many languages, readings, off in this app, the
