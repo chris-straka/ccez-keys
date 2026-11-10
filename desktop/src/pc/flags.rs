@@ -42,7 +42,7 @@ pub struct Flags {
     made: HashMap<String, Option<TextureHandle>>,
 }
 
-fn decode(bytes: &[u8]) -> Option<ColorImage> {
+pub fn decode(bytes: &[u8]) -> Option<ColorImage> {
     let mut d = png::Decoder::new(std::io::Cursor::new(bytes));
     // Palette and 16-bit images as plain 8-bit colour.
     d.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);

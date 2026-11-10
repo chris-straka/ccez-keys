@@ -5,6 +5,7 @@
 
 mod app;
 mod flags;
+mod settings;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]
@@ -77,5 +78,9 @@ pub fn run() {
         }
         return;
     }
+    if args.iter().any(|a| a == "--settings") {
+        return settings::run();
+    }
+    settings::first_start();
     app::run();
 }

@@ -55,6 +55,32 @@ struct App {
     pictures: crate::pc::flags::Flags,
     #[cfg(windows)]
     hwnd: Option<isize>,
+    #[cfg(windows)]
+    tray: Option<Tray>,
+}
+
+/// Windows: the tray icon (文) and its menu.
+#[cfg(windows)]
+struct Tray {
+    _icon: tray_icon::TrayIcon,
+    settings: tray_icon::menu::MenuId,
+    pause: tray_icon::menu::MenuItem,
+    quit: tray_icon::menu::MenuId,
+}
+
+#[cfg(windows)]
+fn tray(paused: bool) -> Option<Tray> {
+    use tray_icon::menu::{Menu, MenuItem, PredefinedMenuItem};
+    let img = crate::pc::flags::decode(include_bytes!("../../assets/icon.png"))?;
+    let rgba: Vec<u8> = img.pixels.iter().flat_map(|p| p.to_array()).collect();
+    let icon = tray_icon::Icon::from_rgba(rgba, img.size[0] as u32, img.size[1] as u32).ok()?;
+    let settings = MenuItem::new("Settings…", true, None);
+    let pause = MenuItem::new(if paused { "Resume" } else { "Pause" }, true, None);
+    let quit = MenuItem::new("Quit", true, None);
+    let menu = Menu::new();
+    let _ = menu.append_items(&[&settings, &pause, &PredefinedMenuItem::separator(), &quit]);
+    let icon = tray_icon::TrayIconBuilder::new().with_icon(icon).with_tooltip("ccez-keys").with_menu(Box::new(menu)).build().ok()?;
+    Some(Tray { _icon: icon, settings: settings.id().clone(), pause, quit: quit.id().clone() })
 }
 
 fn flags() -> HashMap<String, String> {
@@ -372,6 +398,21 @@ impl eframe::App for App {
         if let Some(h) = self.hwnd.take() {
             crate::pc::windows::no_activate(h);
         }
+        #[cfg(windows)]
+        while let Ok(e) = tray_icon::menu::MenuEvent::receiver().try_recv() {
+            let Some(t) = &self.tray else { break };
+            if e.id == t.settings {
+                if let Ok(exe) = std::env::current_exe() {
+                    let _ = std::process::Command::new(exe).arg("--settings").spawn();
+                }
+            } else if e.id == t.pause.id().clone() {
+                self.prefs.paused = !self.prefs.paused;
+                self.prefs.save(&crate::paths::data());
+                t.pause.set_text(if self.prefs.paused { "Resume" } else { "Pause" });
+            } else if e.id == t.quit {
+                std::process::exit(0);
+            }
+        }
         if self.ticked.elapsed() >= TICK {
             self.tick(ctx);
         }
@@ -455,6 +496,8 @@ pub fn run() {
                 size: Vec2::new(320.0, 80.0),
                 ticked: Instant::now() - TICK,
                 pictures: Default::default(),
+                #[cfg(windows)]
+                tray: tray(Prefs::load(&crate::paths::data()).paused),
                 #[cfg(windows)]
                 hwnd,
             }))
