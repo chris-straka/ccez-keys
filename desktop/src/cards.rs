@@ -65,7 +65,7 @@ pub fn card_face(engine: &ccez_keys_core::Engine, lang: &str, tok: &crate::model
     (head, sub.join("   "), meanings.join("; "))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[test]
 fn card_faces_from_the_dictionaries() {
     // The dictionaries this Mac downloaded, in a scratch folder of their own.
