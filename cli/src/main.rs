@@ -37,6 +37,27 @@ fn main() {
         ["forget", lang, word] => ("forget", Some(format!("{lang} {word}")), None),
         ["log"] => ("log", Some("50".to_string()), None),
         ["log", "-n", n] => ("log", Some(n.to_string()), None),
+        ["backup"] | ["backup", _] => {
+            let dir = args.get(1).map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Backups/ccez-keys"));
+            match backup(&dir) {
+                Ok(out) => println!("{out}"),
+                Err(e) => {
+                    eprintln!("{e}");
+                    exit(1);
+                }
+            }
+            return;
+        }
+        ["restore", file] => {
+            match restore(std::path::Path::new(file)) {
+                Ok(out) => println!("{out}"),
+                Err(e) => {
+                    eprintln!("{e}");
+                    exit(1);
+                }
+            }
+            return;
+        }
         ["key"] => {
             match send_key() {
                 Ok(out) => println!("{out}"),
@@ -48,7 +69,7 @@ fn main() {
             return;
         }
         _ => {
-            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key < file");
+            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key < file | backup [dir] | restore <file>");
             exit(2);
         }
     };
@@ -165,4 +186,66 @@ fn unb64(s: &str) -> Option<String> {
         }
     }
     String::from_utf8(out).ok()
+}
+
+const BACKUP_URI: &str = "content://uk.ccez.keys.control/backup";
+const RESTORE_URI: &str = "content://uk.ccez.keys.control/restore";
+/// Backups kept (the oldest go).
+const KEEP: usize = 30;
+
+/// Today as YYYY-MM-DD (local time, through `date`).
+fn today() -> String {
+    Command::new("date").arg("+%F").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|d| d.len() == 10).unwrap_or_else(|| "backup".into())
+}
+
+/// The keyboard's state (settings, words learned, per-app languages, review
+/// schedule) into `dir/YYYY-MM-DD.json`; the newest 30 kept.
+fn backup(dir: &std::path::Path) -> Result<String, String> {
+    let serial = serial()?;
+    let out = Command::new("adb")
+        .args(["-s", &serial, "exec-out", "content", "read", "--uri", BACKUP_URI])
+        .output()
+        .map_err(|e| format!("adb didn't run: {e}"))?;
+    let body = String::from_utf8_lossy(&out.stdout).into_owned();
+    let v: serde_json::Value = serde_json::from_str(&body).map_err(|_| format!("the keyboard didn't send a backup: {}", body.chars().take(200).collect::<String>()))?;
+    if v.get("ccez-keys-backup").and_then(|n| n.as_i64()) != Some(1) {
+        return Err("not a ccez-keys backup".into());
+    }
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let file = dir.join(format!("{}.json", today()));
+    let tmp = file.with_extension("tmp");
+    std::fs::write(&tmp, &body).and_then(|_| std::fs::rename(&tmp, &file)).map_err(|e| format!("{}: {e}", file.display()))?;
+    let mut all: Vec<_> = std::fs::read_dir(dir).map_err(|e| e.to_string())?.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect();
+    all.sort();
+    let over = all.len().saturating_sub(KEEP);
+    for old in &all[..over] {
+        let _ = std::fs::remove_file(old);
+    }
+    let files = v["files"].as_object().map(|o| o.len()).unwrap_or(0);
+    Ok(format!("{} ({} files, {} KB)", file.display(), files, body.len() / 1024))
+}
+
+/// A backup put back on the phone; the keyboard restarts to read it.
+fn restore(file: &std::path::Path) -> Result<String, String> {
+    let body = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let v: serde_json::Value = serde_json::from_str(&body).map_err(|_| format!("{} isn't a backup", file.display()))?;
+    if v.get("ccez-keys-backup").and_then(|n| n.as_i64()) != Some(1) {
+        return Err("not a ccez-keys backup".into());
+    }
+    let serial = serial()?;
+    let mut child = Command::new("adb")
+        .args(["-s", &serial, "shell", "content", "write", "--uri", RESTORE_URI])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("adb didn't run: {e}"))?;
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().ok_or("no stdin")?;
+        stdin.write_all(body.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    let ok = child.wait().map_err(|e| e.to_string())?.success();
+    if !ok {
+        return Err("the phone didn't take it".into());
+    }
+    Ok(format!("restored from {}; the keyboard restarts", file.display()))
 }

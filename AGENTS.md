@@ -19,6 +19,11 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
   never regenerate it) and installs it on the connected phone.
 - `keys status | get | set | schema | log` (cli/) talks to the keyboard
   over adb; `keys log` holds its events and errors (never typed text).
+- `keys backup [dir]` / `keys restore <file>`: settings, words learned,
+  per-app languages, kaomoji use and the review schedule (not the clipboard,
+  not the AI key). The Mac mini takes one a day into ~/Backups/ccez-keys
+  (scripts/backup-nightly.sh, launchd `uk.ccez.keys.backup`, hourly, newest
+  30 kept). A restore restarts the keyboard; try restores on the emulator.
 - Tests: `cargo test --release` in core/ (`--test bench -- --ignored --nocapture`
   for the autocorrect benchmark); `./gradlew :app:testDebugUnitTest` in
   android/; on the emulator, `KEYS_SERIAL=emulator-5554 scripts/typing-check.sh`

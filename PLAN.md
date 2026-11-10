@@ -125,8 +125,10 @@ Donate: only in a Play Store build (CCEZ_KEYS_STORE=1, CCEZ_KEYS_DONATE_URL).
 4. Dictation, Muse tips, automatic language switching.
 5. More layouts (AZERTY, QWERTZ, Arabic, Hangul, Hindi; Japanese and
    Chinese input if the owner types them).
-6. Later: ccez-tube's words of the week first in the strip; a review card
-   when the keyboard opens; send selected text to ccez-llm to annotate.
+6. Later: send selected text to ccez-llm to annotate. Done 2026-11-09: a
+   word to review in the strip when the keyboard opens on an empty field
+   (learn/Review.kt, shared with the widget). Dropped (owner, 2026-11-09):
+   ccez-tube's words of the week (Learning words are already tinted).
 
 ## Owner decisions (2026-11-08)
 
@@ -216,4 +218,5 @@ Donate: only in a Play Store build (CCEZ_KEYS_STORE=1, CCEZ_KEYS_DONATE_URL).
 - Replay tests: typed strings per language through autocorrect and
   conversion, so a change can't quietly make typing worse.
 - Settings and the personal dictionary back up to the Mac mini, so a new
-  phone is set up in one step.
+  phone is set up in one step (done 2026-11-09: `keys backup` / `keys
+  restore`, daily on the Mac mini).

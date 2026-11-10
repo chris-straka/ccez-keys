@@ -24,6 +24,45 @@ import uk.ccez.keys.core.KeysException
 class Control : ContentProvider() {
     override fun onCreate() = true
 
+    /**
+     * `adb exec-out content read --uri content://uk.ccez.keys.control/backup`:
+     * the backup (Backup.kt) as a stream, any size. `content write --uri
+     * …/restore` takes one back, then the keyboard starts afresh to read it
+     * (Android brings the chosen keyboard straight back).
+     */
+    override fun openFile(uri: Uri, mode: String): android.os.ParcelFileDescriptor {
+        val uid = Binder.getCallingUid()
+        if (uid != Process.SHELL_UID && uid != Process.ROOT_UID && uid != Process.myUid()) {
+            throw SecurityException("only adb may control ccez-keys")
+        }
+        val app = App.instance
+        val (read, write) = android.os.ParcelFileDescriptor.createPipe()
+        when (uri.path) {
+            "/backup" -> {
+                Thread {
+                    runCatching { android.os.ParcelFileDescriptor.AutoCloseOutputStream(write).use { it.write(Backup.export(app).toByteArray()) } }
+                        .onFailure { app.log("error", "backup", "error" to it.toString()) }
+                }.start()
+                return read
+            }
+            "/restore" -> {
+                Thread {
+                    try {
+                        val text = android.os.ParcelFileDescriptor.AutoCloseInputStream(read).use { it.readBytes().decodeToString() }
+                        val said = Backup.import(app, text)
+                        app.log("info", "restore", "result" to said)
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ Process.killProcess(Process.myPid()) }, 500)
+                    } catch (e: Exception) {
+                        app.log("error", "restore", "error" to e.toString())
+                    }
+                }.start()
+                return write
+            }
+        }
+        read.close(); write.close()
+        throw java.io.FileNotFoundException("no ${uri.path}")
+    }
+
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         val uid = Binder.getCallingUid()
         if (uid != Process.SHELL_UID && uid != Process.ROOT_UID && uid != Process.myUid()) {
