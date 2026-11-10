@@ -52,17 +52,21 @@ fn toks(engine: &ccez_keys_core::Engine, lang: &str, text: &str, ruby: &[(String
             })
             .collect();
     }
-    engine
-        .strip_words(lang.into(), text.into())
-        .into_iter()
-        .map(|w| Tok {
-            key: if w.lemma.is_empty() { w.text.clone() } else { w.lemma.clone() },
-            text: w.text,
-            reading: String::new(),
-            word: w.word,
-            status: status(w.status),
-        })
-        .collect()
+    let mut toks = Vec::new();
+    for w in engine.strip_words(lang.into(), text.into()) {
+        let key = if w.lemma.is_empty() { w.text.clone() } else { w.lemma.clone() };
+        let st = status(w.status);
+        // Japanese and Chinese from the core's dictionaries (where the engine gave
+        // none): each piece with its reading, standing for the whole word.
+        if w.ruby.iter().any(|r| !r.rt.is_empty()) {
+            for r in w.ruby {
+                toks.push(Tok { text: r.text, reading: r.rt, word: w.word, key: key.clone(), status: st });
+            }
+        } else {
+            toks.push(Tok { text: w.text, reading: String::new(), word: w.word, key, status: st });
+        }
+    }
+    toks
 }
 
 #[derive(Clone)]

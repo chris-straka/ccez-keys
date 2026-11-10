@@ -23,11 +23,11 @@ fn files(lang: &str) -> Vec<&'static str> {
     }
 }
 
-fn fetch(url: &str, to: &Path) -> bool {
+pub fn fetch(url: &str, to: &Path) -> bool {
     Command::new("curl").args(["-sSfL", "--max-time", "300", "-o"]).arg(to).arg(url).status().is_ok_and(|s| s.success())
 }
 
-fn sha256(path: &Path) -> Option<String> {
+pub fn sha256(path: &Path) -> Option<String> {
     use sha2::{Digest, Sha256};
     let bytes = std::fs::read(path).ok()?;
     Some(Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect())

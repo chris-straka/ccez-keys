@@ -12,6 +12,8 @@ pub struct Prefs {
     pub off: Vec<String>,
     /// Quiet-by-default apps turned back on.
     pub on: Vec<String>,
+    /// Paused from the menu or settings (Linux and Windows keep it here).
+    pub paused: bool,
     /// "Open at login" was set on the first start (on, as decided); after
     /// that it's the owner's, from the menu.
     pub login_set: bool,
@@ -19,12 +21,12 @@ pub struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { shown: 6, readings: true, off: vec![], on: vec![], login_set: false }
+        Prefs { shown: 6, readings: true, off: vec![], on: vec![], paused: false, login_set: false }
     }
 }
 
-fn path(dir: &std::path::Path) -> PathBuf {
-    dir.join("mac.json")
+pub fn path(dir: &std::path::Path) -> PathBuf {
+    dir.join(if cfg!(target_os = "macos") { "mac.json" } else { "desktop.json" })
 }
 
 impl Prefs {
@@ -38,12 +40,13 @@ impl Prefs {
             readings: v["readings"].as_bool().unwrap_or(d.readings),
             off: list("off"),
             on: list("on"),
+            paused: v["paused"].as_bool().unwrap_or(false),
             login_set: v["login_set"].as_bool().unwrap_or(false),
         }
     }
 
     pub fn save(&self, dir: &std::path::Path) {
-        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "login_set": self.login_set});
+        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set});
         let tmp = path(dir).with_extension("tmp");
         if std::fs::write(&tmp, v.to_string()).is_ok() {
             let _ = std::fs::rename(&tmp, path(dir));
