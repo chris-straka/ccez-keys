@@ -45,19 +45,19 @@ mod app {
     use crate::worker::{Ask, Worker};
     use crate::{ax, worker};
 
-    /// How long the preview stays after typing stops (⌥ brings it back): a
-    /// minute (owner, 2026-11-09). It goes at once on leaving the field or
-    /// app, sending (the field empties) or a new line.
-    const LINGER: Duration = Duration::from_secs(60);
+    /// How long the preview stays once it shows (⌥ brings it back): 8 s, and
+    /// a longer sentence longer, to read it (a tenth of a second a character
+    /// past 40, up to 20 s). It goes at once on typing again, leaving the
+    /// field or app, sending (the field empties) or a new line.
+    fn linger(chars: usize) -> Duration {
+        Duration::from_millis(8000 + (chars.saturating_sub(40) as u64 * 100).min(12_000))
+    }
     /// The words of a line still being translated ("…" held in its place).
     const PENDING: &str = "\u{1}pending";
     /** The pause in typing that asks for a translation. */
     const PAUSE: Duration = Duration::from_millis(200);
     /** Typing has stopped this long: the preview may show (never while typing). */
     const STILL: Duration = Duration::from_millis(500);
-    /** Languages come one at a time (Apple's translator): shown together when all
-     * are in, or what's ready after this long, the rest held open. */
-    const ALL_IN: Duration = Duration::from_millis(1500);
 
     /// Apps where nothing shows (docs/mac.md, decision 4): terminals, code
     /// editors, password managers, Claude.
@@ -92,12 +92,11 @@ mod app {
         changed: Cell<Instant>,
         seq: Cell<u64>,
         asked: Cell<bool>,
-        asked_at: Cell<Instant>,
         /** Every language of the newest ask is in. */
         complete: Cell<bool>,
         woken: RefCell<std::collections::HashSet<i32>>,
         line: RefCell<Vec<crate::view::Row>>,
-        /** When the preview last changed on screen: it stays LINGER from then. */
+        /** When the preview last changed on screen: it stays `linger` from then. */
         appeared: Cell<Instant>,
     }
 
@@ -210,7 +209,6 @@ mod app {
         // Translated once typing pauses a moment, not for every letter.
         if !app.asked.get() && app.changed.get().elapsed() >= PAUSE {
             app.asked.set(true);
-            app.asked_at.set(Instant::now());
             app.complete.set(false);
             app.seq.set(app.seq.get() + 1);
             let shown = app.prefs.borrow().shown;
@@ -229,18 +227,21 @@ mod app {
             if shown.seq == app.seq.get() {
                 let line = render(app, &shown);
                 *app.line.borrow_mut() = line;
-                app.appeared.set(Instant::now());
+                // It shows when the last language is in: counted from then.
+                if shown.pending.is_empty() {
+                    app.appeared.set(Instant::now());
+                }
                 app.complete.set(shown.pending.is_empty());
             } else {
                 // An older sentence's: put back for nothing, wait for the newest.
             }
         }
-        // Not while typing; once stopped, every language together (or what's in
-        // after a moment); then a while from when it showed.
+        // Not while typing; once stopped, when every language is in (they come
+        // one at a time), all together; then a while from when it showed.
         let typing = app.changed.get().elapsed() < STILL;
-        let ready = app.complete.get() || app.asked_at.get().elapsed() >= ALL_IN;
-        let recent = app.changed.get().elapsed() < LINGER || app.appeared.get().elapsed() < LINGER;
-        let fresh = (recent && !typing && ready) || option_held();
+        let stay = linger(app.sentence.borrow().chars().count());
+        let recent = app.appeared.get().elapsed() < stay;
+        let fresh = (recent && !typing && app.complete.get()) || option_held();
         let line = app.line.borrow();
         if fresh && !line.is_empty() {
             app.view.show(mtm, &line, app.caret.get());
@@ -413,8 +414,11 @@ mod app {
             })
             .collect();
         view.show(mtm, &lines, ax::Place { caret: Some(ax::Rect { x: 300.0, y: 300.0, w: 2.0, h: 18.0 }), frame: None });
+        // Fades in, stays a moment, fades out, quits.
+        let out = RcBlock::new(move |_t: NonNull<NSTimer>| view.hide());
+        unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(1.5, false, &out) };
         let quit = RcBlock::new(move |_t: NonNull<NSTimer>| std::process::exit(0));
-        unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(6.0, false, &quit) };
+        unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(2.3, false, &quit) };
         nsapp.run();
     }
 
@@ -534,7 +538,6 @@ mod app {
             changed: Cell::new(Instant::now()),
             seq: Cell::new(0),
             asked: Cell::new(true),
-            asked_at: Cell::new(Instant::now()),
             complete: Cell::new(true),
             woken: RefCell::default(),
             line: RefCell::default(),

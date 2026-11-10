@@ -93,6 +93,29 @@ objc2::define_class!(
     }
 );
 
+/// Fades a panel in (from wherever it is) or out (then takes it off screen,
+/// unless `on` says it was asked back meanwhile).
+fn fade(panel: &NSPanel, visible: bool, on: std::rc::Rc<std::cell::Cell<bool>>) {
+    use objc2::Message;
+    use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
+    if visible && !panel.isVisible() {
+        panel.setAlphaValue(0.0);
+        panel.orderFrontRegardless();
+    }
+    let target = panel.retain();
+    let change = block2::RcBlock::new(move |ctx: std::ptr::NonNull<NSAnimationContext>| {
+        unsafe { ctx.as_ref() }.setDuration(if visible { 0.18 } else { 0.3 });
+        target.animator().setAlphaValue(if visible { 1.0 } else { 0.0 });
+    });
+    let gone = panel.retain();
+    let done = block2::RcBlock::new(move || {
+        if !visible && !on.get() {
+            gone.orderOut(None);
+        }
+    });
+    NSAnimationContext::runAnimationGroup_completionHandler(&change, Some(&done));
+}
+
 /// The pointing hand over `b` (a word), even though the preview never has focus.
 fn pointer(b: &NSButton) {
     use objc2::AllocAnyThread;
@@ -114,14 +137,14 @@ fn line_button(mtm: MainThreadMarker, title: &str, clicker: &Clicker) -> Retaine
 pub struct View {
     panel: Retained<NSPanel>,
     bg: Retained<NSBox>,
-    shown: std::cell::Cell<bool>,
+    shown: std::rc::Rc<std::cell::Cell<bool>>,
     /// What's laid out now (rebuilt only when it changes).
     rows: std::cell::RefCell<Vec<Row>>,
     size: std::cell::Cell<(f64, f64)>,
     pub clicker: Retained<Clicker>,
     card: Retained<NSPanel>,
     card_bg: Retained<NSBox>,
-    pub card_open: std::cell::Cell<bool>,
+    pub card_open: std::rc::Rc<std::cell::Cell<bool>>,
     card_size: std::cell::Cell<(f64, f64)>,
 }
 
@@ -248,13 +271,13 @@ impl View {
         View {
             panel,
             bg,
-            shown: std::cell::Cell::new(false),
+            shown: Default::default(),
             rows: Default::default(),
             size: std::cell::Cell::new((0.0, 0.0)),
             clicker,
             card,
             card_bg,
-            card_open: std::cell::Cell::new(false),
+            card_open: Default::default(),
             card_size: std::cell::Cell::new((0.0, 0.0)),
         }
     }
@@ -379,8 +402,8 @@ impl View {
             self.place_card(mtm);
         }
         if !self.shown.get() {
-            self.panel.orderFrontRegardless();
             self.shown.set(true);
+            fade(&self.panel, true, self.shown.clone());
         }
     }
 
@@ -390,8 +413,8 @@ impl View {
             self.close_card();
         }
         if self.shown.get() {
-            self.panel.orderOut(None);
             self.shown.set(false);
+            fade(&self.panel, false, self.shown.clone());
         }
     }
 
@@ -453,13 +476,17 @@ impl View {
         self.card_size.set((w, h));
         self.place_card(mtm);
         self.card_bg.setFrame(rect(0.0, 0.0, w, h));
-        self.card.orderFrontRegardless();
-        self.card_open.set(true);
+        if !self.card_open.get() {
+            self.card_open.set(true);
+            fade(&self.card, true, self.card_open.clone());
+        }
     }
 
     pub fn close_card(&self) {
-        self.card.orderOut(None);
-        self.card_open.set(false);
+        if self.card_open.get() {
+            self.card_open.set(false);
+            fade(&self.card, false, self.card_open.clone());
+        }
     }
 }
 
