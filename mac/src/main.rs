@@ -557,7 +557,7 @@ mod app {
         let menu = Menu::new();
         let pause = MenuItem::new("Pause", true, None);
         let shown_menu = Submenu::new("Languages shown", true);
-        let counts: Vec<(usize, CheckMenuItem)> = [2usize, 4, 6, 8, 0]
+        let counts: Vec<(usize, CheckMenuItem)> = [1usize, 2, 4, 6, 8, 0]
             .iter()
             .map(|&n| (n, CheckMenuItem::new(if n == 0 { "All".to_string() } else { n.to_string() }, true, app.prefs.borrow().shown == n, None)))
             .collect();
