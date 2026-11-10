@@ -7,13 +7,16 @@
 //! on-device translator, through a small Swift helper).
 
 #[cfg(target_os = "macos")]
+mod apple;
+#[cfg(target_os = "macos")]
 mod ax;
+mod model;
 #[cfg(target_os = "macos")]
 mod keys;
-#[cfg(target_os = "macos")]
 mod learn;
-#[cfg(target_os = "macos")]
+mod paths;
 mod prefs;
+mod preview;
 #[cfg(target_os = "macos")]
 mod meaning;
 #[cfg(target_os = "macos")]
@@ -29,7 +32,7 @@ mod app {
     use std::cell::{Cell, RefCell};
     use std::io::Write;
     use std::ptr::NonNull;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     use block2::RcBlock;
     use objc2::MainThreadMarker;
@@ -42,22 +45,10 @@ mod app {
     use ccez_keys_core::text::{looks_secret, sentence_of};
 
     use crate::view::View;
-    use crate::worker::{Ask, Worker};
+    use crate::worker::Worker;
     use crate::{ax, worker};
 
-    /// How long the preview stays once it shows (⌥ brings it back): 8 s, and
-    /// a longer sentence longer, to read it (a tenth of a second a character
-    /// past 40, up to 20 s). It goes at once on typing again, leaving the
-    /// field or app, sending (the field empties) or a new line.
-    fn linger(chars: usize) -> Duration {
-        Duration::from_millis(8000 + (chars.saturating_sub(40) as u64 * 100).min(12_000))
-    }
-    /// The words of a line still being translated ("…" held in its place).
-    const PENDING: &str = "\u{1}pending";
-    /** The pause in typing that asks for a translation. */
-    const PAUSE: Duration = Duration::from_millis(200);
-    /** Typing has stopped this long: the preview may show (never while typing). */
-    const STILL: Duration = Duration::from_millis(500);
+    use crate::preview::PENDING;
 
     /// Apps where nothing shows (docs/mac.md, decision 4): terminals, code
     /// editors, password managers, Claude.
@@ -81,28 +72,12 @@ mod app {
          * the key its meaning-here comes back under. */
         card_view: RefCell<Option<(String, String, String, u8, String)>>,
         meanings: std::sync::Arc<crate::meaning::Meanings>,
-        /** A translation put in place of the sentence (right-click): not translated
-         * again while the sentence still starts with it. */
-        swapped: RefCell<String>,
-        /** The sentence the shown line translates (asked), and the one being asked. */
-        line_for: RefCell<String>,
-        asking: RefCell<String>,
         prefs: RefCell<crate::prefs::Prefs>,
         /** The app being typed in (bundle id, name): the menu's "Off in …" is about it. */
         typing_in: RefCell<Option<(String, String)>>,
-        sentence: RefCell<String>,
-        caret: Cell<ax::Place>,
-        changed: Cell<Instant>,
-        seq: Cell<u64>,
-        asked: Cell<bool>,
-        /** Every language of the newest ask is in. */
-        complete: Cell<bool>,
         woken: RefCell<std::collections::HashSet<i32>>,
-        line: RefCell<Vec<crate::view::Row>>,
-        /** When the preview last changed on screen: it stays `linger` from then. */
-        appeared: Cell<Instant>,
-        /** When the pointer was last over the preview: it stays while it is, and a moment after. */
-        hovered: Cell<Option<Instant>>,
+        /** When it shows and what it says (the same on every system). */
+        preview: RefCell<crate::preview::Preview>,
     }
 
     pub fn log(level: &str, what: &str) {
@@ -114,10 +89,7 @@ mod app {
     }
 
     fn dirs() -> std::path::PathBuf {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        let d = std::path::PathBuf::from(home).join("Library/Application Support/ccez-keys");
-        let _ = std::fs::create_dir_all(&d);
-        d
+        crate::paths::data()
     }
 
     fn flags() -> std::collections::HashMap<String, String> {
@@ -148,78 +120,25 @@ mod app {
                 *app.typing_in.borrow_mut() = Some((bundle, name));
             }
         }
-        if app.paused.get() || frontmost().is_some_and(|b| quiet(app, &b)) {
-            app.view.hide();
-            return;
-        }
+        let off = app.paused.get() || frontmost().is_some_and(|b| quiet(app, &b));
         // Electron and Chrome apps: asked once to share their fields.
-        if let Some(pid) = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())
-            && app.woken.borrow_mut().insert(pid) {
-                ax::wake(pid);
-            }
-        let field = ax::focused();
-        let Some(field) = field.filter(|f| !f.secure) else {
-            app.view.hide();
-            app.sentence.borrow_mut().clear();
-            app.line.borrow_mut().clear();
-            return;
-        };
-        // The sentence typed, still shown after its full stop and a space (as on
-        // the phone); a new line or an emptied field starts blank (sentence_of).
-        let sentence = sentence_of(field.before.clone());
-        // Just swapped in for a translation (and typed on from there): nothing to show.
+        if !off
+            && let Some(pid) = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())
+            && app.woken.borrow_mut().insert(pid)
         {
-            let mut sw = app.swapped.borrow_mut();
-            if !sw.is_empty() {
-                if sentence.starts_with(sw.as_str()) {
-                    app.view.hide();
-                    return;
-                }
-                sw.clear();
-            }
+            ax::wake(pid);
         }
-        // Nothing secret is ever shown or translated: the sentence, or what's near it.
-        let tail: String = field.before.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
-        if sentence.trim().is_empty() || looks_secret(tail) || looks_secret(sentence.clone()) {
-            app.view.hide();
-            if !app.sentence.borrow().is_empty() {
-                // An answer still on its way for the old sentence is dropped.
-                app.seq.set(app.seq.get() + 1);
-            }
-            app.sentence.borrow_mut().clear();
-            // A new or emptied field starts blank, not with the last translation.
-            app.line.borrow_mut().clear();
-            return;
+        let field = if off { None } else { ax::focused() };
+        let answer = app.worker.out.lock().unwrap().take();
+        let langs = app.langs.clone();
+        let shown = app.prefs.borrow().shown;
+        let inputs = crate::preview::Inputs { now: Instant::now(), off, field, held: option_held(), under_mouse: app.view.under_mouse(mtm), shown, langs: &langs };
+        let out = app.preview.borrow_mut().tick(inputs, answer, &|s| render(app, s));
+        if out.close_card {
+            app.view.close_card();
         }
-        if *app.sentence.borrow() != sentence {
-            // Another sentence (not this one typed on): the old translation goes at once.
-            let old = app.sentence.borrow().clone();
-            let n = old.chars().count().min(sentence.chars().count()).min(12);
-            if n == 0 || old.chars().take(n).ne(sentence.chars().take(n)) {
-                app.line.borrow_mut().clear();
-                app.view.close_card();
-            } else {
-                // Typed on: lines still waiting were for the old words; the next answer brings them.
-                app.line.borrow_mut().retain(|r| !r.toks.iter().any(|t| t.key == PENDING));
-            }
-            *app.sentence.borrow_mut() = sentence.clone();
-            // Answers for what was there before don't belong to this one.
-            app.seq.set(app.seq.get() + 1);
-            app.caret.set(ax::Place { caret: field.caret, frame: field.frame });
-            app.changed.set(Instant::now());
-            app.asked.set(false);
-        } else if field.caret.is_some() || field.frame.is_some() {
-            app.caret.set(ax::Place { caret: field.caret, frame: field.frame });
-        }
-        // Translated once typing pauses a moment, not for every letter.
-        if !app.asked.get() && app.changed.get().elapsed() >= PAUSE {
-            app.asked.set(true);
-            app.complete.set(false);
-            app.seq.set(app.seq.get() + 1);
-            let shown = app.prefs.borrow().shown;
-            let langs: Vec<String> = if shown == 0 { app.langs.clone() } else { app.langs.iter().take(shown + 2).cloned().collect() };
-            *app.asking.borrow_mut() = sentence.clone();
-            app.worker.ask(Ask { seq: app.seq.get(), text: sentence, from: "en".into(), langs, max: if shown == 0 { usize::MAX } else { shown } });
+        if let Some(ask) = out.ask {
+            app.worker.ask(ask);
         }
         // A card's meaning-here, arriving after it opened.
         if let Some((k, here)) = app.meanings.out.lock().unwrap().take()
@@ -229,34 +148,9 @@ mod app {
         {
             app.view.open_card(mtm, &head, &sub, &card_text(Some(&here), &dict), st);
         }
-        if let Some(shown) = app.worker.out.lock().unwrap().take() {
-            if shown.seq == app.seq.get() {
-                let line = render(app, &shown);
-                *app.line.borrow_mut() = line;
-                *app.line_for.borrow_mut() = app.asking.borrow().clone();
-                // It shows when the last language is in: counted from then.
-                if shown.pending.is_empty() {
-                    app.appeared.set(Instant::now());
-                }
-                app.complete.set(shown.pending.is_empty());
-            } else {
-                // An older sentence's: put back for nothing, wait for the newest.
-            }
-        }
-        // Not while typing; once stopped, when every language is in (they come
-        // one at a time), all together; then a while from when it showed.
-        let typing = app.changed.get().elapsed() < STILL;
-        let stay = linger(app.sentence.borrow().chars().count());
-        let recent = app.appeared.get().elapsed() < stay;
-        if app.view.under_mouse(mtm) {
-            app.hovered.set(Some(Instant::now()));
-        }
-        // Under the pointer it stays (typing still takes it away).
-        let hovered = app.hovered.get().is_some_and(|t| t.elapsed() < Duration::from_secs(1));
-        let fresh = ((recent || hovered) && !typing && app.complete.get()) || option_held();
-        let line = app.line.borrow();
-        if fresh && !line.is_empty() {
-            app.view.show(mtm, &line, app.caret.get());
+        let p = app.preview.borrow();
+        if out.show {
+            app.view.show(mtm, &p.line, p.place);
         } else {
             app.view.hide();
         }
@@ -350,14 +244,15 @@ mod app {
     /// while the same field still holds the same text; ⌘Z undoes it.
     fn swap(app: &App, row: usize) {
         use unicode_segmentation::UnicodeSegmentation;
-        let rows = app.line.borrow().clone();
+        let rows = app.preview.borrow().line.clone();
         let Some(r) = rows.get(row).filter(|r| !r.toks.iter().any(|t| t.key == PENDING)) else { return };
         let text: String = r.toks.iter().map(|t| t.text.as_str()).collect::<String>().trim().to_string();
         let Some(f) = ax::focused().filter(|f| !f.secure) else { return };
         let sentence = sentence_of(f.before.clone());
         // Only a whole translation of the sentence as it is now (not one kept
         // from fewer words while typing on), never anything secret-looking.
-        if sentence.is_empty() || sentence != *app.sentence.borrow() || *app.line_for.borrow() != sentence || !app.complete.get() {
+        let fits = { let p = app.preview.borrow(); p.sentence == sentence && p.line_for == sentence && p.complete };
+        if sentence.is_empty() || !fits {
             return;
         }
         if looks_secret(f.before.clone()) || looks_secret(sentence.clone()) {
@@ -398,8 +293,7 @@ mod app {
             }
         };
         log("info", &format!("swapped a sentence for {} ({how})", r.lang));
-        *app.swapped.borrow_mut() = text;
-        app.line.borrow_mut().clear();
+        app.preview.borrow_mut().swapped_in(text);
         app.view.hide();
     }
 
@@ -558,29 +452,18 @@ mod app {
         }
         let app: &'static App = Box::leak(Box::new(App {
             view: View::new(mtm),
-            worker: Worker::start(engine.clone(), log),
+            worker: Worker::start(engine.clone(), Box::new(|| crate::apple::Helper::start().map(|h| Box::new(h) as Box<dyn worker::Translator>)), log),
             engine: engine.clone(),
             card: RefCell::default(),
             card_view: RefCell::default(),
             meanings: crate::meaning::Meanings::new(&dirs()),
-            swapped: RefCell::default(),
-            line_for: RefCell::default(),
-            asking: RefCell::default(),
             langs,
             flags: flags(),
             paused: Cell::new(false),
             prefs: RefCell::new(crate::prefs::Prefs::load(&dirs())),
             typing_in: RefCell::default(),
-            sentence: RefCell::default(),
-            caret: Cell::new(ax::Place::default()),
-            changed: Cell::new(Instant::now()),
-            seq: Cell::new(0),
-            asked: Cell::new(true),
-            complete: Cell::new(true),
             woken: RefCell::default(),
-            line: RefCell::default(),
-            appeared: Cell::new(Instant::now()),
-            hovered: Cell::new(None),
+            preview: RefCell::new(crate::preview::Preview::new(Instant::now())),
         }));
 
         // The menu: pause, how many languages, readings, off in this app, the
@@ -659,21 +542,21 @@ mod app {
                         app.view.close_card();
                         *app.card.borrow_mut() = None;
                         // Asked again: the cached translation comes back with the new status.
-                        app.sentence.borrow_mut().clear();
+                        app.preview.borrow_mut().redo();
                     }
                     t if t <= -1_000_000 => swap(app, (-1_000_000 - t) as usize),
                     t if t <= -1000 => {
                         // A line's flag, marks or blank space: the line read aloud and copied.
-                        let rows = app.line.borrow().clone();
+                        let rows = app.preview.borrow().line.clone();
                         if let Some(r) = rows.get((-1000 - t) as usize).filter(|r| !r.toks.iter().any(|t| t.key == PENDING)) {
                             let text: String = r.toks.iter().map(|t| t.text.as_str()).collect::<String>().trim().to_string();
                             crate::speak::say(&r.lang, &text);
                             copy(&text);
-                            app.appeared.set(Instant::now());
+                            app.preview.borrow_mut().touch(Instant::now());
                         }
                     }
                     t if t >= 0 => {
-                        let rows = app.line.borrow().clone();
+                        let rows = app.preview.borrow().line.clone();
                         let (ri, ti) = ((t / crate::view::WORDS) as usize, (t % crate::view::WORDS) as usize);
                         let Some(tok) = rows.get(ri).and_then(|r| r.toks.get(ti).map(|tk| (r.lang.clone(), tk.clone()))) else { return };
                         let (lang, mut tok) = tok;
@@ -709,7 +592,7 @@ mod app {
                         *app.card_view.borrow_mut() = Some((head, sub, meaning, st, mkey));
                         *app.card.borrow_mut() = Some((lang, key, tok.text.clone()));
                         // The card stays as long as the preview, counted from the click.
-                        app.appeared.set(Instant::now());
+                        app.preview.borrow_mut().touch(Instant::now());
                     }
                     _ => {}
                 }
@@ -731,7 +614,7 @@ mod app {
                     } else if e.id == readings_id {
                         app.prefs.borrow_mut().readings = readings.is_checked();
                         app.prefs.borrow().save(&dirs());
-                        app.sentence.borrow_mut().clear();
+                        app.preview.borrow_mut().redo();
                     } else if e.id == off_id {
                         if let Some((bundle, _)) = app.typing_in.borrow().clone() {
                             let mut p = app.prefs.borrow_mut();
@@ -751,7 +634,7 @@ mod app {
                         for (m, c) in &counts {
                             c.set_checked(m == n);
                         }
-                        app.sentence.borrow_mut().clear();
+                        app.preview.borrow_mut().redo();
                     }
                 }
                 // "Off in Claude": the menu names the app being typed in (every second or so).

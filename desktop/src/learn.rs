@@ -28,8 +28,25 @@ fn fetch(url: &str, to: &Path) -> bool {
 }
 
 fn sha256(path: &Path) -> Option<String> {
-    let out = Command::new("shasum").args(["-a", "256"]).arg(path).output().ok()?;
-    String::from_utf8_lossy(&out.stdout).split_whitespace().next().map(str::to_string)
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path).ok()?;
+    Some(Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// A zip's files, flat (no folders), into `into`.
+fn unzip_flat(file: &Path, into: &Path) -> Result<(), String> {
+    let mut z = zip::ZipArchive::new(std::fs::File::open(file).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).map_err(|e| e.to_string())?;
+        if f.is_dir() {
+            continue;
+        }
+        // Only the file's own name: nothing lands outside `into`.
+        let Some(name) = f.enclosed_name().and_then(|p| p.file_name().map(|n| n.to_owned())) else { continue };
+        let mut out = std::fs::File::create(into.join(name)).map_err(|e| e.to_string())?;
+        std::io::copy(&mut f, &mut out).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Fetches and installs `lang`'s dictionary unless it's there.
@@ -53,7 +70,7 @@ fn ensure(engine: &Engine, lang: &str, sums: &[(String, String)], tmp: &Path, lo
         let r = if name == "ipadic.zip" {
             let into = Path::new(&engine.dictionary_dir()).join("ipadic");
             let _ = std::fs::create_dir_all(&into);
-            Command::new("unzip").args(["-o", "-j", "-q"]).arg(&file).arg("-d").arg(&into).status().map(|_| ()).map_err(|e| e.to_string())
+            unzip_flat(&file, &into)
         } else if name == "ja-pitch.tsv.gz" {
             engine.install_pitch(p).map_err(|e| e.to_string())
         } else {
@@ -71,8 +88,8 @@ fn ensure(engine: &Engine, lang: &str, sums: &[(String, String)], tmp: &Path, lo
 /// five minutes (and at once).
 pub fn start(engine: Arc<Engine>, dir: std::path::PathBuf, log: impl Fn(&str, &str) + Send + 'static) {
     if engine.setting("words.server".into()).map(|v| v.trim_matches('"').is_empty()).unwrap_or(true) {
-        let file = std::env::var("HOME").map(|h| Path::new(&h).join(SERVER_FILE));
-        if let Some(url) = file.ok().and_then(|f| std::fs::read_to_string(f).ok()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        let file = crate::paths::home().join(SERVER_FILE);
+        if let Some(url) = std::fs::read_to_string(file).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
             let _ = engine.set_setting("words.server".into(), serde_json::Value::String(url).to_string());
         }
     }

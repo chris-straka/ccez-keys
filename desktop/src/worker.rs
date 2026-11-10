@@ -3,12 +3,11 @@
 //! always the newest asked for, answers kept for the session.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
 /// A sentence to show in `langs`, in order.
+#[derive(Debug)]
 pub struct Ask {
     pub seq: u64,
     pub text: String,
@@ -24,7 +23,7 @@ pub struct Ask {
 #[derive(Clone)]
 pub struct Line {
     pub lang: String,
-    pub toks: Vec<crate::view::Tok>,
+    pub toks: Vec<crate::model::Tok>,
 }
 
 fn status(s: ccez_keys_core::WordStatus) -> u8 {
@@ -39,8 +38,8 @@ fn status(s: ccez_keys_core::WordStatus) -> u8 {
 /// words (readings over them), the rest through the dictionary (a form counts
 /// as its word).
 /// `ruby`: (text, reading, the word it's part of when a word is split up).
-fn toks(engine: &ccez_keys_core::Engine, lang: &str, text: &str, ruby: &[(String, String, String)]) -> Vec<crate::view::Tok> {
-    use crate::view::Tok;
+fn toks(engine: &ccez_keys_core::Engine, lang: &str, text: &str, ruby: &[(String, String, String)]) -> Vec<crate::model::Tok> {
+    use crate::model::Tok;
     if !ruby.is_empty() {
         return ruby
             .iter()
@@ -82,63 +81,32 @@ pub struct Worker {
     pub missing: Arc<Mutex<Vec<String>>>,
 }
 
-struct Helper {
-    _child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    id: u64,
+/// A translation and, for Japanese and Chinese, its pieces with readings:
+/// (text, reading, the word it's part of when a word is split up).
+pub type Translated = (String, Vec<(String, String, String)>);
+
+/// An engine that translates one sentence at a time: Apple's on the Mac,
+/// a local model elsewhere.
+pub trait Translator: Send {
+    fn translate(&mut self, from: &str, to: &str, text: &str) -> Result<Translated, String>;
 }
 
-impl Helper {
-    fn start() -> Option<Helper> {
-        let exe = std::env::current_exe().ok()?;
-        let path = exe.with_file_name("ccez-keys-translate");
-        let mut child = Command::new(path).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
-        let stdin = child.stdin.take()?;
-        let stdout = BufReader::new(child.stdout.take()?);
-        Some(Helper { _child: child, stdin, stdout, id: 0 })
-    }
-
-    fn translate(&mut self, from: &str, to: &str, text: &str) -> Result<(String, Vec<(String, String, String)>), String> {
-        self.id += 1;
-        let ask = serde_json::json!({"id": self.id, "from": from, "to": to, "text": text, "readings": true});
-        writeln!(self.stdin, "{ask}").map_err(|e| e.to_string())?;
-        self.stdin.flush().map_err(|e| e.to_string())?;
-        let mut line = String::new();
-        self.stdout.read_line(&mut line).map_err(|e| e.to_string())?;
-        let v: serde_json::Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
-        let ruby = v
-            .get("ruby")
-            .and_then(|r| r.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|p| {
-                        let whole = p.get(2).and_then(|w| w.as_str()).unwrap_or("").to_string();
-                        Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_str()?.to_string(), whole))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        match v.get("text").and_then(|t| t.as_str()) {
-            Some(t) => Ok((t.to_string(), ruby)),
-            None => Err(v.get("error").and_then(|e| e.as_str()).unwrap_or("no answer").to_string()),
-        }
-    }
-}
+/// Starts a translator (again, after it stopped); None when there's none.
+pub type Start = Box<dyn Fn() -> Option<Box<dyn Translator>> + Send>;
 
 impl Worker {
-    pub fn start(engine: std::sync::Arc<ccez_keys_core::Engine>, log: impl Fn(&str, &str) + Send + 'static) -> Worker {
+    pub fn start(engine: std::sync::Arc<ccez_keys_core::Engine>, start: Start, log: impl Fn(&str, &str) + Send + 'static) -> Worker {
         let (tx, rx): (Sender<Ask>, Receiver<Ask>) = channel();
         let out: Arc<Mutex<Option<Shown>>> = Arc::default();
         let put = out.clone();
         let missing_out: Arc<Mutex<Vec<String>>> = Arc::default();
         let missing_put = missing_out.clone();
         std::thread::spawn(move || {
-            let mut helper = Helper::start();
+            let mut helper = start();
             if helper.is_none() {
                 log("error", "translator helper didn't start");
             }
-            let mut cache: HashMap<(String, String), (String, Vec<(String, String, String)>)> = HashMap::new();
+            let mut cache: HashMap<(String, String), Translated> = HashMap::new();
             let mut next: Option<Ask> = None;
             loop {
                 let Some(mut ask) = next.take().or_else(|| rx.recv().ok()) else { break };
@@ -169,7 +137,7 @@ impl Worker {
                             }
                             Err(e) => {
                                 if e.contains("Broken pipe") {
-                                    helper = Helper::start();
+                                    helper = start();
                                 } else {
                                     let mut missing = missing_put.lock().unwrap();
                                     if !missing.contains(lang) {

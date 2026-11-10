@@ -10,34 +10,15 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
-use crate::ax::{Place, Rect};
+use crate::model::{Place, Rect};
+pub use crate::model::{Row, Tok};
 
 /// Widest the line may be, in points: longer, the start gives way to "…".
 const MAX_W: f64 = 560.0;
 const PAD_X: f64 = 12.0;
 const PAD_Y: f64 = 7.0;
 
-/// A word on the preview (or a space or mark between words).
-#[derive(Clone, PartialEq, Debug)]
-pub struct Tok {
-    pub text: String,
-    /// Furigana or pinyin to put over it ("" for none).
-    pub reading: String,
-    /// A word (clickable), not a space or a mark.
-    pub word: bool,
-    /// Its dictionary form, for its status and card.
-    pub key: String,
-    /// 0 new, 1 learning, 2 known.
-    pub status: u8,
-}
 
-/// One language on the preview: its flag and its words.
-#[derive(Clone, PartialEq, Debug)]
-pub struct Row {
-    pub lang: String,
-    pub flag: String,
-    pub toks: Vec<Tok>,
-}
 
 thread_local! {
     /// What a click on a word or a card button does (set by the app).

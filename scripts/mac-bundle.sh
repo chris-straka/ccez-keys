@@ -12,13 +12,14 @@ KC="$DIR/signing.keychain-db"
 VERSION="${1:-0.1.$(git rev-list --count HEAD)}"
 SHA1="$(cat "$DIR/signing-cert.sha1")"
 
-cargo build --release -p ccez-keys-mac
+cargo build --release -p ccez-keys-desktop
 APP=dist/ccez-keys.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp target/release/ccez-keys-mac "$APP/Contents/MacOS/"
-swiftc -O -o "$APP/Contents/MacOS/ccez-keys-translate" mac/swift/translate.swift
-sed "s/@VERSION@/$VERSION/g" mac/Info.plist > "$APP/Contents/Info.plist"
+# The bundle keeps its executable name (Accessibility knows the app by it).
+cp target/release/ccez-keys-desktop "$APP/Contents/MacOS/ccez-keys-mac"
+swiftc -O -o "$APP/Contents/MacOS/ccez-keys-translate" desktop/swift/translate.swift
+sed "s/@VERSION@/$VERSION/g" desktop/Info.plist > "$APP/Contents/Info.plist"
 
 security unlock-keychain -p "$(cat "$DIR/keychain-password")" "$KC"
 sign() { codesign --force --timestamp=none --keychain "$KC" --sign "$SHA1" "$@"; }

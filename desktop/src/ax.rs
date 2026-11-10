@@ -9,6 +9,8 @@ use objc2_foundation::NSString;
 
 type Ref = *const c_void;
 
+pub use crate::model::{Field, Place, Rect};
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 struct CFRange {
@@ -16,14 +18,6 @@ struct CFRange {
     length: isize,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Default, Debug)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub w: f64,
-    pub h: f64,
-}
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -110,24 +104,7 @@ pub fn trusted(prompt: bool) -> bool {
     unsafe { AXIsProcessTrustedWithOptions(&*dict as *const _ as Ref) }
 }
 
-/// Where to keep the preview clear of: the cursor and the field it's in.
-#[derive(Clone, Copy, Default, Debug)]
-pub struct Place {
-    pub caret: Option<Rect>,
-    pub frame: Option<Rect>,
-}
 
-/// The focused text field now.
-pub struct Field {
-    /// Its role and subrole (AXTextField / AXTextArea; AXSecureTextField for passwords).
-    pub secure: bool,
-    /// Its text up to the cursor.
-    pub before: String,
-    /// The cursor on screen (top-left origin, points), when the app says.
-    pub caret: Option<Rect>,
-    /// The field itself on screen (same coordinates), when the app says.
-    pub frame: Option<Rect>,
-}
 
 /// Where the field is on screen: its frame, from AXPosition and AXSize.
 fn frame_of(el: Ref) -> Option<Rect> {
