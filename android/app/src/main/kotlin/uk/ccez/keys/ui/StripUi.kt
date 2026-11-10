@@ -488,3 +488,61 @@ fun AskPanel(a: uk.ccez.keys.learn.AskState, typist: Typist) {
     }
 }
 
+
+/**
+ * One of the owner's Learning words, on an empty field (the keyboard just
+ * opened): flag, the word with its article (furigana or pinyin over it), its
+ * meaning, Known and Later. Tap the word: its card. Swipe: another word.
+ */
+@Composable
+fun ReviewRow(f: uk.ccez.keys.learn.Review.Face, typist: Typist) {
+    var drag by remember { mutableFloatStateOf(0f) }
+    Row(
+        Modifier.fillMaxSize().background(STRIP_BG)
+            .pointerInput(f.word) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { if (kotlin.math.abs(drag) > 60f) typist.reviewNext(); drag = 0f },
+                    onDragCancel = { drag = 0f },
+                ) { _, d -> drag += d }
+            }
+            .padding(start = 8.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.weight(1f).clipToBounds().combinedClickable(onClick = { typist.reviewOpen() }),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MutedFlag(f.flag, 15)
+            Spacer(Modifier.width(8.dp))
+            if (f.article.isNotEmpty()) {
+                Text(if (f.article.endsWith("'")) f.article else "${f.article} ", color = Colors.dim, fontSize = 15.sp, modifier = Modifier.alignBy(androidx.compose.ui.layout.LastBaseline))
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.alignBy(androidx.compose.ui.layout.LastBaseline)) {
+                if (f.reading.isNotEmpty()) Text(f.reading, color = Colors.muted, fontSize = 9.5.sp, lineHeight = 11.sp, maxLines = 1)
+                Text(f.word, color = Colors.fg, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                f.meaning.ifEmpty { f.form },
+                color = Colors.muted,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.alignBy(androidx.compose.ui.layout.LastBaseline),
+            )
+        }
+        ReviewButton("Known") { typist.reviewKnown() }
+        Spacer(Modifier.width(6.dp))
+        ReviewButton("Later") { typist.reviewLater() }
+    }
+}
+
+@Composable
+private fun ReviewButton(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = Colors.fg,
+        fontSize = 13.sp,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF2A2A2C)).combinedClickable(onClick = onClick).padding(horizontal = 11.dp, vertical = 5.dp),
+    )
+}

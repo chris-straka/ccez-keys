@@ -151,8 +151,10 @@ private fun StripBand(ui: UiState, typist: Typist) {
     Box(Modifier.fillMaxWidth().height(STRIP_H).background(Color(0xFF181818))) {
         val tip = ui.tip
         val strip = ui.strip
-        Crossfade(if (tip != null) 2 else if (strip != null) 1 else 0, animationSpec = tween(120), label = "strip") { which ->
+        val review = ui.review
+        Crossfade(if (tip != null) 2 else if (strip != null) 1 else if (review != null) 3 else 0, animationSpec = tween(120), label = "strip") { which ->
             when (which) {
+                3 -> review?.let { ReviewRow(it, typist) }
                 2 -> tip?.let { TipNote(it, typist) }
                 1 -> strip?.let { StripRow(it, typist) }
                 else -> Box(Modifier.fillMaxSize())

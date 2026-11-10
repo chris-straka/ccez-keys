@@ -40,6 +40,8 @@ class UiState {
     var strip by mutableStateOf<uk.ccez.keys.learn.StripView?>(null)
     var card by mutableStateOf<uk.ccez.keys.learn.CardView?>(null)
     var tip by mutableStateOf<uk.ccez.keys.learn.Tip?>(null)
+    /** One of the owner's Learning words, in the strip when the keyboard opens on an empty field. */
+    var review by mutableStateOf<uk.ccez.keys.learn.Review.Face?>(null)
     /** A kaomoji worth offering (chat apps). */
     var face by mutableStateOf<String?>(null)
     var voice by mutableStateOf<uk.ccez.keys.learn.VoiceState?>(null)

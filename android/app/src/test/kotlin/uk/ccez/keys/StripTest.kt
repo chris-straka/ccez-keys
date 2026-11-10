@@ -33,4 +33,11 @@ class StripTest {
         assertEquals(null, articleFrom("de", "ein", "Buch"))
     }
 
+    @Test fun reviewArticles() {
+        assertEquals("", uk.ccez.keys.learn.Review.article("l'ardoise", "une"))
+        assertEquals("", uk.ccez.keys.learn.Review.article("la gare", "la"))
+        assertEquals("la", uk.ccez.keys.learn.Review.article("gare", "la"))
+        assertEquals("", uk.ccez.keys.learn.Review.article("Bahnhof", ""))
+        assertEquals("el", uk.ccez.keys.learn.Review.article("libro", "el"))
+    }
 }

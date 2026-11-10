@@ -342,6 +342,19 @@ class Strip(private val ui: UiState) {
         return true
     }
 
+    /** A word's card with no sentence around it (a word to review): said as it opens. */
+    fun openWord(lang: String, word: String) {
+        ui.card?.let { c -> if (c.lang == lang && c.word == word) { ui.card = null; return } }
+        Speaker.say(app, word, lang)
+        app.scope.launch {
+            val card = engine.wordCard(lang, word, "")
+            val meaning = if (card?.meanings.isNullOrEmpty()) Translator.translate(word, lang, defaultLang()) else null
+            val reading = card?.reading?.takeIf { it.isNotEmpty() && it != word }.orEmpty()
+            val view = CardView(lang, word, card?.lemma.orEmpty(), card, meaning, reading, null, null, asking = false, article = Review.article(word, card?.article.orEmpty()))
+            withContext(Dispatchers.Main) { ui.card = view }
+        }
+    }
+
     fun open(lang: String, w: StripWord) {
         // The same word again: its card closes.
         ui.card?.let { c -> if (c.lang == lang && c.word == w.text) { ui.card = null; return } }
