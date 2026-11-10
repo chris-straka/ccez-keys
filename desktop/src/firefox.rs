@@ -73,6 +73,18 @@ impl Firefox {
     }
 }
 
+/// A question typed without its "?" ("Where is the station"): these models
+/// drop the verb without it (Korean "기차역은 어디"), so it's added.
+pub fn as_typed(text: &str) -> String {
+    const ASKING: &[&str] = &[
+        "who", "what", "where", "when", "why", "how", "which", "whose", "is", "are", "am", "was", "were", "can", "could", "do", "does", "did",
+        "will", "would", "should", "shall", "may", "might", "have", "has",
+    ];
+    let t = text.trim_end();
+    let first = t.split_whitespace().next().unwrap_or("").to_lowercase();
+    if ASKING.contains(&first.as_str()) && !t.ends_with(['.', '!', '?', ',', ';', ':']) && t.split_whitespace().count() >= 3 { format!("{t}?") } else { t.to_string() }
+}
+
 impl Translator for Firefox {
     fn translate(&mut self, from: &str, to: &str, text: &str) -> Result<Translated, String> {
         if from != "en" {
@@ -80,6 +92,20 @@ impl Translator for Firefox {
         }
         let e = self.engine(to)?;
         // Readings for Japanese and Chinese come from the core's dictionaries (worker::toks).
-        Ok((e.translate(text), Vec::new()))
+        Ok((e.translate(&as_typed(text)), Vec::new()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::as_typed;
+
+    #[test]
+    fn questions_get_their_mark() {
+        assert_eq!(as_typed("Where is the train station"), "Where is the train station?");
+        assert_eq!(as_typed("Can you help me"), "Can you help me?");
+        assert_eq!(as_typed("Where is it."), "Where is it.");
+        assert_eq!(as_typed("I am going home"), "I am going home");
+        assert_eq!(as_typed("Is it"), "Is it");
     }
 }

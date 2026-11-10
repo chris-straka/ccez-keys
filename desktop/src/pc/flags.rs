@@ -44,7 +44,7 @@ pub struct Flags {
 
 fn decode(bytes: &[u8]) -> Option<ColorImage> {
     let mut r = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().ok()?;
-    let mut buf = vec![0; r.output_buffer_size()?];
+    let mut buf = vec![0; r.output_buffer_size()];
     let info = r.next_frame(&mut buf).ok()?;
     let rgba: Vec<u8> = match info.color_type {
         png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
