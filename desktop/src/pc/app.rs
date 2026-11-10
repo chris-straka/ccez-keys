@@ -309,34 +309,33 @@ impl App {
             }
             let mut action: Option<u8> = None;
             if let Some(c) = &self.card {
-                ui.separator();
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(&c.head).size(20.0).strong().color(Color32::WHITE));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(Label::new(RichText::new("✕").size(13.0)).sense(Sense::click())).clicked() {
+                // At most 300 wide: the window grows to its content, so nothing here may stretch.
+                ui.scope(|ui| {
+                    ui.set_max_width(300.0);
+                    ui.add_space(4.0);
+                    ui.add(egui::Separator::default().horizontal().shrink(0.0));
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(&c.head).size(20.0).strong().color(Color32::WHITE));
+                        ui.add_space(14.0);
+                        if ui.add(Label::new(RichText::new("✕").size(13.0).color(Color32::from_rgb(185, 185, 190))).sense(Sense::click())).on_hover_cursor(CursorIcon::PointingHand).clicked() {
                             action = Some(0);
                         }
                     });
-                });
-                if !c.sub.is_empty() {
-                    ui.label(RichText::new(&c.sub).size(11.5).color(Color32::from_rgb(185, 185, 190)));
-                }
-                ui.scope(|ui| {
-                    ui.set_max_width(300.0);
+                    if !c.sub.is_empty() {
+                        ui.label(RichText::new(&c.sub).size(11.5).color(Color32::from_rgb(185, 185, 190)));
+                    }
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                     ui.add(Label::new(RichText::new(&c.meaning).size(13.0).color(Color32::from_rgb(218, 218, 222))).wrap());
-                });
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 18.0;
-                    let lit = |on: bool| if on { Color32::from_rgb(250, 140, 115) } else { Color32::from_rgb(242, 242, 242) };
-                    if ui.add(Label::new(RichText::new("Learning").size(13.0).color(lit(c.status == 1))).sense(Sense::click())).clicked() {
-                        action = Some(1);
-                    }
-                    if ui.add(Label::new(RichText::new("Known").size(13.0).color(lit(c.status == 2))).sense(Sense::click())).clicked() {
-                        action = Some(2);
-                    }
-                    if ui.add(Label::new(RichText::new("Copy").size(13.0)).sense(Sense::click())).clicked() {
-                        action = Some(3);
-                    }
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 18.0;
+                        let lit = |on: bool| if on { Color32::from_rgb(250, 140, 115) } else { Color32::from_rgb(242, 242, 242) };
+                        for (label, on, n) in [("Learning", c.status == 1, 1u8), ("Known", c.status == 2, 2), ("Copy", false, 3)] {
+                            if ui.add(Label::new(RichText::new(label).size(13.0).color(lit(on))).sense(Sense::click())).on_hover_cursor(CursorIcon::PointingHand).clicked() {
+                                action = Some(n);
+                            }
+                        }
+                    });
                 });
             }
             match action {
