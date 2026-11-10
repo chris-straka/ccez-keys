@@ -56,7 +56,10 @@ impl Access {
         let _ = async_io::block_on(atspi::connection::set_session_accessibility(true));
         let a11y = async_io::block_on(atspi::AccessibilityConnection::new()).ok()?;
         let conn = a11y.connection().clone();
-        let focused: Arc<Mutex<Option<(String, String)>>> = Arc::default();
+        // What has the keyboard already (events only tell of changes).
+        let first = async_io::block_on(find_focused(&conn));
+        let focused: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(first));
+        let debug = std::env::var_os("CCEZ_DEBUG").is_some();
         let put = focused.clone();
         std::thread::spawn(move || {
             async_io::block_on(async move {
@@ -65,6 +68,9 @@ impl Access {
                 let _ = a11y.register_event::<FocusEvent>().await;
                 let mut events = a11y.event_stream();
                 while let Some(ev) = events.next().await {
+                    if debug {
+                        eprintln!("event {ev:?}");
+                    }
                     let item = match ev {
                         Ok(Event::Object(ObjectEvents::StateChanged(e))) if e.state == State::Focused && e.enabled => e.item,
                         Ok(Event::Object(ObjectEvents::TextCaretMoved(e))) => e.item,
@@ -83,6 +89,33 @@ impl Access {
     fn current(&self) -> Option<(String, String)> {
         self.focused.lock().unwrap().clone()
     }
+}
+
+/// The focused, editable object, found by walking each app's tree (at most a
+/// few thousand objects): for when nothing has moved since the app started.
+async fn find_focused(conn: &zbus::Connection) -> Option<(String, String)> {
+    let root = proxy!(AccessibleProxy, conn, "org.a11y.atspi.Registry", "/org/a11y/atspi/accessible/root").await?;
+    let mut todo: Vec<(String, String)> = root.get_children().await.ok()?.iter().filter_map(|c| Some((c.name()?.to_string(), c.path().to_string()))).collect();
+    let mut seen = 0;
+    while let Some((name, path)) = todo.pop() {
+        seen += 1;
+        if seen > 4000 {
+            break;
+        }
+        let Some(acc) = proxy!(AccessibleProxy, conn, &name, &path).await else { continue };
+        let Ok(states) = acc.get_state().await else { continue };
+        if states.contains(State::Focused) && (states.contains(State::Editable) || acc.get_role().await.ok() == Some(Role::PasswordText)) {
+            return Some((name, path));
+        }
+        // Hidden parts of apps can't hold the keyboard.
+        if !states.contains(State::Showing) && seen > 1 {
+            continue;
+        }
+        if let Ok(children) = acc.get_children().await {
+            todo.extend(children.iter().filter_map(|c| Some((c.name()?.to_string(), c.path().to_string()))));
+        }
+    }
+    None
 }
 
 impl crate::pc::Access for Access {
