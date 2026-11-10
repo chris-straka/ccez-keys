@@ -317,7 +317,7 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(&c.head).size(20.0).strong().color(Color32::WHITE));
                         ui.add_space(14.0);
-                        if ui.add(Label::new(RichText::new("✕").size(13.0).color(Color32::from_rgb(185, 185, 190))).sense(Sense::click())).on_hover_cursor(CursorIcon::PointingHand).clicked() {
+                        if ui.add(Label::new(RichText::new("×").size(15.0).color(Color32::from_rgb(185, 185, 190))).sense(Sense::click())).on_hover_cursor(CursorIcon::PointingHand).clicked() {
                             action = Some(0);
                         }
                     });
