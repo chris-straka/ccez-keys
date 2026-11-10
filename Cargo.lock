@@ -311,6 +311,7 @@ dependencies = [
  "objc2-foundation",
  "serde_json",
  "tray-icon",
+ "unicode-segmentation",
 ]
 
 [[package]]

@@ -29,14 +29,19 @@ fn curl(url: &str, to: Option<&Path>) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// An app bundle's own version (CFBundleShortVersionString).
+fn version_of(app: &Path) -> Option<String> {
+    let plist = std::fs::read_to_string(app.join("Contents/Info.plist")).ok()?;
+    let at = plist.find("CFBundleShortVersionString")?;
+    let rest = &plist[at..];
+    Some(rest.split("<string>").nth(1)?.split("</string>").next()?.trim().to_string())
+}
+
 /// The app bundle this runs from, and its version.
 fn me() -> Option<(PathBuf, String)> {
     let exe = std::env::current_exe().ok()?;
     let app = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app"))?.to_path_buf();
-    let plist = std::fs::read_to_string(app.join("Contents/Info.plist")).ok()?;
-    let at = plist.find("CFBundleShortVersionString")?;
-    let rest = &plist[at..];
-    let v = rest.split("<string>").nth(1)?.split("</string>").next()?.to_string();
+    let v = version_of(&app)?;
     Some((app, v))
 }
 
@@ -67,35 +72,56 @@ pub fn check(log: &dyn Fn(&str, &str), relaunch: bool) -> bool {
         ok
     };
     let zip = tmp.join("app.zip");
-    let (Some(_), Some(sum)) = (curl(&zip_url, Some(&zip)), curl(&sum_url, None)) else { return done(false, "update: download failed") };
+    let (Some(_), Some(sum)) = (curl(&zip_url, Some(&zip)), curl(&sum_url, None)) else {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return done(false, "update: download failed");
+    };
     let want = sum.split_whitespace().next().unwrap_or("").to_string();
     let got = Command::new("shasum").args(["-a", "256"]).arg(&zip).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().next().unwrap_or("").to_string());
     if want.is_empty() || got.as_deref() != Some(want.as_str()) {
+        let _ = std::fs::remove_dir_all(&tmp);
         return done(false, &format!("update {tag}: checksum mismatch"));
     }
     let unpacked = tmp.join("x");
     let ok = Command::new("ditto").args(["-x", "-k"]).arg(&zip).arg(&unpacked).status().is_ok_and(|s| s.success());
     let new_app = unpacked.join("ccez-keys.app");
     if !ok || !new_app.exists() {
+        let _ = std::fs::remove_dir_all(&tmp);
         return done(false, &format!("update {tag}: unpack failed"));
+    }
+    // The app inside must be the release it says it is, and newer than this one
+    // (an old build under a new tag would be a downgrade, and install again and again).
+    let theirs = version_of(&new_app).unwrap_or_default();
+    if parse(&theirs) != parse(tag) || !newer(&theirs, &mine) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return done(false, &format!("update {tag}: the app inside is {theirs:?}"));
     }
     // Signed by the same certificate as this app, or not taken.
     let req = Command::new("codesign").args(["-d", "-r-"]).arg(&app).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned() + &String::from_utf8_lossy(&o.stderr));
     let req = req.as_deref().and_then(|r| r.lines().find_map(|l| l.strip_prefix("designated => "))).map(str::to_string);
-    let Some(req) = req else { return done(false, "update: no signature to match") };
+    let Some(req) = req else {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return done(false, "update: no signature to match");
+    };
     let same = Command::new("codesign").args(["--verify", "--deep", "--strict", &format!("-R={req}")]).arg(&new_app).status().is_ok_and(|s| s.success());
     if !same {
+        let _ = std::fs::remove_dir_all(&tmp);
         return done(false, &format!("update {tag}: not signed like this app"));
     }
-    // Swapped in: the old one aside first, put back if the move fails.
-    let old = tmp.join("old.app");
+    // Swapped in: the old one aside first (beside it, same disk), put back whole if the new one won't go.
+    let old = app.with_extension("app-old");
+    let _ = std::fs::remove_dir_all(&old);
     if std::fs::rename(&app, &old).is_err() {
+        let _ = std::fs::remove_dir_all(&tmp);
         return done(false, "update: can't move the app");
     }
     if std::fs::rename(&new_app, &app).is_err() && Command::new("ditto").arg(&new_app).arg(&app).status().map_or(true, |s| !s.success()) {
+        let _ = std::fs::remove_dir_all(&app);
         let _ = std::fs::rename(&old, &app);
+        let _ = std::fs::remove_dir_all(&tmp);
         return done(false, "update: can't put the new app in place");
     }
+    let _ = std::fs::remove_dir_all(&old);
     let _ = Command::new("xattr").args(["-dr", "com.apple.quarantine"]).arg(&app).status();
     done(true, &format!("updated {mine} → {tag}"));
     if !relaunch {

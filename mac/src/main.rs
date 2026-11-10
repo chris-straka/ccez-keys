@@ -84,6 +84,9 @@ mod app {
         /** A translation put in place of the sentence (right-click): not translated
          * again while the sentence still starts with it. */
         swapped: RefCell<String>,
+        /** The sentence the shown line translates (asked), and the one being asked. */
+        line_for: RefCell<String>,
+        asking: RefCell<String>,
         prefs: RefCell<crate::prefs::Prefs>,
         /** The app being typed in (bundle id, name): the menu's "Off in …" is about it. */
         typing_in: RefCell<Option<(String, String)>>,
@@ -177,7 +180,7 @@ mod app {
         }
         // Nothing secret is ever shown or translated: the sentence, or what's near it.
         let tail: String = field.before.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
-        if sentence.trim().is_empty() || looks_secret(tail) {
+        if sentence.trim().is_empty() || looks_secret(tail) || looks_secret(sentence.clone()) {
             app.view.hide();
             if !app.sentence.borrow().is_empty() {
                 // An answer still on its way for the old sentence is dropped.
@@ -215,6 +218,7 @@ mod app {
             app.seq.set(app.seq.get() + 1);
             let shown = app.prefs.borrow().shown;
             let langs: Vec<String> = if shown == 0 { app.langs.clone() } else { app.langs.iter().take(shown + 2).cloned().collect() };
+            *app.asking.borrow_mut() = sentence.clone();
             app.worker.ask(Ask { seq: app.seq.get(), text: sentence, from: "en".into(), langs, max: if shown == 0 { usize::MAX } else { shown } });
         }
         // A card's meaning-here, arriving after it opened.
@@ -229,6 +233,7 @@ mod app {
             if shown.seq == app.seq.get() {
                 let line = render(app, &shown);
                 *app.line.borrow_mut() = line;
+                *app.line_for.borrow_mut() = app.asking.borrow().clone();
                 // It shows when the last language is in: counted from then.
                 if shown.pending.is_empty() {
                     app.appeared.set(Instant::now());
@@ -341,34 +346,58 @@ mod app {
 
     /// Right-click on a line: that translation in place of the sentence typed
     /// (spaces after it kept). Through Accessibility where the app takes it,
-    /// otherwise selected and typed over, or deleted and typed; ⌘Z undoes it.
+    /// else typed over the selected sentence, else deleted and typed, only
+    /// while the same field still holds the same text; ⌘Z undoes it.
     fn swap(app: &App, row: usize) {
+        use unicode_segmentation::UnicodeSegmentation;
         let rows = app.line.borrow().clone();
         let Some(r) = rows.get(row).filter(|r| !r.toks.iter().any(|t| t.key == PENDING)) else { return };
         let text: String = r.toks.iter().map(|t| t.text.as_str()).collect::<String>().trim().to_string();
         let Some(f) = ax::focused().filter(|f| !f.secure) else { return };
         let sentence = sentence_of(f.before.clone());
-        // Only the sentence this line translates, as it is now.
-        if sentence.is_empty() || sentence != *app.sentence.borrow() || looks_secret(f.before.clone()) {
+        // Only a whole translation of the sentence as it is now (not one kept
+        // from fewer words while typing on), never anything secret-looking.
+        if sentence.is_empty() || sentence != *app.sentence.borrow() || *app.line_for.borrow() != sentence || !app.complete.get() {
+            return;
+        }
+        if looks_secret(f.before.clone()) || looks_secret(sentence.clone()) {
             return;
         }
         let trimmed = f.before.trim_end();
         if !trimmed.ends_with(sentence.as_str()) {
             return;
         }
-        let trailing = &f.before[trimmed.len()..];
+        let front = || NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier());
+        let app_then = front();
+        let trailing = f.before[trimmed.len()..].to_string();
         let end = trimmed.encode_utf16().count();
         let len = sentence.encode_utf16().count();
-        let (done, selected) = ax::replace_range(end - len, len, &text);
-        if !done {
-            if selected {
-                crate::keys::type_text(&text);
-            } else {
-                crate::keys::delete(sentence.chars().count() + trailing.chars().count());
-                crate::keys::type_text(&format!("{text}{trailing}"));
+        let how = match ax::replace_range(end - len, len, &text) {
+            ax::Put::Done => "accessibility",
+            put => {
+                // Typing goes to whatever has the keyboard: only if that's still this field, as it was.
+                let now = ax::focused();
+                let same = front() == app_then && now.as_ref().is_some_and(|n| !n.secure);
+                if !same {
+                    log("info", "swap skipped: the field changed");
+                    return;
+                }
+                if put == ax::Put::Selected && ax::selection() == Some((end - len, len)) {
+                    crate::keys::type_text(&text);
+                    "typed over"
+                } else if now.as_ref().is_some_and(|n| n.before == f.before) && ax::selection() == Some((f.before.encode_utf16().count(), 0)) {
+                    // Delete takes a whole visible character (an emoji of several chars too).
+                    let n = sentence.graphemes(true).count() + trailing.graphemes(true).count();
+                    crate::keys::delete(n);
+                    crate::keys::type_text(&format!("{text}{trailing}"));
+                    "retyped"
+                } else {
+                    log("info", "swap skipped: the field moved on");
+                    return;
+                }
             }
-        }
-        log("info", &format!("swapped a sentence for {} ({})", r.lang, if done { "accessibility" } else if selected { "typed over" } else { "retyped" }));
+        };
+        log("info", &format!("swapped a sentence for {} ({how})", r.lang));
         *app.swapped.borrow_mut() = text;
         app.line.borrow_mut().clear();
         app.view.hide();
@@ -535,6 +564,8 @@ mod app {
             card_view: RefCell::default(),
             meanings: crate::meaning::Meanings::new(&dirs()),
             swapped: RefCell::default(),
+            line_for: RefCell::default(),
+            asking: RefCell::default(),
             langs,
             flags: flags(),
             paused: Cell::new(false),
@@ -643,7 +674,7 @@ mod app {
                     }
                     t if t >= 0 => {
                         let rows = app.line.borrow().clone();
-                        let (ri, ti) = ((t / 1000) as usize, (t % 1000) as usize);
+                        let (ri, ti) = ((t / crate::view::WORDS) as usize, (t % crate::view::WORDS) as usize);
                         let Some(tok) = rows.get(ri).and_then(|r| r.toks.get(ti).map(|tk| (r.lang.clone(), tk.clone()))) else { return };
                         let (lang, mut tok) = tok;
                         // Japanese and Chinese: a kanji or hanzi clicked is its whole word.

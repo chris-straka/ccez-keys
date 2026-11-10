@@ -59,6 +59,9 @@ objc2::define_class!(
     }
 );
 
+/// A word's click tag: row * WORDS + its index in the row.
+pub const WORDS: isize = 100_000;
+
 /// A row's right-click tag (-1_000_000 - row): its line replaces the sentence typed.
 pub fn swap_tag(row: usize) -> isize {
     -1_000_000 - row as isize
@@ -87,7 +90,7 @@ objc2::define_class!(
         #[unsafe(method(rightMouseDown:))]
         fn right_mouse_down(&self, _event: &objc2_app_kit::NSEvent) {
             let tag = self.tag();
-            let row = if tag >= 0 { tag / 1000 } else if tag <= -1000 && tag > -1_000_000 { -1000 - tag } else { return };
+            let row = if tag >= 0 { tag / WORDS } else if tag <= -1000 && tag > -1_000_000 { -1000 - tag } else { return };
             CLICK.with(|c| if let Some(f) = c.borrow().as_ref() { f(swap_tag(row as usize)) });
         }
     }
@@ -283,7 +286,7 @@ impl View {
     }
 
     /// Lays the rows out afresh: flag, then the words (readings over them).
-    /// Each word's button tag is row * 1000 + its index.
+    /// Each word's button tag is row * WORDS + its index.
     fn build(&self, mtm: MainThreadMarker, rows: &[Row]) -> (f64, f64) {
         let Some(content) = self.bg.contentView() else { return (0.0, 0.0) };
         for v in content.subviews().iter() {
@@ -315,7 +318,7 @@ impl View {
                     continue;
                 }
                 let v: Retained<objc2_app_kit::NSView> = if t.word {
-                    let b = word_button(mtm, &self.clicker, t, size, (ri * 1000 + ti) as isize);
+                    let b = word_button(mtm, &self.clicker, t, size, (ri * WORDS as usize + ti) as isize);
                     pointer(&b);
                     objc2::rc::Retained::into_super(objc2::rc::Retained::into_super(b))
                 } else {

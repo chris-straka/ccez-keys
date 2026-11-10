@@ -62,6 +62,8 @@ pub fn wake(pid: i32) {
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFRelease(r: Ref);
+    fn CFGetTypeID(r: Ref) -> usize;
+    fn CFStringGetTypeID() -> usize;
 }
 
 const AX_CGPOINT: u32 = 1;
@@ -91,6 +93,10 @@ fn attr(el: Ref, name: &str) -> Option<Owned> {
 }
 
 fn string(r: &Owned) -> Option<String> {
+    // Only a string is read as one (an app may answer a number or nothing).
+    if unsafe { CFGetTypeID(r.0) != CFStringGetTypeID() } {
+        return None;
+    }
     // CFString and NSString are the same object.
     let ns = unsafe { &*(r.0 as *const NSString) };
     Some(ns.to_string())
@@ -216,32 +222,52 @@ pub fn describe() -> String {
     format!("role={} subrole={} frame={:?}", get("AXRole"), get("AXSubrole"), frame_of(el.0))
 }
 
+/// What putting text in place of a range came to.
+#[derive(Debug, PartialEq)]
+pub enum Put {
+    /// The field holds it now.
+    Done,
+    /// The range is selected (the app wouldn't take the text): typing replaces it.
+    Selected,
+    /// Neither: the field is left as it was.
+    Nothing,
+}
+
+/// The focused field's selection (UTF-16 units), if it says.
+pub fn selection() -> Option<(usize, usize)> {
+    let el = focused_element(0.5)?;
+    let r = attr(el.0, "AXSelectedTextRange")?;
+    let mut got = CFRange::default();
+    let ok = unsafe { AXValueGetValue(r.0, AX_CFRANGE, &mut got as *mut _ as *mut c_void) };
+    ok.then_some((got.location.max(0) as usize, got.length.max(0) as usize))
+}
+
 /// The focused field's text range `start..start+len` (UTF-16 units, as AX
-/// counts) replaced by `text` through Accessibility. False when the app
-/// doesn't take it (many web and Electron fields): then `selected` says
-/// whether at least the range is selected, so typing replaces it.
-pub fn replace_range(start: usize, len: usize, text: &str) -> (bool, bool) {
-    let Some(el) = focused_element(0.5) else { return (false, false) };
+/// counts) replaced by `text` through Accessibility. Web and Electron fields
+/// apply changes a moment later, so it looks again after a pause; a field
+/// that took neither the text nor the selection is left alone.
+pub fn replace_range(start: usize, len: usize, text: &str) -> Put {
+    let Some(el) = focused_element(0.5) else { return Put::Nothing };
     let range = CFRange { location: start as isize, length: len as isize };
     let value = Owned(unsafe { AXValueCreate(AX_CFRANGE, &range as *const _ as *const c_void) });
     let name = s("AXSelectedTextRange");
     unsafe { AXUIElementSetAttributeValue(el.0, Retained::as_ptr(&name) as Ref, value.0) };
-    let selected = attr(el.0, "AXSelectedTextRange").is_some_and(|r| {
-        let mut got = CFRange::default();
-        let ok = unsafe { AXValueGetValue(r.0, AX_CFRANGE, &mut got as *mut _ as *mut c_void) };
-        ok && got.location == range.location && got.length == range.length
-    });
-    if !selected {
-        return (false, false);
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    if selection() != Some((start, len)) {
+        return Put::Nothing;
     }
     let before = attr(el.0, "AXValue").and_then(|r| string(&r)).unwrap_or_default();
     let new = s(text);
     let name = s("AXSelectedText");
     let err = unsafe { AXUIElementSetAttributeValue(el.0, Retained::as_ptr(&name) as Ref, Retained::as_ptr(&new) as Ref) };
-    // Taken only if the field now holds it where the sentence was.
+    std::thread::sleep(std::time::Duration::from_millis(150));
     let after = attr(el.0, "AXValue").and_then(|r| string(&r)).unwrap_or_default();
-    let units: Vec<u16> = after.encode_utf16().collect();
-    let want: Vec<u16> = text.encode_utf16().collect();
-    let done = err == 0 && after != before && units.get(start..start + want.len()) == Some(&want[..]);
-    (done, true)
+    if err == 0 && after != before {
+        // Taken (web fields may store its spaces as no-break ones: any change counts).
+        Put::Done
+    } else if selection() == Some((start, len)) {
+        Put::Selected
+    } else {
+        Put::Nothing
+    }
 }
