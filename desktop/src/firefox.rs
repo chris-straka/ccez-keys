@@ -73,6 +73,26 @@ impl Firefox {
     }
 }
 
+/// Characters the vocabulary hasn't got come out as their bytes ("<0xC3><0xB9>"
+/// for "ù"): put back together.
+pub fn bytes_back(text: &str) -> String {
+    let mut out: Vec<u8> = Vec::with_capacity(text.len());
+    let b = text.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'<' && i + 6 <= b.len() && &b[i + 1..i + 3] == b"0x" && b[i + 5] == b'>' {
+            if let Ok(v) = u8::from_str_radix(&text[i + 3..i + 5], 16) {
+                out.push(v);
+                i += 6;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// A question typed without its "?" ("Where is the station"): these models
 /// drop the verb without it (Korean "기차역은 어디"), so it's added.
 pub fn as_typed(text: &str) -> String {
@@ -92,13 +112,20 @@ impl Translator for Firefox {
         }
         let e = self.engine(to)?;
         // Readings for Japanese and Chinese come from the core's dictionaries (worker::toks).
-        Ok((e.translate(&as_typed(text)), Vec::new()))
+        Ok((bytes_back(&e.translate(&as_typed(text))), Vec::new()))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::as_typed;
+    use super::{as_typed, bytes_back};
+
+    #[test]
+    fn bytes_come_back_as_letters() {
+        assert_eq!(bytes_back("O<0xC3><0xB9> est la gare"), "Où est la gare");
+        assert_eq!(bytes_back("a <0x> b"), "a <0x> b");
+        assert_eq!(bytes_back("plain"), "plain");
+    }
 
     #[test]
     fn questions_get_their_mark() {

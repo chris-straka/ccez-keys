@@ -183,7 +183,8 @@ impl crate::pc::Access for Access {
             if !e.delete_text(start, end).await.ok()? {
                 return Some(Err("the field wouldn't change".to_string()));
             }
-            let ok = e.insert_text(start, &text, text.chars().count() as i32).await.ok()?;
+            // Its length in bytes, as AT-SPI (ATK) counts it ("ù" is two).
+            let ok = e.insert_text(start, &text, text.len() as i32).await.ok()?;
             Some(if ok { Ok("at-spi") } else { Err("the field wouldn't take it".to_string()) })
         })
         .unwrap_or_else(|| Err("the field didn't answer".into()))
