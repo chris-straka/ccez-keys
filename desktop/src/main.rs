@@ -1,3 +1,6 @@
+// Windows: no console window behind the app.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 //! ccez-keys for the Mac: while you type English anywhere, a small panel
 //! under the cursor shows the sentence in the languages you're learning
 //! (docs/mac.md). A menu bar app, on at login.
