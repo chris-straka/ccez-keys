@@ -1,9 +1,10 @@
 // Windows: no console window behind the app.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-//! ccez-keys for the Mac: while you type English anywhere, a small panel
-//! under the cursor shows the sentence in the languages you're learning
-//! (docs/mac.md). A menu bar app, on at login.
+//! ccez-keys on the desktop: while you type English anywhere, a small panel
+//! by the cursor shows the sentence in the languages you're learning
+//! (docs/mac.md). On the Mac a menu bar app (this file's `app`); on Linux and
+//! Windows the same preview drawn with egui (pc/). On at login.
 //!
 //! Main thread: AppKit, a poll of the focused field (Accessibility) every
 //! 150 ms, the panel. A worker thread translates on the Mac (Apple's

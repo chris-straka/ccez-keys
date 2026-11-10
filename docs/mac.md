@@ -54,28 +54,32 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
   Region page (Translation Languages is there) and names any language the
   Mac couldn't translate into.
 
-## Windows and Linux, later (owner, 2026-11-09)
+## Windows and Linux (built 2026-11-10)
 
-Not Tauri: the hard parts are each system's own (reading the focused field,
-a window that floats by the cursor without taking focus), and a web view
-adds a browser engine to a few lines of text. One Rust core, a thin native
-shell per system, as on the Mac.
+Owner asked for both; not Tauri: one Rust app (`desktop/`), the Mac's own
+panel, egui on Linux and Windows. What it does and when is shared code
+(`preview.rs`, tested), so a change to the rules changes all three.
 
-### Linux
-- The focused field and caret through AT-SPI (the accessibility bus GTK, Qt,
-  Firefox and Chromium apps talk on).
-- Placing a window by the cursor: X11 allows it; Wayland lets apps place
-  their own windows only through layer-shell (KDE, Sway, Hyprland), so on
-  GNOME Wayland the preview sits at a fixed spot.
-- Translation as on Windows (Bergamot); speech through Speech Dispatcher.
-
-### Windows
-
-The same app for Microsoft Windows, sharing the Rust core and the menu's
-choices:
-- The focused field and its cursor through UI Automation (TextPattern2's
-  caret range and bounds), a tray icon in place of the menu bar.
-- Windows has no built-in offline translator for apps: Firefox's offline
-  models (Bergamot) bundled per language, or Windows' on-device AI where the
-  PC has it. The ⓘ item then opens the app's own language downloads.
-- Speech through Windows' own voices (natural ones where installed).
+- Translation: Mozilla's Firefox Translations models through fxtranslate
+  (pure Rust), ~35-50 MB a language, fetched once from this repo's
+  `models-firefox-1` release (`scripts/desktop-models.py`), then offline.
+  A question typed without its "?" gets one first (the models drop the verb).
+- Readings: the core's own Japanese and Chinese dictionaries.
+- Linux: the field through AT-SPI (focus and caret events, a tree walk at
+  start), replaced through EditableText; speech through `spd-say`. The
+  preview is an X11 override-redirect window (never focused). GNOME on
+  Wayland can't place windows: there it sits where the compositor puts it.
+  Settings: the app list's "ccez-keys" (`--settings`); GNOME has no tray.
+  Checked on f in a virtual screen (Xvfb) against a GTK field: reads it,
+  translates, flags, furigana, card, right-click replace.
+- Windows: the field through UI Automation (on its own thread, 300 ms
+  limit), replaced by selecting the sentence and typing; speech through
+  System.Speech; the window never activates (WS_EX_NOACTIVATE); a tray icon
+  (Settings…, Pause, Quit). Built and tested on GitHub's Windows machines;
+  no one has seen it on screen (the owner has no Windows PC).
+- Releases: GitHub builds both on each release tag and attaches
+  `ccez-keys-linux-<tag>.tar.gz` (with install.sh) and
+  `ccez-keys-windows-<tag>.zip`.
+- Not yet on Linux and Windows: updates by themselves, the cursor's own
+  position on Windows (the field's frame is used), Arabic shaping (egui
+  draws letters unjoined), the card's meaning-here (Apple's model only).
