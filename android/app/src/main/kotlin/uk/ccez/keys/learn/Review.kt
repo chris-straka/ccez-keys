@@ -40,18 +40,27 @@ object Review {
             .filter { (l, w) -> (off.getString("$l|$w", null)?.substringBefore(',')?.toLongOrNull() ?: 0L) <= now }
     }
 
-    /** The next word of the round (not `shown`, unless it's the only one); null with none due. */
-    fun next(ctx: Context, shown: Pair<String, String>?): Pair<String, String>? {
+    /** The next word of the round (not `shown`, unless it's the only one), left in the round until [seen]; null with none due. */
+    fun next(ctx: Context, shown: Pair<String, String>?): Pair<String, String>? = synchronized(this) {
         val words = due(ctx)
         if (words.isEmpty()) return null
         val p = prefs(ctx)
         val keys = words.map { "${it.first}|${it.second}" }.toSet()
         val now = shown?.let { "${it.first}|${it.second}" }
         var order = p.getString("order", "").orEmpty().split('\n').filter { it in keys }
-        if (order.isEmpty()) order = keys.shuffled().let { l -> if (l.size > 1 && l.first() == now) l.drop(1) + l.first() else l }
-        val k = order.first()
-        p.edit().putString("order", order.drop(1).joinToString("\n")).apply()
+        if (order.isEmpty() || (order.size == 1 && order[0] == now && keys.size > 1)) {
+            order = keys.shuffled().let { l -> if (l.size > 1 && l.first() == now) l.drop(1) + l.first() else l }
+            p.edit().putString("order", order.joinToString("\n")).apply()
+        }
+        val k = order.firstOrNull { it != now } ?: order.first()
         return k.split('|', limit = 2).let { it[0] to it[1] }
+    }
+
+    /** A word was put on screen: off the round until it comes round again (one never shown stays). */
+    fun seen(ctx: Context, lang: String, word: String) = synchronized(this) {
+        val p = prefs(ctx)
+        val order = p.getString("order", "").orEmpty().split('\n').filter { it.isNotEmpty() && it != "$lang|$word" }
+        p.edit().putString("order", order.joinToString("\n")).apply()
     }
 
     /** Known: known everywhere (synced), out of the round. */

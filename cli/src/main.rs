@@ -215,7 +215,12 @@ fn backup(dir: &std::path::Path) -> Result<String, String> {
     let file = dir.join(format!("{}.json", today()));
     let tmp = file.with_extension("tmp");
     std::fs::write(&tmp, &body).and_then(|_| std::fs::rename(&tmp, &file)).map_err(|e| format!("{}: {e}", file.display()))?;
-    let mut all: Vec<_> = std::fs::read_dir(dir).map_err(|e| e.to_string())?.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect();
+    // Only backups this made (YYYY-MM-DD.json): nothing else in the folder is touched.
+    let dated = |p: &std::path::Path| {
+        let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        n.len() == 15 && n.ends_with(".json") && n[..10].chars().enumerate().all(|(i, c)| if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() })
+    };
+    let mut all: Vec<_> = std::fs::read_dir(dir).map_err(|e| e.to_string())?.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| dated(p)).collect();
     all.sort();
     let over = all.len().saturating_sub(KEEP);
     for old in &all[..over] {
@@ -233,6 +238,9 @@ fn restore(file: &std::path::Path) -> Result<String, String> {
         return Err("not a ccez-keys backup".into());
     }
     let serial = serial()?;
+    // The keyboard logs how a restore went: its newest "restore" line, before and after.
+    let last = || call("log", Some("60"), None).unwrap_or_default().lines().filter(|l| l.contains("\"event\":\"restore\"")).last().map(str::to_string);
+    let before = last();
     let mut child = Command::new("adb")
         .args(["-s", &serial, "shell", "content", "write", "--uri", RESTORE_URI])
         .stdin(std::process::Stdio::piped())
@@ -247,5 +255,14 @@ fn restore(file: &std::path::Path) -> Result<String, String> {
     if !ok {
         return Err("the phone didn't take it".into());
     }
-    Ok(format!("restored from {}; the keyboard restarts", file.display()))
+    for _ in 0..20 {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let Some(now) = last().filter(|l| Some(l) != before.as_ref()) else { continue };
+        let v: serde_json::Value = serde_json::from_str(&now).unwrap_or_default();
+        return match v["ctx"]["result"].as_str() {
+            Some(r) => Ok(format!("{r}; the keyboard restarts")),
+            None => Err(format!("not restored: {}", v["ctx"]["error"].as_str().unwrap_or(&now))),
+        };
+    }
+    Err("no word from the keyboard about the restore".into())
 }

@@ -24,7 +24,7 @@ fn is_mark(c: char) -> bool {
         || (0x0E47..=0x0E4E).contains(&u)
 }
 
-const ENDS: &[char] = &['.', '!', '?', '。', '！', '？', '\n'];
+const ENDS: &[char] = &['.', '!', '?', '。', '！', '？', '…', '\n'];
 
 /// The sentence being typed: the last one, also when the cursor sits just
 /// after its end ("Bonjour. Ça va ? " → "Ça va ?"). Nothing at the start of
@@ -36,10 +36,9 @@ pub fn sentence_of(before: String) -> String {
     const BREAKS: [char; 4] = ['\n', '\r', '\u{2028}', '\u{2029}'];
     let line = before.rfind(BREAKS).map(|i| &before[i + before[i..].chars().next().map_or(1, char::len_utf8)..]).unwrap_or(&before);
     let t = line.trim_end();
-    let body = match t.chars().last() {
-        Some(c) if ENDS.contains(&c) => &t[..t.len() - c.len_utf8()],
-        _ => t,
-    };
+    // Its own end marks, however many ("Attends...", "Vraiment ?!"), and the
+    // spaces French puts before them.
+    let body = t.trim_end_matches(ENDS).trim_end_matches([' ', '\u{a0}', '\u{202f}']);
     let start = body.rfind(|c| ENDS.contains(&c)).map(|i| i + body[i..].chars().next().map_or(1, char::len_utf8)).unwrap_or(0);
     t[start..].trim().to_string()
 }
@@ -118,6 +117,19 @@ const FORM_WORDS: [&str; 14] = [
     "alternative", "abbreviation", "diminutive",
 ];
 
+/// Every word such a note may use before its "of" (Wiktionary's grammar
+/// labels): anything else ("a form of government") is a real meaning.
+const GRAMMAR_WORDS: &[&str] = &[
+    "plural", "singular", "dual", "feminine", "masculine", "neuter", "common", "inflection", "inflected", "form", "forms", "participle",
+    "past", "present", "future", "perfect", "imperfect", "pluperfect", "preterite", "aorist", "tense", "conjugation", "conjugated",
+    "spelling", "variant", "alternative", "abbreviation", "diminutive", "augmentative", "first", "second", "third", "first-person",
+    "second-person", "third-person", "person", "indicative", "subjunctive", "conditional", "imperative", "infinitive", "gerund",
+    "nominative", "accusative", "dative", "genitive", "vocative", "instrumental", "locative", "definite", "indefinite", "comparative",
+    "superlative", "short", "long", "strong", "weak", "mixed", "attributive", "predicative", "obsolete", "archaic", "dated", "rare",
+    "nonstandard", "informal", "formal", "polite", "familiar", "eye", "dialectal", "simple", "compound", "active", "passive",
+    "affirmative", "negative", "contraction", "clipping", "misspelling", "romanization", "apocopic", "elided", "stem", "and", "or",
+];
+
 /// A meaning that only names the word's form, as a short tag: "participle
 /// past of unterhalten" → "past participle · unterhalten"; "" for a real
 /// meaning ("to entertain").
@@ -128,8 +140,9 @@ pub fn form_tag(meaning: String) -> String {
     let t = if t.starts_with('(') { t.find(") ").map_or(t, |i| &t[i + 2..]) } else { t };
     let Some(of) = t.find(" of ") else { return String::new() };
     let grammar = t[..of].to_lowercase();
-    // The form words, as whole words, in the same clause.
-    if grammar.contains(';') || !grammar.split(|c: char| !c.is_alphanumeric() && c != '-').any(|w| FORM_WORDS.contains(&w)) {
+    // A form word, and only grammar words, in the same clause.
+    let words: Vec<&str> = grammar.split(|c: char| !c.is_alphanumeric() && c != '-').filter(|w| !w.is_empty()).collect();
+    if grammar.contains(';') || !words.iter().any(|w| FORM_WORDS.contains(w)) || !words.iter().all(|w| GRAMMAR_WORDS.contains(w)) {
         return String::new();
     }
     let Some(lemma) = t[of + 4..].split_whitespace().next().map(|w| w.trim_end_matches(['.', ',', ';', ':'])) else { return String::new() };

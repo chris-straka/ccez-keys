@@ -47,14 +47,14 @@ class Control : ContentProvider() {
             }
             "/restore" -> {
                 Thread {
-                    try {
-                        val text = android.os.ParcelFileDescriptor.AutoCloseInputStream(read).use { it.readBytes().decodeToString() }
-                        val said = Backup.import(app, text)
-                        app.log("info", "restore", "result" to said)
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ Process.killProcess(Process.myPid()) }, 500)
-                    } catch (e: Exception) {
-                        app.log("error", "restore", "error" to e.toString())
-                    }
+                    val text = runCatching { android.os.ParcelFileDescriptor.AutoCloseInputStream(read).use { it.readBytes().decodeToString() } }
+                    val said = text.mapCatching { Backup.import(app, it) }
+                    said.onSuccess { app.log("info", "restore", "result" to it) }
+                        .onFailure { app.log("error", "restore", "error" to it.toString()) }
+                    // Once anything is written, at once afresh: the old state still in
+                    // memory would otherwise be saved back over what was restored.
+                    // A backup that didn't check out changed nothing: no restart.
+                    if (said.isSuccess || said.exceptionOrNull() is Backup.WriteFailed) Process.killProcess(Process.myPid())
                 }.start()
                 return write
             }

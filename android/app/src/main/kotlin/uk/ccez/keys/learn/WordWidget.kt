@@ -71,13 +71,16 @@ class WordWidget : AppWidgetProvider() {
         private fun current(ctx: Context): Pair<String, String>? =
             prefs(ctx).getString("current", null)?.split('|', limit = 2)?.takeIf { it.size == 2 }?.let { it[0] to it[1] }
 
+        /** Bumped by each refresh: only the newest one draws (Next tapped twice, the timer meanwhile). */
+        private val refreshes = java.util.concurrent.atomic.AtomicInteger()
+
         /** Shows a word (the next one when `advance`), its meaning looked up off the main thread. */
         fun refresh(ctx: Context, advance: Boolean) {
             val app = App.instance
+            val mine = refreshes.incrementAndGet()
             app.scope.launch {
                 val shown = current(ctx)
                 val pick = if (!advance && shown != null && shown in Review.due(ctx)) shown else Review.next(ctx, shown)
-                prefs(ctx).edit().putString("current", pick?.let { "${it.first}|${it.second}" }).apply()
                 val view = RemoteViews(ctx.packageName, R.layout.learn_widget)
                 if (pick == null) {
                     view.setTextViewText(R.id.flag, "")
@@ -87,6 +90,7 @@ class WordWidget : AppWidgetProvider() {
                     listOf(R.id.known, R.id.later).forEach { view.setViewVisibility(it, View.INVISIBLE) }
                 } else {
                     val f = Review.face(ctx, pick.first, pick.second)
+                    if (mine != refreshes.get()) return@launch
                     view.setTextViewText(R.id.flag, f.flag)
                     view.setTextViewText(R.id.reading, listOf(f.reading, f.form).filter { it.isNotEmpty() }.joinToString("  "))
                     view.setTextViewText(R.id.word, (if (f.article.isEmpty()) "" else if (f.article.endsWith("'")) f.article else "${f.article} ") + f.word)
@@ -104,6 +108,10 @@ class WordWidget : AppWidgetProvider() {
                     PendingIntent.getActivity(ctx, 5, WordCardActivity.intent(ctx, l, w), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 }
                 card?.let { view.setOnClickPendingIntent(R.id.root, it) }
+                if (mine != refreshes.get()) return@launch
+                // Known and Later act on "current": set only now, as it's drawn.
+                prefs(ctx).edit().putString("current", pick?.let { "${it.first}|${it.second}" }).apply()
+                pick?.let { (l, w) -> Review.seen(ctx, l, w) }
                 val manager = AppWidgetManager.getInstance(ctx)
                 manager.updateAppWidget(ComponentName(ctx, WordWidget::class.java), view)
             }

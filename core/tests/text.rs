@@ -18,6 +18,11 @@ fn the_sentence_typed() {
     assert_eq!(sentence_of("First line.\r\n  ".into()), "");
     assert_eq!(sentence_of("First line\u{2029}".into()), "");
     assert_eq!(sentence_of("First line.\n   \t".into()), "");
+    // However many end marks it has, the sentence is the sentence.
+    assert_eq!(sentence_of("Attends...".into()), "Attends...");
+    assert_eq!(sentence_of("Bon. Vraiment ?!".into()), "Vraiment ?!");
+    assert_eq!(sentence_of("Hein ?? ".into()), "Hein ??");
+    assert_eq!(sentence_of("Oui… Et toi".into()), "Et toi");
 }
 
 #[test]
@@ -72,4 +77,10 @@ fn form_tags() {
     assert_eq!(form_tag("to entertain".into()), "");
     assert_eq!(form_tag("the end of the line".into()), "");
     assert_eq!(form_tag("a form; the shape of a thing".into()), "");
+    assert_eq!(form_tag("a form of government".into()), "");
+    assert_eq!(form_tag("a variant of chess".into()), "");
+    assert_eq!(form_tag("in a tense state of mind".into()), "");
+    assert_eq!(form_tag("feminine plural of beau".into()), "feminine plural · beau");
+    assert_eq!(form_tag("first/third-person singular present subjunctive of aller".into()), "first/third-person singular present subjunctive · aller");
+    assert_eq!(form_tag("inflection of garer:".into()), "inflection · garer");
 }

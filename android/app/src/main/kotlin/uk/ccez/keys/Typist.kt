@@ -217,18 +217,23 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         app.scope.launch {
             val pick = runCatching { uk.ccez.keys.learn.Review.next(service, shown) }.getOrNull()
             val face = pick?.let { (l, w) -> runCatching { uk.ccez.keys.learn.Review.face(service, l, w) }.getOrNull() }
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { if (seq == reviewSeq) ui.review = face }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (seq == reviewSeq) {
+                    ui.review = face
+                    face?.let { uk.ccez.keys.learn.Review.seen(service, it.lang, it.word) }
+                }
+            }
         }
     }
 
     /** The word to review: its card. */
     fun reviewOpen() = ui.review?.let { strip.openWord(it.lang, it.word) }
     /** Known (everywhere), then the next word. */
-    fun reviewKnown() = ui.review?.let { f -> uk.ccez.keys.learn.Review.known(service, f.lang, f.word); buzz(HapticFeedbackConstants.CONFIRM); review(f.lang to f.word) }
-    /** Later (1, 3, 7, 14, 30 days), then the next word. */
-    fun reviewLater() = ui.review?.let { f -> uk.ccez.keys.learn.Review.later(service, f.lang, f.word); buzz(HapticFeedbackConstants.CONFIRM); review(f.lang to f.word) }
+    fun reviewKnown() = ui.review?.let { f -> ui.review = null; uk.ccez.keys.learn.Review.known(service, f.lang, f.word); buzz(HapticFeedbackConstants.CONFIRM); review(f.lang to f.word) }
+    /** Later (1, 3, 7, 14, 30 days), then the next word. (The word goes at once: a second tap can't count twice.) */
+    fun reviewLater() = ui.review?.let { f -> ui.review = null; uk.ccez.keys.learn.Review.later(service, f.lang, f.word); buzz(HapticFeedbackConstants.CONFIRM); review(f.lang to f.word) }
     /** Another word (a swipe). */
-    fun reviewNext() = ui.review?.let { f -> review(f.lang to f.word) }
+    fun reviewNext() = ui.review?.let { f -> ui.review = null; review(f.lang to f.word) }
 
     /** After a recovered error: the word as typed so far, and a clean slate. */
     fun recover() {

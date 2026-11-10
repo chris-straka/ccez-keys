@@ -12,6 +12,9 @@ import java.io.File
  * phone, owner's call) and not the AI key (the phone's keystore).
  */
 object Backup {
+    /** Writing failed partway: some of the backup is in place. */
+    class WriteFailed(cause: Throwable) : Exception("restore stopped partway: $cause", cause)
+
     private val PREFS = listOf("app-languages", "faces", "widget-later")
     /** Files in the core's folder that are the owner's (dictionaries and logs aren't). */
     private val FILE = Regex("""^(settings\.json|current-language|user-[a-z]{2,3}(-[A-Za-z]{2,8})?\.json)$""")
@@ -46,35 +49,60 @@ object Backup {
 
     /** Puts a backup back (what it holds replaces what's here); the keyboard then starts afresh to read it. */
     fun import(ctx: Context, json: String): String {
+        // All of it read and checked first: a bad backup changes nothing.
         val o = JSONObject(json)
         require(o.optInt("ccez-keys-backup") == 1) { "not a ccez-keys backup" }
         val files = o.getJSONObject("files")
-        val d = dir(ctx).also { it.mkdirs() }
-        var n = 0
-        for (name in files.keys()) {
-            // Only the owner's own files, by name: nothing else can be written.
-            if (!FILE.matches(name)) continue
-            val tmp = File(d, "$name.restore")
-            tmp.writeText(files.getString(name))
-            if (!tmp.renameTo(File(d, name))) error("couldn't write $name")
-            n++
+        val write = files.keys().asSequence().filter { FILE.matches(it) }.associateWith { name ->
+            // Text, really (org.json would turn a number into one), and a .json file whole JSON.
+            val v = files.get(name) as? String ?: error("$name isn't text")
+            if (name.endsWith(".json")) require(runCatching { org.json.JSONTokener(v).nextValue() is JSONObject }.getOrDefault(false)) { "$name isn't a JSON object" }
+            v
         }
+        require(write.isNotEmpty()) { "nothing to restore" }
         val prefs = o.optJSONObject("prefs") ?: JSONObject()
-        for (name in PREFS) {
-            val p = prefs.optJSONObject(name) ?: continue
-            val e = ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear()
-            for (k in p.keys()) {
+        val groups = PREFS.mapNotNull { name ->
+            val p = prefs.optJSONObject(name) ?: return@mapNotNull null
+            name to p.keys().asSequence().map { k ->
                 val v = p.getJSONObject(k)
-                when {
-                    v.has("s") -> e.putString(k, v.getString("s"))
-                    v.has("b") -> e.putBoolean(k, v.getBoolean("b"))
-                    v.has("i") -> e.putInt(k, v.getInt("i"))
-                    v.has("l") -> e.putLong(k, v.getLong("l"))
-                    v.has("f") -> e.putFloat(k, v.getDouble("f").toFloat())
+                k to when {
+                    v.has("s") -> v.get("s") as? String ?: error("$name.$k isn't text")
+                    v.has("b") -> v.get("b") as? Boolean ?: error("$name.$k isn't true or false")
+                    v.has("i") -> (v.get("i") as? Number)?.toInt() ?: error("$name.$k isn't a number")
+                    v.has("l") -> (v.get("l") as? Number)?.toLong() ?: error("$name.$k isn't a number")
+                    v.has("f") -> (v.get("f") as? Number)?.toFloat() ?: error("$name.$k isn't a number")
+                    else -> error("$name.$k has no value")
+                }
+            }.toList()
+        }
+        // Then written, each file whole (written aside, moved into place).
+        try {
+            write(ctx, write, groups)
+        } catch (e: Exception) {
+            throw WriteFailed(e)
+        }
+        return "restored ${write.size} files and ${groups.size} settings groups from ${o.optString("version")}"
+    }
+
+    private fun write(ctx: Context, write: Map<String, String>, groups: List<Pair<String, List<Pair<String, Any>>>>) {
+        val d = dir(ctx).also { it.mkdirs() }
+        for ((name, text) in write) {
+            val tmp = File(d, "$name.restore")
+            tmp.writeText(text)
+            if (!tmp.renameTo(File(d, name))) error("couldn't write $name")
+        }
+        for ((name, entries) in groups) {
+            val e = ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear()
+            for ((k, v) in entries) {
+                when (v) {
+                    is String -> e.putString(k, v)
+                    is Boolean -> e.putBoolean(k, v)
+                    is Int -> e.putInt(k, v)
+                    is Long -> e.putLong(k, v)
+                    is Float -> e.putFloat(k, v)
                 }
             }
             e.commit()
         }
-        return "restored $n files and ${prefs.length()} settings groups from ${o.optString("version")}"
     }
 }
