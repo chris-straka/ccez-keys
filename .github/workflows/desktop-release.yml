@@ -1,0 +1,50 @@
+# On a release tag: the desktop app for Linux and Windows, attached to the
+# release scripts/release.sh made (it waits for it). The Mac app comes from
+# the Mac itself (signed there).
+name: desktop-release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev
+      - run: cargo build --release -p ccez-keys-desktop
+      - name: Linux package
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p out/ccez-keys
+          cp target/release/ccez-keys-desktop desktop/linux/*.desktop desktop/linux/install.sh out/ccez-keys/
+          cp desktop/assets/icon.png out/ccez-keys/
+          tar -C out -czf ccez-keys-linux-$TAG.tar.gz ccez-keys
+          sha256sum ccez-keys-linux-$TAG.tar.gz > ccez-keys-linux-$TAG.tar.gz.sha256
+          echo "FILES=ccez-keys-linux-$TAG.tar.gz ccez-keys-linux-$TAG.tar.gz.sha256" >> $GITHUB_ENV
+      - name: Windows package
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p out/ccez-keys
+          cp target/release/ccez-keys-desktop.exe out/ccez-keys/ccez-keys.exe
+          (cd out && 7z a ../ccez-keys-windows-$TAG.zip ccez-keys >/dev/null)
+          sha256sum ccez-keys-windows-$TAG.zip > ccez-keys-windows-$TAG.zip.sha256
+          echo "FILES=ccez-keys-windows-$TAG.zip ccez-keys-windows-$TAG.zip.sha256" >> $GITHUB_ENV
+      - name: Attach to the release
+        shell: bash
+        run: |
+          for i in $(seq 1 30); do gh release view "$TAG" >/dev/null 2>&1 && break; sleep 10; done
+          gh release upload "$TAG" $FILES --clobber

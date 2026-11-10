@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=ccez-keys
+Exec=ccez-keys-desktop
+Icon=ccez-keys
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

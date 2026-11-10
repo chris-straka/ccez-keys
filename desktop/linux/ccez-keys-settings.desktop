@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=ccez-keys
+Exec=ccez-keys-desktop --settings
+Icon=ccez-keys
+Categories=Utility;Education;
