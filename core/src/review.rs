@@ -128,6 +128,21 @@ impl Review {
         self.save();
     }
 
+    /// When it may show again (Unix seconds), once graded.
+    pub fn due_at(&self, lang: &str, word: &str) -> Option<u64> {
+        self.cards.get(&key(lang, word)).map(|c| c.due)
+    }
+
+    /// A wait as a toast says it: "2 min", "1 h", "3 days".
+    pub fn wait_words(secs: u64) -> String {
+        match secs {
+            s if s < 3_600 => format!("{} min", (s / 60).max(1)),
+            s if s < 86_400 => format!("{} h", s / 3_600),
+            s if s < 2 * 86_400 => "1 day".to_string(),
+            s => format!("{} days", s / 86_400),
+        }
+    }
+
     /// May it show now (never graded, or its time has come)?
     pub fn due(&self, lang: &str, word: &str, now: u64) -> bool {
         self.cards.get(&key(lang, word)).is_none_or(|c| c.due <= now)

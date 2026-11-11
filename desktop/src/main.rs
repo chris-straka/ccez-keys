@@ -588,16 +588,17 @@ mod app {
         // A word on screen clicked: Good, Again or Easy (float.rs).
         crate::float::CLICK.with(|c| {
             *c.borrow_mut() = Some(Box::new(move |id: isize, kind: u8| {
-                if let Some(mtm) = MainThreadMarker::new()
-                    && let Some((lang, word)) = app.floaters.clicked(mtm, id, kind)
-                {
+                let Some(mtm) = MainThreadMarker::new() else { return };
+                let Some((note, known)) = app.floaters.clicked(mtm, id, kind) else { return };
+                // Every answer says what it did (owner, 2026-11-11).
+                app.view.toast(mtm, &note);
+                if let Some((lang, word)) = known {
                     // Known: off the learning list on every device (ccez-words).
-                    app.engine.set_word_status(lang.clone(), word.clone(), ccez_keys_core::WordStatus::Known);
+                    app.engine.set_word_status(lang, word, ccez_keys_core::WordStatus::Known);
                     let e = app.engine.clone();
                     std::thread::spawn(move || {
                         let _ = e.sync_words("ccez-keys-mac".into());
                     });
-                    app.view.toast(mtm, &format!("Known: {word}"));
                 }
             }));
         });

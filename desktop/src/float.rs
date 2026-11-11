@@ -363,9 +363,20 @@ impl Floaters {
         }
     }
 
-    /// A click on word `id`: 0 Good, 1 Again, 2 Easy, 3 Known. The word
-    /// (lang, word) for Known, which the caller marks known everywhere.
-    pub fn clicked(&self, mtm: MainThreadMarker, id: isize, kind: u8) -> Option<(String, String)> {
+    /// What a click did, for its toast ("Good · back in 1 h"), from the
+    /// word's new time.
+    fn said(&self, what: &str, lang: &str, word: &str) -> String {
+        let back = self.review.borrow().due_at(lang, word).map(|d| d.saturating_sub(Self::now()));
+        match back {
+            Some(s) => format!("{what} · back in {}", Review::wait_words(s)),
+            None => what.to_string(),
+        }
+    }
+
+    /// A click on word `id`: 0 Good, 1 Again, 2 Easy, 3 Known. What it did
+    /// (for a toast), and the word (lang, word) when Known, which the caller
+    /// marks known everywhere.
+    pub fn clicked(&self, mtm: MainThreadMarker, id: isize, kind: u8) -> Option<(String, Option<(String, String)>)> {
         let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
         let i = self.words.borrow().iter().position(|w| w.id == id)?;
         let (lang, word) = {
@@ -380,18 +391,19 @@ impl Floaters {
                 ws[i].hold_until = Some(Instant::now() + Duration::from_millis(2500));
                 ws[i].open = true;
                 lay_out(mtm, &mut ws[i], primary_h);
-                None
+                drop(ws);
+                Some((self.said("Again", &lang, &word), None))
             }
             3 => {
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
-                Some((lang, word))
+                Some((format!("Known: {word}"), Some((lang, word))))
             }
             k => {
                 self.review.borrow_mut().grade(&lang, &word, if k == 2 { Grade::Easy } else { Grade::Good }, Self::now());
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
-                None
+                Some((self.said(if k == 2 { "Easy" } else { "Good" }, &lang, &word), None))
             }
         }
     }
