@@ -282,12 +282,14 @@ impl Floaters {
                 w.open = open;
                 lay_out(mtm, w, primary_h);
             }
-            // Under the pointer, nothing makes it go.
-            if over {
-                continue;
-            }
+            // Answered Again: its meaning shown a moment, then it goes, pointer
+            // or not (the answer wins; owner, 2026-11-11).
             if w.hold_until.is_some_and(|t| Instant::now() >= t) {
                 gone.push((i, false));
+                continue;
+            }
+            // Otherwise, under the pointer nothing makes it go.
+            if over {
                 continue;
             }
             if w.came.elapsed() > STAYS {
