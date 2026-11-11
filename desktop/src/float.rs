@@ -23,7 +23,7 @@ use crate::review::{Grade, Review};
 use crate::view::{fade_over, label, new_panel, rect, rgb};
 
 /// How long a word stays when left alone.
-const STAYS: Duration = Duration::from_secs(150);
+const STAYS: Duration = Duration::from_secs(90);
 /// Kept off the screen this long after a screenshot key, and while the
 /// screenshot tools run (owner, 2026-11-11: not in screenshots).
 const SHOT_QUIET: Duration = Duration::from_secs(8);
