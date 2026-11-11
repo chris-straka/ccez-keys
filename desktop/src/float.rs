@@ -78,6 +78,8 @@ struct Word {
     /// The word as it shows ("parvenir à" for parvenir).
     shown: String,
     meaning: String,
+    /// Small tags beside the meaning ("tr" for a transitive sense).
+    tags: Vec<String>,
     /// Its spot (top-left coordinates), as the spot search gives them.
     cell: Rect,
     panel: Retained<NSPanel>,
@@ -156,7 +158,15 @@ impl Floaters {
     /// With `while_video` off they go while a video holds the display
     /// awake; with `while_typing` off none comes while keys are being typed.
     #[allow(clippy::too_many_arguments)]
-    pub fn tick(&self, mtm: MainThreadMarker, most: usize, while_video: bool, while_typing: bool, words: impl FnOnce() -> Vec<(String, String)>, meaning: impl Fn(&str, &str) -> (String, String)) {
+    pub fn tick(
+        &self,
+        mtm: MainThreadMarker,
+        most: usize,
+        while_video: bool,
+        while_typing: bool,
+        words: impl FnOnce() -> Vec<(String, String)>,
+        meaning: impl Fn(&str, &str) -> (String, String, Vec<String>),
+    ) {
         let enabled = most > 0;
         self.looking.store(enabled, Ordering::Relaxed);
         // Words that faded out: off the screen.
@@ -222,8 +232,8 @@ impl Floaters {
         self.seed.set(self.seed.get() + 1);
         let id = self.next_id.get();
         self.next_id.set(id + 1);
-        let (shown, m) = meaning(&lang, &word);
-        self.words.borrow_mut().push(show(mtm, id, lang, word, shown, m, cell, primary_h));
+        let (shown, m, tags) = meaning(&lang, &word);
+        self.words.borrow_mut().push(show(mtm, id, lang, word, shown, m, tags, cell, primary_h));
     }
 
     fn leave(&self, w: Word) {
@@ -268,6 +278,25 @@ impl Floaters {
     }
 }
 
+/// A tag as a small grey pill: (it, width, height).
+fn pill(mtm: MainThreadMarker, tag: &str) -> (Retained<NSBox>, f64, f64) {
+    let l = label(mtm, tag, 10.5, true);
+    let (lw, lh) = (l.frame().size.width, l.frame().size.height);
+    let (w, h) = (lw + 8.0, lh + 2.0);
+    let b = NSBox::new(mtm);
+    b.setBoxType(objc2_app_kit::NSBoxType::Custom);
+    b.setTitlePosition(objc2_app_kit::NSTitlePosition::NoTitle);
+    b.setBorderWidth(0.0);
+    b.setCornerRadius(h / 2.0);
+    b.setFillColor(&NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 0.12));
+    b.setContentViewMargins(objc2_foundation::NSSize::new(0.0, 0.0));
+    if let Some(c) = b.contentView() {
+        l.setFrame(rect(4.0, 1.0, lw, lh));
+        c.addSubview(&l);
+    }
+    (b, w, h)
+}
+
 /// A key pressed in the last two seconds.
 fn typing() -> bool {
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -281,7 +310,7 @@ fn typing() -> bool {
 
 /// A word put up in `cell`, faint, its meaning hidden.
 #[allow(clippy::too_many_arguments)]
-fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, cell: Rect, primary_h: f64) -> Word {
+fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, cell: Rect, primary_h: f64) -> Word {
     let (panel, bg) = new_panel(mtm);
     panel.setLevel(20);
     panel.setHasShadow(false);
@@ -294,7 +323,7 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
     };
     button.setBordered(false);
     button.setTag(id);
-    let mut w = Word { id, lang, word, shown, meaning, cell, panel, bg, button, meaning_label: None, on: Default::default(), came: Instant::now(), open: false, hold_until: None, top: None };
+    let mut w = Word { id, lang, word, shown, meaning, tags, cell, panel, bg, button, meaning_label: None, on: Default::default(), came: Instant::now(), open: false, hold_until: None, top: None };
     lay_out(mtm, &mut w, primary_h);
     w.on.set(true);
     w.panel.setAlphaValue(0.0);
@@ -324,14 +353,25 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     w.button.sizeToFit();
     let wh = w.button.frame().size.height;
     let m = (w.open && !w.meaning.is_empty()).then(|| label(mtm, &w.meaning, 13.0, true));
-    let (mw, mh) = m.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0), l.frame().size.height)).unwrap_or((0.0, 0.0));
-    let width = ww.max(mw) + 20.0;
+    // Its tags as small pills after the meaning.
+    let pills: Vec<(Retained<NSBox>, f64, f64)> = if w.open { w.tags.iter().map(|t| pill(mtm, t)).collect() } else { Vec::new() };
+    let pills_w: f64 = pills.iter().map(|(_, pw, _)| pw + 4.0).sum();
+    let (mw, mh) = m.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0 - pills_w), l.frame().size.height)).unwrap_or((0.0, 0.0));
+    let mw_all = mw + pills_w;
+    let width = ww.max(mw_all) + 20.0;
     let height = wh + mh + 10.0;
     w.button.setFrame(rect((width - ww) / 2.0, mh + 5.0, ww, wh));
     content.addSubview(&w.button);
+    let mut x = (width - mw_all) / 2.0;
     if let Some(m) = &m {
-        m.setFrame(rect((width - mw) / 2.0, 4.0, mw, mh));
+        m.setFrame(rect(x, 4.0, mw, mh));
         content.addSubview(m);
+        x += mw + 4.0;
+    }
+    for (p, pw, ph) in &pills {
+        p.setFrame(rect(x, 4.0 + (mh - ph) / 2.0, *pw, *ph));
+        content.addSubview(p);
+        x += pw + 4.0;
     }
     w.meaning_label = m;
     // Its spot's middle, in Cocoa's coordinates; the top stays where it first was.
