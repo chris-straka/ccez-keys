@@ -184,6 +184,16 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> (Op
     (frame, out)
 }
 
+/// A run of text's width in points in the system font at 15 pt (what web
+/// text boxes mostly use), for guessing where their cursor is.
+fn text_width(t: &str) -> f64 {
+    use objc2_foundation::{NSAttributedString, NSDictionary};
+    let font = objc2_app_kit::NSFont::systemFontOfSize(15.0);
+    let attrs = unsafe { NSDictionary::<NSString, objc2::runtime::AnyObject>::from_slices(&[objc2_app_kit::NSFontAttributeName], &[&*font as &objc2::runtime::AnyObject]) };
+    let a = unsafe { NSAttributedString::new_with_attributes(&NSString::from_str(t), &attrs) };
+    objc2_app_kit::NSAttributedStringNSStringDrawing::size(&*a).width
+}
+
 /// The field being typed in, None when the focus isn't on editable text.
 pub fn focused() -> Option<Field> {
     let el = focused_element(0.25)?;
@@ -238,6 +248,10 @@ pub fn focused() -> Option<Field> {
     // Some apps (Electron) answer with nothing or a zero box: kept only when it's inside the field.
     let frame = frame_of(el.0);
     let caret = caret.filter(|c| (c.x != 0.0 || c.y != 0.0) && frame.is_none_or(|f| c.y + c.h >= f.y - 2.0 && c.y <= f.y + f.h + 2.0));
+    // No cursor from the app (Claude's box, other web text boxes): where the
+    // text typed ends, laid out in the box (owner, 2026-11-11: the preview
+    // sat at the box's left edge, far from the cursor).
+    let caret = caret.or_else(|| frame.map(|f| crate::model::estimate_caret(f, &before, text_width, 20.0, 2.0)));
     Some(Field { secure, before, caret, frame, selected })
 }
 

@@ -54,3 +54,50 @@ pub struct Row {
     pub flag: String,
     pub toks: Vec<Tok>,
 }
+
+/// Where the cursor likely is when the app won't say (Claude's and other
+/// web text boxes): `before` laid out in `frame`'s width, words wrapped as
+/// the box wraps them, each line `line_h` tall; the cursor at the end of the
+/// last line. `width` measures a run of text in points.
+pub fn estimate_caret(frame: Rect, before: &str, width: impl Fn(&str) -> f64, line_h: f64, pad: f64) -> Rect {
+    let room = (frame.w - 2.0 * pad).max(40.0);
+    let mut lines = 1usize;
+    let mut line = String::new();
+    for (i, para) in before.split('\n').enumerate() {
+        if i > 0 {
+            lines += 1;
+            line.clear();
+        }
+        for word in para.split_inclusive(' ') {
+            let next = format!("{line}{word}");
+            if !line.is_empty() && width(next.trim_end()) > room {
+                lines += 1;
+                line = word.to_string();
+            } else {
+                line = next;
+            }
+        }
+    }
+    let x = frame.x + pad + width(&line).min(room);
+    let y = frame.y + pad + (lines - 1) as f64 * line_h;
+    Rect { x, y, w: 2.0, h: line_h }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cursor_is_guessed_at_the_end_of_the_wrapped_text() {
+        let frame = Rect { x: 100.0, y: 500.0, w: 208.0, h: 60.0 };
+        // 10 pt a character, a 200-point line.
+        let w = |s: &str| s.chars().count() as f64 * 10.0;
+        let one = estimate_caret(frame, "Je pense", w, 20.0, 4.0);
+        assert_eq!((one.x, one.y), (100.0 + 4.0 + 80.0, 504.0));
+        // Wraps after "lorem ipsum dolor " (18 chars = 180 pt).
+        let two = estimate_caret(frame, "lorem ipsum dolor sit amet", w, 20.0, 4.0);
+        assert_eq!((two.x, two.y), (100.0 + 4.0 + 80.0, 524.0));
+        let nl = estimate_caret(frame, "a\nbc", w, 20.0, 4.0);
+        assert_eq!((nl.x, nl.y), (100.0 + 4.0 + 20.0, 524.0));
+    }
+}

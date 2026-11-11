@@ -21,15 +21,15 @@ pub struct Prefs {
     pub selection: bool,
     /// A word clicked on the preview is copied (with a toast).
     pub copy_click: bool,
-    /// Learning words over the screen while it sits idle.
-    pub idle_words: bool,
+    /// Learning words on screen at once, in its empty spots (0: none).
+    pub words_on_screen: usize,
     /// ⌥⏎ in ChatGPT and Claude puts the message box into the first learning language.
     pub chat_swap: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { shown: 6, readings: true, off: vec![], on: vec![], paused: false, login_set: false, selection: true, copy_click: true, idle_words: true, chat_swap: true }
+        Prefs { shown: 6, readings: true, off: vec![], on: vec![], paused: false, login_set: false, selection: true, copy_click: true, words_on_screen: 4, chat_swap: true }
     }
 }
 
@@ -56,13 +56,13 @@ impl Prefs {
             login_set: v["login_set"].as_bool().unwrap_or(false),
             selection: v["selection"].as_bool().unwrap_or(d.selection),
             copy_click: v["copy_click"].as_bool().unwrap_or(d.copy_click),
-            idle_words: v["idle_words"].as_bool().unwrap_or(d.idle_words),
+            words_on_screen: v["words_on_screen"].as_u64().map(|n| n as usize).unwrap_or(if v["idle_words"].as_bool() == Some(false) { 0 } else { d.words_on_screen }),
             chat_swap: v["chat_swap"].as_bool().unwrap_or(d.chat_swap),
         }
     }
 
     pub fn save(&self, dir: &std::path::Path) {
-        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set, "selection": self.selection, "copy_click": self.copy_click, "idle_words": self.idle_words, "chat_swap": self.chat_swap});
+        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set, "selection": self.selection, "copy_click": self.copy_click, "words_on_screen": self.words_on_screen, "chat_swap": self.chat_swap});
         let tmp = path(dir).with_extension("tmp");
         if std::fs::write(&tmp, v.to_string()).is_ok() {
             let _ = std::fs::rename(&tmp, path(dir));

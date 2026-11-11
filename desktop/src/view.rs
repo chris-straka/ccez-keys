@@ -74,7 +74,7 @@ objc2::define_class!(
 
 /// Fades a panel in (from wherever it is) or out (then takes it off screen,
 /// unless `on` says it was asked back meanwhile).
-fn fade(panel: &NSPanel, visible: bool, on: std::rc::Rc<std::cell::Cell<bool>>) {
+pub(crate) fn fade(panel: &NSPanel, visible: bool, on: std::rc::Rc<std::cell::Cell<bool>>) {
     use objc2::Message;
     use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
     if visible && !panel.isVisible() {
@@ -132,11 +132,6 @@ pub struct View {
     toast_bg: Retained<NSBox>,
     toast_until: std::cell::Cell<Option<std::time::Instant>>,
     toast_on: std::rc::Rc<std::cell::Cell<bool>>,
-    /// Learning words over the idle screen (idle.rs): one clear, click-through
-    /// panel over the whole screen.
-    words: Retained<NSPanel>,
-    words_bg: Retained<NSBox>,
-    pub words_on: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 /// A row's click tag (-1000 - row): its flag and blank space read it aloud.
@@ -150,15 +145,15 @@ const TEXT: f64 = 14.0;
 const CJK: f64 = 16.0;
 const READING: f64 = 10.5;
 
-fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
+pub(crate) fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
 }
 
-fn rgb(r: f64, g: f64, b: f64) -> Retained<NSColor> {
+pub(crate) fn rgb(r: f64, g: f64, b: f64) -> Retained<NSColor> {
     NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, 1.0)
 }
 
-fn label(mtm: MainThreadMarker, text: &str, size: f64, grey: bool) -> Retained<NSTextField> {
+pub(crate) fn label(mtm: MainThreadMarker, text: &str, size: f64, grey: bool) -> Retained<NSTextField> {
     let l = NSTextField::labelWithString(&NSString::from_str(text), mtm);
     l.setFont(Some(&NSFont::systemFontOfSize(size)));
     let c = if grey { 0.74 } else { 0.95 };
@@ -218,7 +213,7 @@ fn word_button(mtm: MainThreadMarker, clicker: &Clicker, t: &Tok, size: f64, tag
     b
 }
 
-fn new_panel(mtm: MainThreadMarker) -> (Retained<NSPanel>, Retained<NSBox>) {
+pub(crate) fn new_panel(mtm: MainThreadMarker) -> (Retained<NSPanel>, Retained<NSBox>) {
     let style = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
     let panel = NSPanel::initWithContentRect_styleMask_backing_defer(NSPanel::alloc(mtm), rect(0.0, 0.0, 200.0, 30.0), style, NSBackingStoreType::Buffered, false);
     unsafe { panel.setReleasedWhenClosed(false) };
@@ -277,12 +272,6 @@ impl View {
         let (panel, bg) = new_panel(mtm);
         let (card, card_bg) = new_panel(mtm);
         let (toast, toast_bg) = new_panel(mtm);
-        let (words, words_bg) = new_panel(mtm);
-        words.setIgnoresMouseEvents(true);
-        words.setHasShadow(false);
-        // Over app windows, under the preview and its card.
-        words.setLevel(20);
-        words_bg.setFillColor(&NSColor::clearColor());
         // Nothing on the toast takes a click: they go to what's under it.
         toast.setIgnoresMouseEvents(true);
         let clicker: Retained<Clicker> = unsafe { objc2::msg_send![Clicker::alloc(mtm), init] };
@@ -303,9 +292,6 @@ impl View {
             toast_bg,
             toast_until: std::cell::Cell::new(None),
             toast_on: Default::default(),
-            words,
-            words_bg,
-            words_on: Default::default(),
         }
     }
 
@@ -431,49 +417,6 @@ impl View {
         if !self.toast_on.get() {
             self.toast_on.set(true);
             fade(&self.toast, true, self.toast_on.clone());
-        }
-    }
-
-    /// Learning words, each centred in its spot (`at`: Cocoa's coordinates,
-    /// `screen` the area the panel covers): the word large, its meaning small
-    /// and grey under it.
-    pub fn show_words(&self, mtm: MainThreadMarker, screen: NSRect, items: &[(NSRect, String, String)]) {
-        let Some(content) = self.words_bg.contentView() else {
-            return;
-        };
-        for v in content.subviews().iter() {
-            v.removeFromSuperview();
-        }
-        for (at, word, sub) in items {
-            let w = label(mtm, word, 26.0, false);
-            w.setFont(Some(&NSFont::boldSystemFontOfSize(26.0)));
-            w.setTextColor(Some(&rgb(0.98, 0.55, 0.45)));
-            w.sizeToFit();
-            let m = (!sub.is_empty()).then(|| label(mtm, sub, 14.0, true));
-            let (ww, wh) = (w.frame().size.width, w.frame().size.height);
-            let mh = m.as_ref().map(|m| m.frame().size.height).unwrap_or(0.0);
-            let cx = at.origin.x - screen.origin.x + at.size.width / 2.0;
-            let cy = at.origin.y - screen.origin.y + at.size.height / 2.0 + (wh + mh) / 2.0;
-            w.setFrame(rect(cx - ww / 2.0, cy - wh, ww, wh));
-            content.addSubview(&w);
-            if let Some(m) = m {
-                let mw = m.frame().size.width.min(at.size.width - 8.0);
-                m.setFrame(rect(cx - mw / 2.0, cy - wh - mh, mw, mh));
-                content.addSubview(&m);
-            }
-        }
-        self.words.setFrame_display(screen, true);
-        self.words_bg.setFrame(rect(0.0, 0.0, screen.size.width, screen.size.height));
-        if !self.words_on.get() {
-            self.words_on.set(true);
-            fade(&self.words, true, self.words_on.clone());
-        }
-    }
-
-    pub fn hide_words(&self) {
-        if self.words_on.get() {
-            self.words_on.set(false);
-            fade(&self.words, false, self.words_on.clone());
         }
     }
 

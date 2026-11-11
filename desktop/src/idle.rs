@@ -1,40 +1,9 @@
-//! Learning words on screen while the Mac sits idle (owner, 2026-11-11): after
-//! a few minutes with no key or pointer, and no video keeping the display
-//! awake, the words saved as Learning appear in screen space no window covers;
-//! any key or pointer move takes them all away. The decisions and the layout
-//! are pure (tested); the system calls are at the foot.
-
-use std::time::Duration;
+//! Where learning words can go on screen (float.rs puts them there): the
+//! spots the front window has no content in and no other window covers, and
+//! whether a video holds the display awake. The layout is pure (tested); the
+//! system calls are at the foot.
 
 use crate::model::Rect;
-
-/// Quiet this long before the words come (owner, 2026-11-11: 3 min was too long).
-pub const AFTER: Duration = Duration::from_secs(10);
-/// Words shown at once, at most.
-pub const MOST: usize = 8;
-
-#[derive(Debug, PartialEq)]
-pub enum Do {
-    Nothing,
-    Show,
-    Hide,
-}
-
-/// What to do this tick: `idle` is the time since the last key or pointer
-/// move, `video` a video holding the display awake.
-pub fn decide(enabled: bool, showing: bool, idle: Duration, video: impl FnOnce() -> bool) -> Do {
-    if showing {
-        // Any input at all: gone.
-        if !enabled || idle < Duration::from_secs(1) {
-            return Do::Hide;
-        }
-        return Do::Nothing;
-    }
-    if enabled && idle >= AFTER && !video() {
-        return Do::Show;
-    }
-    Do::Nothing
-}
 
 /// Spots for words: the cells of a `cols` × `rows` grid over `screen` that no
 /// window touches, each as its rectangle, in an order spread over the screen.
@@ -71,14 +40,6 @@ pub fn free_spots(screen: Rect, front: Option<Rect>, content: &[Rect], others: &
             _ => !others.iter().any(|r| hits(c, r)),
         })
         .collect()
-}
-
-/// `n` of `words`, starting at `seed` (so each time shows others).
-pub fn pick<T: Clone>(words: &[T], n: usize, seed: usize) -> Vec<T> {
-    if words.is_empty() {
-        return Vec::new();
-    }
-    (0..n.min(words.len())).map(|i| words[(seed + i) % words.len()].clone()).collect()
 }
 
 #[cfg(target_os = "macos")]
@@ -156,24 +117,13 @@ mod sys {
 }
 
 #[cfg(target_os = "macos")]
-pub use sys::{idle, video, windows};
+pub use sys::{video, windows};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const SCREEN: Rect = Rect { x: 0.0, y: 0.0, w: 1200.0, h: 800.0 };
-
-    #[test]
-    fn shows_after_quiet_minutes_not_with_a_video_and_goes_on_any_input() {
-        assert_eq!(decide(true, false, Duration::from_secs(5), || false), Do::Nothing);
-        assert_eq!(decide(true, false, AFTER, || false), Do::Show);
-        assert_eq!(decide(true, false, AFTER, || true), Do::Nothing, "a video plays");
-        assert_eq!(decide(false, false, AFTER, || false), Do::Nothing, "switched off");
-        assert_eq!(decide(true, true, AFTER * 2, || false), Do::Nothing);
-        assert_eq!(decide(true, true, Duration::from_millis(200), || false), Do::Hide);
-        assert_eq!(decide(false, true, AFTER, || false), Do::Hide);
-    }
 
     #[test]
     fn words_go_only_where_no_window_is() {
@@ -197,14 +147,5 @@ mod tests {
         let half = Rect { x: 0.0, y: 0.0, w: 700.0, h: 800.0 };
         let spots = free_spots(SCREEN, Some(half), &[], &[], 6, 4);
         assert!(spots.iter().all(|c| c.x + c.w <= 700.0 || c.x >= 700.0));
-    }
-
-    #[test]
-    fn picks_rotate_through_the_list() {
-        let w = ["a", "b", "c"];
-        assert_eq!(pick(&w, 2, 0), vec!["a", "b"]);
-        assert_eq!(pick(&w, 2, 2), vec!["c", "a"]);
-        assert_eq!(pick(&w, 5, 1).len(), 3);
-        assert!(pick::<&str>(&[], 3, 0).is_empty());
     }
 }

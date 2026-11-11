@@ -19,6 +19,8 @@ mod cards;
 mod chatswap;
 #[cfg(not(target_os = "macos"))]
 mod firefox;
+#[cfg(target_os = "macos")]
+mod float;
 #[allow(dead_code)]
 mod idle;
 #[cfg(target_os = "macos")]
@@ -32,6 +34,8 @@ mod paths;
 mod pc;
 mod prefs;
 mod preview;
+#[allow(dead_code)]
+mod review;
 #[cfg(target_os = "macos")]
 mod speak;
 #[cfg(target_os = "macos")]
@@ -50,7 +54,7 @@ mod app {
     use block2::RcBlock;
     use objc2::MainThreadMarker;
     use objc2::rc::autoreleasepool;
-    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSScreen, NSWorkspace};
+    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWorkspace};
     use objc2_foundation::NSTimer;
     use tray_icon::TrayIconBuilder;
     use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
@@ -104,8 +108,8 @@ mod app {
         preview: RefCell<crate::preview::Preview>,
         /** Idle words: where the list carries on from, and when to look again
          * when there was nowhere (or nothing) to show them. */
-        idle_seed: Cell<usize>,
-        idle_retry: Cell<Instant>,
+        /** Learning words on screen (float.rs). */
+        floaters: crate::float::Floaters,
         /** A ⌥⏎ swap's note for the toast, from its thread. */
         swapped: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     }
@@ -187,7 +191,13 @@ mod app {
             app.view.toast(mtm, &note);
         }
         app.view.tick_toast();
-        idle_words(mtm, app);
+        let most = if app.paused.get() { 0 } else { app.prefs.borrow().words_on_screen };
+        app.floaters.tick(
+            mtm,
+            most,
+            || app.engine.learning_words().into_iter().map(|w| (w.lang, w.word)).collect(),
+            |lang: &str, word: &str| app.engine.word_card(lang.into(), word.into(), String::new()).and_then(|c| c.meanings.first().cloned()).unwrap_or_default(),
+        );
         let p = app.preview.borrow();
         if out.show {
             app.view.show(mtm, &p.line, p.place);
@@ -202,47 +212,6 @@ mod app {
         let pid = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
         let (front, content) = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
         crate::idle::free_spots(screen, front, &content, &crate::idle::windows(pid), 8, 6)
-    }
-
-    /// Learning words over the idle screen (idle.rs), and away on any input.
-    fn idle_words(mtm: MainThreadMarker, app: &App) {
-        use crate::idle::{Do, decide};
-        let enabled = app.prefs.borrow().idle_words && !app.paused.get();
-        let quiet = crate::idle::idle();
-        if !app.view.words_on.get() && quiet >= crate::idle::AFTER && Instant::now() < app.idle_retry.get() {
-            return;
-        }
-        match decide(enabled, app.view.words_on.get(), quiet, crate::idle::video) {
-            Do::Hide => app.view.hide_words(),
-            Do::Show => {
-                // Looked at once; nothing to show means a look again in a while.
-                app.idle_retry.set(Instant::now() + std::time::Duration::from_secs(30));
-                let Some(main) = NSScreen::mainScreen(mtm) else {
-                    return;
-                };
-                let vis = main.visibleFrame();
-                let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(vis.size.height);
-                let top_left = crate::model::Rect { x: vis.origin.x, y: primary_h - (vis.origin.y + vis.size.height), w: vis.size.width, h: vis.size.height };
-                let cells = spots(top_left);
-                let words = app.engine.learning_words();
-                let picked = crate::idle::pick(&words, cells.len().min(crate::idle::MOST), app.idle_seed.get());
-                if picked.is_empty() {
-                    return;
-                }
-                app.idle_seed.set(app.idle_seed.get() + picked.len());
-                let items: Vec<_> = cells
-                    .iter()
-                    .zip(picked)
-                    .map(|(c, w)| {
-                        let meaning = app.engine.word_card(w.lang.clone(), w.word.clone(), String::new()).and_then(|c| c.meanings.first().cloned()).unwrap_or_default();
-                        let at = objc2_foundation::NSRect::new(objc2_foundation::NSPoint::new(c.x, primary_h - (c.y + c.h)), objc2_foundation::NSSize::new(c.w, c.h));
-                        (at, w.word, meaning)
-                    })
-                    .collect();
-                app.view.show_words(mtm, vis, &items);
-            }
-            Do::Nothing => {}
-        }
     }
 
     /// Puts `text` on the clipboard, as plain text.
@@ -360,50 +329,6 @@ mod app {
         nsapp.run();
     }
 
-    /// `--demo-words`: the idle words where no window is, a toast, and a long
-    /// line scrolled two words back, for a few seconds (screenshots).
-    fn demo_words(mtm: MainThreadMarker) {
-        let nsapp = NSApplication::sharedApplication(mtm);
-        nsapp.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
-        let view: &'static View = Box::leak(Box::new(View::new(mtm)));
-        let main = NSScreen::mainScreen(mtm).expect("a screen");
-        let vis = main.visibleFrame();
-        let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(vis.size.height);
-        let top_left = crate::model::Rect { x: vis.origin.x, y: primary_h - (vis.origin.y + vis.size.height), w: vis.size.width, h: vis.size.height };
-        let cells = spots(top_left);
-        eprintln!("demo: {} free spots on {:?}", cells.len(), top_left);
-        let words = [
-            ("lugubre", "gloomy, dismal"),
-            ("déçu", "disappointed"),
-            ("reculer", "to step back"),
-            ("menaçant", "threatening"),
-            ("Schadenfreude", "joy at another's misfortune"),
-            ("maléfique", "evil, malevolent"),
-        ];
-        let items: Vec<_> = cells
-            .iter()
-            .zip(words.iter())
-            .map(|(c, (w, m))| (objc2_foundation::NSRect::new(objc2_foundation::NSPoint::new(c.x, primary_h - (c.y + c.h)), objc2_foundation::NSSize::new(c.w, c.h)), w.to_string(), m.to_string()))
-            .collect();
-        view.show_words(mtm, vis, &items);
-        view.toast(mtm, "Copied “plage”");
-        let toks: Vec<crate::view::Tok> = "Nous sommes allés à la plage avec nos amis hier après-midi et nous avons nagé jusqu'au soir"
-            .split(' ')
-            .enumerate()
-            .flat_map(|(i, w)| {
-                let space = crate::view::Tok { text: " ".into(), reading: String::new(), word: false, key: String::new(), status: 0 };
-                let word = crate::view::Tok { text: w.into(), reading: String::new(), word: true, key: w.into(), status: if w == "plage" { 1 } else { 0 } };
-                if i == 0 { vec![word] } else { vec![space, word] }
-            })
-            .collect();
-        let row = crate::view::Row { lang: "fr".into(), flag: "🇫🇷".into(), toks };
-        view.show(mtm, std::slice::from_ref(&row), ax::Place { caret: Some(ax::Rect { x: 300.0, y: 300.0, w: 2.0, h: 18.0 }), frame: None });
-        view.scroll(mtm, 4);
-        let quit = RcBlock::new(move |_t: NonNull<NSTimer>| std::process::exit(0));
-        unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(3.0, false, &quit) };
-        nsapp.run();
-    }
-
     /// `--type "text"`: types it into the frontmost app, a key at a time, and quits
     /// (for checks: the app has the Accessibility permission that needs).
     fn type_text(text: &str) {
@@ -484,9 +409,6 @@ mod app {
         if let Some(i) = args.iter().position(|a| a == "--type") {
             return type_text(args.get(i + 1).map(String::as_str).unwrap_or(""));
         }
-        if args.iter().any(|a| a == "--demo-words") {
-            return demo_words(mtm);
-        }
         if let Some(i) = args.iter().position(|a| a == "--demo") {
             return demo(mtm, args.get(i + 1).cloned().unwrap_or_default());
         }
@@ -522,8 +444,7 @@ mod app {
             typing_in: RefCell::default(),
             woken: RefCell::default(),
             preview: RefCell::new(crate::preview::Preview::new(Instant::now())),
-            idle_seed: Cell::new(0),
-            idle_retry: Cell::new(Instant::now()),
+            floaters: crate::float::Floaters::new(&dirs(), spots, crate::idle::video),
             swapped: Default::default(),
         }));
 
@@ -541,7 +462,13 @@ mod app {
         let off_here = CheckMenuItem::new("Off in this app", true, false, None);
         let selection = CheckMenuItem::new("Preview selected text", true, app.prefs.borrow().selection, None);
         let copy_click = CheckMenuItem::new("Copy a word when clicked", true, app.prefs.borrow().copy_click, None);
-        let idle_words = CheckMenuItem::new("Learning words when idle", true, app.prefs.borrow().idle_words, None);
+        // How many learning words float in the screen's empty spots.
+        let words_menu = Submenu::new("Words on screen", true);
+        let word_counts: Vec<(usize, CheckMenuItem)> =
+            [0usize, 2, 4, 6, 8].iter().map(|&n| (n, CheckMenuItem::new(if n == 0 { "Off".to_string() } else { n.to_string() }, true, app.prefs.borrow().words_on_screen == n, None))).collect();
+        for (_, c) in &word_counts {
+            let _ = words_menu.append(c);
+        }
         let chat_swap = CheckMenuItem::new("⌥⏎ in ChatGPT and Claude: into my language", true, app.prefs.borrow().chat_swap, None);
         // Translations run on this Mac, in the languages downloaded in System
         // Settings: this opens that page, and names any still missing.
@@ -551,7 +478,7 @@ mod app {
         let sep = PredefinedMenuItem::separator();
         let sep2 = PredefinedMenuItem::separator();
         let sep3 = PredefinedMenuItem::separator();
-        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &idle_words, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
+        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &words_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_title("文").with_tooltip("ccez-keys").build();
         // Bold and a size up: the menu bar's regular text left 文 thin and small.
         if let Ok(t) = &tray
@@ -573,7 +500,7 @@ mod app {
         let _tray = tray;
         let (pause_id, lang_id, login_id, quit_id) = (pause.id().clone(), languages.id().clone(), login.id().clone(), quit.id().clone());
         let (readings_id, off_id) = (readings.id().clone(), off_here.id().clone());
-        let (selection_id, copy_id, idle_id, swap_id) = (selection.id().clone(), copy_click.id().clone(), idle_words.id().clone(), chat_swap.id().clone());
+        let (selection_id, copy_id, swap_id) = (selection.id().clone(), copy_click.id().clone(), chat_swap.id().clone());
         let menu_tick = Cell::new(0u32);
 
         // ⌥⏎ in ChatGPT and Claude: the message box into the first learning language.
@@ -607,6 +534,15 @@ mod app {
             );
             log("info", &format!("preview scroll {}", if on { "on" } else { "unavailable" }));
         }
+
+        // A word on screen clicked: Good, Again or Easy (float.rs).
+        crate::float::CLICK.with(|c| {
+            *c.borrow_mut() = Some(Box::new(move |id: isize, kind: u8| {
+                if let Some(mtm) = MainThreadMarker::new() {
+                    app.floaters.clicked(mtm, id, kind);
+                }
+            }));
+        });
 
         // A word clicked: its card; Learning / Known on the card set its status
         // everywhere (ccez-words), and the preview redraws with it.
@@ -726,12 +662,11 @@ mod app {
                         app.prefs.borrow_mut().readings = readings.is_checked();
                         app.prefs.borrow().save(&dirs());
                         app.preview.borrow_mut().redo();
-                    } else if e.id == selection_id || e.id == copy_id || e.id == idle_id || e.id == swap_id {
+                    } else if e.id == selection_id || e.id == copy_id || e.id == swap_id {
                         {
                             let mut p = app.prefs.borrow_mut();
                             p.selection = selection.is_checked();
                             p.copy_click = copy_click.is_checked();
-                            p.idle_words = idle_words.is_checked();
                             p.chat_swap = chat_swap.is_checked();
                             p.save(&dirs());
                         }
@@ -748,6 +683,12 @@ mod app {
                                 p.on.push(bundle);
                             }
                             p.save(&dirs());
+                        }
+                    } else if let Some((n, _)) = word_counts.iter().find(|(_, c)| *c.id() == e.id) {
+                        app.prefs.borrow_mut().words_on_screen = *n;
+                        app.prefs.borrow().save(&dirs());
+                        for (m, c) in &word_counts {
+                            c.set_checked(m == n);
                         }
                     } else if let Some((n, _)) = counts.iter().find(|(_, c)| *c.id() == e.id) {
                         app.prefs.borrow_mut().shown = *n;
