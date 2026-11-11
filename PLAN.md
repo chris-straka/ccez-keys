@@ -1,3 +1,21 @@
+# Owner notes, 2026-11-11 (desktop preview)
+
+Work these off and delete each when it ships.
+
+- Hover the preview and hold Shift + scroll: move back through the earlier
+  part of the sentence and forward again.
+- Show the preview sooner when its whole line is already translated.
+- Check that the preview lines translate in parallel, not one by one.
+- Idle for a while (not while a video plays): show learning words in empty
+  screen areas; any mouse move clears them all.
+- Click a word in the preview: a toast that it was copied, at once.
+- Caret placed inside a sentence: preview everything up to the caret.
+- Text selected: preview the selection.
+- In the ChatGPT and Claude desktop apps: translate the English typed and
+  replace it with the learning language (the model reads it fine). Ask the
+  owner when it should fire (on send, on a key) before building.
+- Menu items to switch each of these on and off.
+
 # Owner notes, 2026-11-10 (from ccez-keeps)
 
 Work these off and delete each when it ships.
