@@ -195,7 +195,12 @@ mod app {
         app.floaters.tick(
             mtm,
             most,
-            || app.engine.learning_words().into_iter().map(|w| (w.lang, w.word)).collect(),
+            || {
+                // From the first few learning languages only, when the menu says so.
+                let n = app.prefs.borrow().words_langs;
+                let keep: Vec<&String> = if n == 0 { app.langs.iter().collect() } else { app.langs.iter().take(n).collect() };
+                app.engine.learning_words().into_iter().filter(|w| keep.iter().any(|l| **l == w.lang)).map(|w| (w.lang, w.word)).collect()
+            },
             |lang: &str, word: &str| app.engine.word_card(lang.into(), word.into(), String::new()).and_then(|c| c.meanings.first().cloned()).unwrap_or_default(),
         );
         let p = app.preview.borrow();
@@ -465,9 +470,18 @@ mod app {
         // How many learning words float in the screen's empty spots.
         let words_menu = Submenu::new("Words on screen", true);
         let word_counts: Vec<(usize, CheckMenuItem)> =
-            [0usize, 2, 4, 6, 8].iter().map(|&n| (n, CheckMenuItem::new(if n == 0 { "Off".to_string() } else { n.to_string() }, true, app.prefs.borrow().words_on_screen == n, None))).collect();
+            (0usize..=12).map(|n| (n, CheckMenuItem::new(if n == 0 { "Off".to_string() } else { n.to_string() }, true, app.prefs.borrow().words_on_screen == n, None))).collect();
         for (_, c) in &word_counts {
             let _ = words_menu.append(c);
+        }
+        // How many languages they come from (the first few, in the owner's order).
+        let langs_menu = Submenu::new("Languages on screen", true);
+        let lang_counts: Vec<(usize, CheckMenuItem)> = std::iter::once(0usize)
+            .chain(1..=app.langs.len())
+            .map(|n| (n, CheckMenuItem::new(if n == 0 { "All".to_string() } else { n.to_string() }, true, app.prefs.borrow().words_langs == n, None)))
+            .collect();
+        for (_, c) in &lang_counts {
+            let _ = langs_menu.append(c);
         }
         let chat_swap = CheckMenuItem::new("⌥⏎ in ChatGPT and Claude: into my language", true, app.prefs.borrow().chat_swap, None);
         // Translations run on this Mac, in the languages downloaded in System
@@ -478,7 +492,7 @@ mod app {
         let sep = PredefinedMenuItem::separator();
         let sep2 = PredefinedMenuItem::separator();
         let sep3 = PredefinedMenuItem::separator();
-        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &words_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
+        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &words_menu, &langs_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_title("文").with_tooltip("ccez-keys").build();
         // Bold and a size up: the menu bar's regular text left 文 thin and small.
         if let Ok(t) = &tray
@@ -683,6 +697,12 @@ mod app {
                                 p.on.push(bundle);
                             }
                             p.save(&dirs());
+                        }
+                    } else if let Some((n, _)) = lang_counts.iter().find(|(_, c)| *c.id() == e.id) {
+                        app.prefs.borrow_mut().words_langs = *n;
+                        app.prefs.borrow().save(&dirs());
+                        for (m, c) in &lang_counts {
+                            c.set_checked(m == n);
                         }
                     } else if let Some((n, _)) = word_counts.iter().find(|(_, c)| *c.id() == e.id) {
                         app.prefs.borrow_mut().words_on_screen = *n;
