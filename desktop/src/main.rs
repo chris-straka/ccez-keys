@@ -201,7 +201,10 @@ mod app {
                 let keep: Vec<&String> = if n == 0 { app.langs.iter().collect() } else { app.langs.iter().take(n).collect() };
                 app.engine.learning_words().into_iter().filter(|w| keep.iter().any(|l| **l == w.lang)).map(|w| (w.lang, w.word)).collect()
             },
-            |lang: &str, word: &str| app.engine.word_card(lang.into(), word.into(), String::new()).and_then(|c| c.meanings.first().cloned()).unwrap_or_default(),
+            |lang: &str, word: &str| {
+                let meanings = |w: &str| app.engine.word_card(lang.into(), w.into(), String::new()).map(|c| c.meanings).unwrap_or_default();
+                crate::cards::short_gloss(word, &meanings(word), meanings)
+            },
         );
         let p = app.preview.borrow();
         if out.show {

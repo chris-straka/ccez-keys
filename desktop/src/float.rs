@@ -72,6 +72,8 @@ struct Word {
     id: isize,
     lang: String,
     word: String,
+    /// The word as it shows ("parvenir à" for parvenir).
+    shown: String,
     meaning: String,
     /// Its spot (top-left coordinates), as the spot search gives them.
     cell: Rect,
@@ -147,8 +149,8 @@ impl Floaters {
     /// Every tick: words come, stay, open under the pointer, and go.
     /// `most` is how many may be up (the menu's count; 0: none, also when
     /// paused), `words` gives the learning words (lang, word) and `meaning` a
-    /// word's short meaning.
-    pub fn tick(&self, mtm: MainThreadMarker, most: usize, words: impl FnOnce() -> Vec<(String, String)>, meaning: impl Fn(&str, &str) -> String) {
+    /// word as shown and its short meaning.
+    pub fn tick(&self, mtm: MainThreadMarker, most: usize, words: impl FnOnce() -> Vec<(String, String)>, meaning: impl Fn(&str, &str) -> (String, String)) {
         let enabled = most > 0;
         self.looking.store(enabled, Ordering::Relaxed);
         // Words that faded out: off the screen.
@@ -214,8 +216,8 @@ impl Floaters {
         self.seed.set(self.seed.get() + 1);
         let id = self.next_id.get();
         self.next_id.set(id + 1);
-        let m = meaning(&lang, &word);
-        self.words.borrow_mut().push(show(mtm, id, lang, word, m, cell, primary_h));
+        let (shown, m) = meaning(&lang, &word);
+        self.words.borrow_mut().push(show(mtm, id, lang, word, shown, m, cell, primary_h));
     }
 
     fn leave(&self, w: Word) {
@@ -261,20 +263,21 @@ impl Floaters {
 }
 
 /// A word put up in `cell`, faint, its meaning hidden.
-fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, meaning: String, cell: Rect, primary_h: f64) -> Word {
+#[allow(clippy::too_many_arguments)]
+fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, cell: Rect, primary_h: f64) -> Word {
     let (panel, bg) = new_panel(mtm);
     panel.setLevel(20);
     panel.setHasShadow(false);
     bg.setFillColor(&NSColor::colorWithSRGBRed_green_blue_alpha(0.1, 0.1, 0.11, 0.72));
     let button: Retained<NSButton> = {
         let b: Retained<FloatWord> = unsafe {
-            objc2::msg_send![<FloatWord as objc2::ClassType>::class(), buttonWithTitle: &*NSString::from_str(&word), target: Option::<&objc2::runtime::AnyObject>::None, action: Option::<objc2::runtime::Sel>::None]
+            objc2::msg_send![<FloatWord as objc2::ClassType>::class(), buttonWithTitle: &*NSString::from_str(&shown), target: Option::<&objc2::runtime::AnyObject>::None, action: Option::<objc2::runtime::Sel>::None]
         };
         Retained::into_super(b)
     };
     button.setBordered(false);
     button.setTag(id);
-    let mut w = Word { id, lang, word, meaning, cell, panel, bg, button, meaning_label: None, on: Default::default(), came: Instant::now(), open: false, hold_until: None, top: None };
+    let mut w = Word { id, lang, word, shown, meaning, cell, panel, bg, button, meaning_label: None, on: Default::default(), came: Instant::now(), open: false, hold_until: None, top: None };
     lay_out(mtm, &mut w, primary_h);
     w.on.set(true);
     w.panel.setAlphaValue(0.0);
@@ -298,7 +301,7 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
             &[&*font as &objc2::runtime::AnyObject, &*color as &objc2::runtime::AnyObject],
         )
     };
-    let title = unsafe { NSAttributedString::new_with_attributes(&NSString::from_str(&w.word), &attrs) };
+    let title = unsafe { NSAttributedString::new_with_attributes(&NSString::from_str(&w.shown), &attrs) };
     w.button.setAttributedTitle(&title);
     let ww = objc2_app_kit::NSAttributedStringNSStringDrawing::size(&*title).width.ceil() + 2.0;
     w.button.sizeToFit();
