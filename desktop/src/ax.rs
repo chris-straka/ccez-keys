@@ -162,10 +162,13 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> (Op
         let kids = attr(el.0, "AXChildren").filter(|a| unsafe { CFGetTypeID(a.0) == CFArrayGetTypeID() });
         let n = kids.as_ref().map(|a| unsafe { CFArrayGetCount(a.0) }).unwrap_or(0);
         let role = attr(el.0, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
-        // Content, and any leaf with a size (a web page's text runs, an icon).
+        // Content, and any small leaf with a size (a web page's text runs, an
+        // icon). A big empty leaf is a backdrop (a web app's panes), not content.
+        let small = |f: &Rect| frame.is_none_or(|w| f.w * f.h < w.w * w.h * 0.08);
         if (CONTENT.contains(&role.as_str()) || n == 0)
             && let Some(f) = frame_of(el.0)
             && frame.is_none_or(|w| f.w < w.w * 0.95 || f.h < w.h * 0.95)
+            && (CONTENT.contains(&role.as_str()) || small(&f))
         {
             out.push(f);
             if CONTENT.contains(&role.as_str()) && role != "AXCell" {

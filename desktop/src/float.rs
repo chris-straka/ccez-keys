@@ -83,6 +83,9 @@ struct Word {
     came: Instant,
     /// The meaning shows (hovered, or after Again until this time).
     open: bool,
+    /// Its top edge (Cocoa's coordinates), fixed once it's up: the meaning
+    /// opens below the word without moving it (owner, 2026-11-11).
+    top: Option<f64>,
     hold_until: Option<Instant>,
 }
 
@@ -271,7 +274,7 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, meaning: S
     };
     button.setBordered(false);
     button.setTag(id);
-    let mut w = Word { id, lang, word, meaning, cell, panel, bg, button, meaning_label: None, on: Default::default(), came: Instant::now(), open: false, hold_until: None };
+    let mut w = Word { id, lang, word, meaning, cell, panel, bg, button, meaning_label: None, on: Default::default(), came: Instant::now(), open: false, hold_until: None, top: None };
     lay_out(mtm, &mut w, primary_h);
     w.on.set(true);
     w.panel.setAlphaValue(0.0);
@@ -311,10 +314,10 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
         content.addSubview(m);
     }
     w.meaning_label = m;
-    // Its spot's middle, in Cocoa's coordinates.
+    // Its spot's middle, in Cocoa's coordinates; the top stays where it first was.
     let cx = w.cell.x + w.cell.w / 2.0;
-    let cy = primary_h - (w.cell.y + w.cell.h / 2.0);
-    let frame: NSRect = rect(cx - width / 2.0, cy - height / 2.0, width, height);
+    let top = *w.top.get_or_insert(primary_h - (w.cell.y + w.cell.h / 2.0) + height / 2.0);
+    let frame: NSRect = rect(cx - width / 2.0, top - height, width, height);
     w.panel.setFrame_display(frame, true);
     w.bg.setFrame(rect(0.0, 0.0, width, height));
     w.bg.setCornerRadius(height.min(28.0) / 2.0);
