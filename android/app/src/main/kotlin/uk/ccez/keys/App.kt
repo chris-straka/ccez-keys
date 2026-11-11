@@ -89,14 +89,16 @@ class App : Application() {
     private val flags = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
     private val lists = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
     private val texts = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val numbers = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     /** Settings as Kotlin keeps them between changes: hot paths read these, not the core over JNI. */
     fun flag(name: String): Boolean = flags.getOrPut(name) { engine.settingBool(name) }
     fun strings(name: String): List<String> = lists.getOrPut(name) { engine.settingStrings(name) }
     fun text(name: String): String = texts.getOrPut(name) { engine.setting(name).trim('"') }
+    fun number(name: String): Int = numbers.getOrPut(name) { engine.setting(name).toIntOrNull() ?: 0 }
 
     fun settingsChanged() {
-        flags.clear(); lists.clear(); texts.clear()
+        flags.clear(); lists.clear(); texts.clear(); numbers.clear()
         settingsVersion.value += 1
         loadLanguages()
     }
@@ -136,6 +138,9 @@ class App : Application() {
 
     /** The keyboard resets its typing state after a recovered error. */
     @Volatile var onRecovered: (() -> Unit)? = null
+
+    /** The words on screen, while their accessibility service runs (`keys screen` reads it). */
+    @Volatile var screenWords: uk.ccez.keys.overlay.ScreenWords? = null
 
     /** Never pass typed text here. */
     fun log(level: String, event: String, vararg ctx: Pair<String, Any?>) {

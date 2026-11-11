@@ -7,6 +7,7 @@
 //!     keys use <lang>              type in this language now (fr, ja…)
 //!     keys mistakes                corrections taken, JSON lines
 //!     keys update                  look for a new release now
+//!     keys screen                  words on screen: permissions and what's up
 //!     keys word <lang> <word> [new|learning|known]   a word's status (set: synced to ccez-words)
 //!     keys log [-n 50]             the keyboard's events and errors
 //!     keys key < file              the AI key, from stdin (empty removes it);
@@ -25,6 +26,7 @@ fn main() {
         ["status"] => ("status", None, None),
         ["keymap"] => ("keymap", None, None),
         ["widget"] => ("widget", None, None),
+        ["screen"] => ("screen", None, None),
         ["get"] => ("get", None, None),
         ["get", key] => ("get", Some(key.to_string()), None),
         ["set", key, value] => ("set", Some(key.to_string()), Some(value.to_string())),

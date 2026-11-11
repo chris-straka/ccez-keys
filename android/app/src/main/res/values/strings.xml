@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="widget_description">A word you\'re learning: Known, Later or Next</string>
+    <string name="screen_words_description">Finds empty spots on screen for the words you\'re learning. Reads where things are, never what they say.</string>
 </resources>

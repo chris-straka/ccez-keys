@@ -17,7 +17,7 @@ object Backup {
 
     private val PREFS = listOf("app-languages", "faces", "widget-later")
     /** Files in the core's folder that are the owner's (dictionaries and logs aren't). */
-    private val FILE = Regex("""^(settings\.json|current-language|user-[a-z]{2,3}(-[A-Za-z]{2,8})?\.json)$""")
+    private val FILE = Regex("""^(settings\.json|screen-words\.json|current-language|user-[a-z]{2,3}(-[A-Za-z]{2,8})?\.json)$""")
 
     private fun dir(ctx: Context) = File(ctx.filesDir, "keys")
 
