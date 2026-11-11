@@ -245,6 +245,24 @@ mod app {
         BUSY.with_borrow_mut(|b| b.look(&app, &all, &free))
     }
 
+    /// Lets this app set the cursor while it isn't the front app (the
+    /// window server's own switch, as Hammerspoon and others use it).
+    fn cursor_in_background() {
+        use std::ffi::c_void;
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            fn _CGSDefaultConnection() -> i32;
+            fn CGSSetConnectionProperty(cid: i32, target: i32, key: *const c_void, value: *const c_void) -> i32;
+            static kCFBooleanTrue: *const c_void;
+        }
+        let key = objc2_foundation::NSString::from_str("SetsCursorInBackground");
+        let cid = unsafe { _CGSDefaultConnection() };
+        let err = unsafe { CGSSetConnectionProperty(cid, cid, objc2::rc::Retained::as_ptr(&key) as *const c_void, kCFBooleanTrue) };
+        if err != 0 {
+            log("warn", &format!("cursor in background: {err}"));
+        }
+    }
+
     /// Puts `text` on the clipboard, as plain text.
     fn copy(text: &str) {
         put(&objc2_app_kit::NSPasteboard::generalPasteboard(), text);
@@ -547,6 +565,11 @@ mod app {
         let (selection_id, copy_id, swap_id) = (selection.id().clone(), copy_click.id().clone(), chat_swap.id().clone());
         let (typing_id, video_id, shots_id) = (words_typing.id().clone(), words_video.id().clone(), words_shots.id().clone());
         let menu_tick = Cell::new(0u32);
+
+        // The pointing finger over a word or the preview even while another
+        // app is in front (owner, 2026-11-11): macOS lets only the front app
+        // set the cursor unless a background one asks to.
+        cursor_in_background();
 
         // ⌥⏎ in ChatGPT and Claude: the message box into the first learning language.
         let started = crate::chatswap::start(

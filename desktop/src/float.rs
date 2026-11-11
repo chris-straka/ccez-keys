@@ -109,6 +109,8 @@ struct Word {
     /// Its top edge (Cocoa's coordinates), fixed once it's up: the meaning
     /// opens below the word without moving it (owner, 2026-11-11).
     top: Option<f64>,
+    /// The pointer was on it last tick.
+    pointed: bool,
     hold_until: Option<Instant>,
 }
 
@@ -279,6 +281,13 @@ impl Floaters {
             let f = w.panel.frame();
             let over = mouse.x >= f.origin.x && mouse.x <= f.origin.x + f.size.width && mouse.y >= f.origin.y && mouse.y <= f.origin.y + f.size.height;
             let held = w.hold_until.is_some_and(|t| Instant::now() < t);
+            // The pointing finger while over it, the arrow once it's left.
+            if over {
+                objc2_app_kit::NSCursor::pointingHandCursor().set();
+            } else if w.pointed {
+                objc2_app_kit::NSCursor::arrowCursor().set();
+            }
+            w.pointed = over;
             let open = over || held;
             if open != w.open {
                 w.open = open;
@@ -481,7 +490,25 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
     button.setTag(id);
     // Never in a screenshot or a screen share (where macOS still honours it).
     panel.setSharingType(objc2_app_kit::NSWindowSharingType::None);
-    let mut w = Word { id, lang, word, shown, meaning, tags, cell, panel, bg, button, meaning_label: None, on: Default::default(), came: Instant::now(), open: false, hold_until: None, top: None };
+    let mut w = Word {
+        id,
+        lang,
+        word,
+        shown,
+        meaning,
+        tags,
+        cell,
+        panel,
+        bg,
+        button,
+        meaning_label: None,
+        on: Default::default(),
+        came: Instant::now(),
+        open: false,
+        hold_until: None,
+        top: None,
+        pointed: false,
+    };
     lay_out(mtm, &mut w, primary_h);
     w.on.set(true);
     w.panel.setAlphaValue(0.0);
