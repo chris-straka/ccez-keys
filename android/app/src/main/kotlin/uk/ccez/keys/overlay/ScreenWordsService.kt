@@ -33,6 +33,8 @@ class ScreenWordsService : AccessibilityService() {
     private var lastScan = 0L
     private var scanPosted = false
     private var running = false
+    /** Off the screen until then (the screenshot UI was up), as on the Mac. */
+    private var quietUntil = 0L
 
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
@@ -90,6 +92,7 @@ class ScreenWordsService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             FreeSpace.isScreenshotWindow(event.packageName, null, event.className, emptyList())
         ) {
+            quietUntil = System.currentTimeMillis() + SHOT_QUIET_MS
             if (::words.isInitialized) words.hideNow()
         }
         if (!running) return
@@ -141,6 +144,21 @@ class ScreenWordsService : AccessibilityService() {
             }
             if (FreeSpace.isScreenshotWindow(pkg, window.title, null, emptyList())) screenshot = true
             if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) {
+                // The screenshot panel is a SystemUI system window: known by
+                // its views' ids (screenshot_preview and friends).
+                if (pkg == "com.android.systemui" && !screenshot) {
+                    val q = ArrayDeque<AccessibilityNodeInfo>()
+                    q.add(root)
+                    var seen = 0
+                    while (q.isNotEmpty() && seen < 200 && !screenshot) {
+                        val n = q.removeFirst()
+                        seen++
+                        for (i in 0 until n.childCount) n.getChild(i)?.let { q.add(it) }
+                        if (n.viewIdResourceName?.contains("screenshot", ignoreCase = true) == true) screenshot = true
+                        if (n !== root) n.recycle()
+                    }
+                    while (q.isNotEmpty()) q.removeFirst().recycle()
+                }
                 root.recycle()
                 continue
             }
@@ -182,8 +200,9 @@ class ScreenWordsService : AccessibilityService() {
             }
             while (queue.isNotEmpty()) queue.removeFirst().recycle()
         }
+        if (screenshot) quietUntil = System.currentTimeMillis() + SHOT_QUIET_MS
         when {
-            screenshot -> words.hideNow()
+            screenshot || System.currentTimeMillis() < quietUntil -> words.hideNow()
             password -> words.hide()
             keyboardUp && !app.flag("learning.screen_typing") -> words.hide()
             videoFull && !app.flag("learning.screen_video") -> words.hide()
@@ -194,6 +213,8 @@ class ScreenWordsService : AccessibilityService() {
     companion object {
         /** Spots looked for this often (and on window changes, no oftener). */
         const val EVERY_MS = 4_000L
+        /** Kept off the screen this long after the screenshot UI (a scrolling screenshot is taken from it). */
+        const val SHOT_QUIET_MS = 8_000L
         private const val COLS = 3
         private const val ROWS = 7
         private const val MAX_NODES = 4000

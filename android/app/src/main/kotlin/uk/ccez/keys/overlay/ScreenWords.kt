@@ -174,7 +174,11 @@ class ScreenWords(private val ctx: Context) {
             view.measuredWidth.coerceAtMost(cell.width()),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            // Never in a screenshot or a screen recording, where the
+            // per-window FLAG_SECURE is honoured for overlays; hiding when
+            // the screenshot UI appears (the service) is the second belt.
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_SECURE,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
