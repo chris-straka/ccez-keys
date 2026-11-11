@@ -275,6 +275,16 @@ pub enum Put {
     Nothing,
 }
 
+/// The focused field's whole text (None: no text field, or a password box).
+pub fn field_text() -> Option<String> {
+    let f = focused()?;
+    if f.secure {
+        return None;
+    }
+    let el = focused_element(0.5)?;
+    attr(el.0, "AXValue").and_then(|r| string(&r))
+}
+
 /// The focused field's selection (UTF-16 units), if it says.
 pub fn selection() -> Option<(usize, usize)> {
     let el = focused_element(0.5)?;

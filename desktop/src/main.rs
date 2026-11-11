@@ -15,6 +15,8 @@ mod apple;
 #[cfg(target_os = "macos")]
 mod ax;
 mod cards;
+#[cfg(target_os = "macos")]
+mod chatswap;
 #[cfg(not(target_os = "macos"))]
 mod firefox;
 #[allow(dead_code)]
@@ -104,6 +106,8 @@ mod app {
          * when there was nowhere (or nothing) to show them. */
         idle_seed: Cell<usize>,
         idle_retry: Cell<Instant>,
+        /** A ⌥⏎ swap's note for the toast, from its thread. */
+        swapped: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     }
 
     pub fn log(level: &str, what: &str) {
@@ -179,6 +183,9 @@ mod app {
         {
             app.view.open_card(mtm, &head, &sub, &crate::cards::card_text(Some(&here), &dict), st);
         }
+        if let Some(note) = app.swapped.lock().unwrap().take() {
+            app.view.toast(mtm, &note);
+        }
         app.view.tick_toast();
         idle_words(mtm, app);
         let p = app.preview.borrow();
@@ -194,7 +201,7 @@ mod app {
     fn spots(screen: crate::model::Rect) -> Vec<crate::model::Rect> {
         let pid = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
         let (front, content) = ax::content_frames(pid, 4000, std::time::Duration::from_millis(400));
-        crate::idle::free_spots(screen, front, &content, &crate::idle::windows(pid), 6, 5)
+        crate::idle::free_spots(screen, front, &content, &crate::idle::windows(pid), 8, 6)
     }
 
     /// Learning words over the idle screen (idle.rs), and away on any input.
@@ -517,6 +524,7 @@ mod app {
             preview: RefCell::new(crate::preview::Preview::new(Instant::now())),
             idle_seed: Cell::new(0),
             idle_retry: Cell::new(Instant::now()),
+            swapped: Default::default(),
         }));
 
         // The menu: pause, how many languages, readings, off in this app, the
@@ -534,6 +542,7 @@ mod app {
         let selection = CheckMenuItem::new("Preview selected text", true, app.prefs.borrow().selection, None);
         let copy_click = CheckMenuItem::new("Copy a word when clicked", true, app.prefs.borrow().copy_click, None);
         let idle_words = CheckMenuItem::new("Learning words when idle", true, app.prefs.borrow().idle_words, None);
+        let chat_swap = CheckMenuItem::new("⌥⏎ in ChatGPT and Claude: into my language", true, app.prefs.borrow().chat_swap, None);
         // Translations run on this Mac, in the languages downloaded in System
         // Settings: this opens that page, and names any still missing.
         let languages = MenuItem::new("ⓘ Translation languages…", true, None);
@@ -542,7 +551,7 @@ mod app {
         let sep = PredefinedMenuItem::separator();
         let sep2 = PredefinedMenuItem::separator();
         let sep3 = PredefinedMenuItem::separator();
-        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &idle_words, &off_here, &sep2, &languages, &login, &sep3, &quit]);
+        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &idle_words, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_title("文").with_tooltip("ccez-keys").build();
         // Bold and a size up: the menu bar's regular text left 文 thin and small.
         if let Ok(t) = &tray
@@ -564,8 +573,19 @@ mod app {
         let _tray = tray;
         let (pause_id, lang_id, login_id, quit_id) = (pause.id().clone(), languages.id().clone(), login.id().clone(), quit.id().clone());
         let (readings_id, off_id) = (readings.id().clone(), off_here.id().clone());
-        let (selection_id, copy_id, idle_id) = (selection.id().clone(), copy_click.id().clone(), idle_words.id().clone());
+        let (selection_id, copy_id, idle_id, swap_id) = (selection.id().clone(), copy_click.id().clone(), idle_words.id().clone(), chat_swap.id().clone());
         let menu_tick = Cell::new(0u32);
+
+        // ⌥⏎ in ChatGPT and Claude: the message box into the first learning language.
+        let started = crate::chatswap::start(
+            move || app.prefs.borrow().chat_swap && !app.paused.get() && frontmost().is_some_and(|b| crate::chatswap::APPS.contains(&b.as_str())),
+            move || {
+                if let Some(to) = app.langs.first() {
+                    crate::chatswap::swap(to.clone(), app.swapped.clone(), log);
+                }
+            },
+        );
+        log("info", &format!("chat swap key {}", if started { "on" } else { "unavailable" }));
 
         // Shift + scroll over the preview (owner, 2026-11-11): back through a
         // long sentence and forward again. macOS turns Shift + wheel into a
@@ -715,12 +735,13 @@ mod app {
                         app.prefs.borrow_mut().readings = readings.is_checked();
                         app.prefs.borrow().save(&dirs());
                         app.preview.borrow_mut().redo();
-                    } else if e.id == selection_id || e.id == copy_id || e.id == idle_id {
+                    } else if e.id == selection_id || e.id == copy_id || e.id == idle_id || e.id == swap_id {
                         {
                             let mut p = app.prefs.borrow_mut();
                             p.selection = selection.is_checked();
                             p.copy_click = copy_click.is_checked();
                             p.idle_words = idle_words.is_checked();
+                            p.chat_swap = chat_swap.is_checked();
                             p.save(&dirs());
                         }
                         app.preview.borrow_mut().redo();
