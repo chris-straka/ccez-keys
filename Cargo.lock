@@ -667,6 +667,7 @@ version = "0.1.0"
 dependencies = [
  "ccez-lang-core",
  "flate2",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

@@ -6,9 +6,11 @@
 
 pub mod ai;
 pub mod convert;
+pub mod gloss;
 pub mod layout;
 pub mod learn;
 pub mod log;
+pub mod review;
 pub mod settings;
 pub mod swipe;
 pub mod telex;
@@ -25,6 +27,7 @@ pub use layout::{Key, KeyKind, Layout, Page, Row};
 pub use convert::Conversion;
 pub use ai::{AnswerSink, ChatMessage, Fix, FixKind, FixPart};
 pub use learn::{Card, Ruby, StripWord, WordStatus};
+pub use review::Grade;
 pub use typing::Suggestions;
 
 uniffi::setup_scaffolding!();
@@ -58,12 +61,27 @@ pub struct LearningWord {
     pub word: String,
 }
 
+/// A word to put on screen: as it shows ("parvenir à"), its short meaning
+/// and its tags ("tr") as small pills.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct ScreenWord {
+    pub lang: String,
+    pub word: String,
+    pub shown: String,
+    pub meaning: String,
+    pub tags: Vec<String>,
+}
+
 #[derive(uniffi::Object)]
 pub struct Engine {
     dir: PathBuf,
     layouts: layout::Layouts,
     log: log::Log,
     learn: learn::Learn,
+    /// When each screen word comes back (screen-words.json in `dir`).
+    review: Mutex<review::Review>,
+    /// Where the next screen words carry on from in the list.
+    screen_seed: std::sync::atomic::AtomicU64,
     converters: Mutex<HashMap<String, convert::Index>>,
     /// Converters being read from disk now.
     loading: Mutex<std::collections::HashSet<String>>,
@@ -127,6 +145,10 @@ impl Engine {
         let engine = Engine {
             log: log::Log::new(&dir),
             learn: learn::Learn::new(&dir),
+            review: Mutex::new(review::Review::load(&dir)),
+            screen_seed: std::sync::atomic::AtomicU64::new(
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() % 997).unwrap_or(0),
+            ),
             converters: Mutex::new(HashMap::new()),
             loading: Mutex::new(std::collections::HashSet::new()),
             layouts: layout::Layouts::load(),
@@ -429,13 +451,67 @@ impl Engine {
         self.learn.statuses.set(&lang, &word, status.into());
     }
 
-    /// Statuses to and from ccez-words (`words.server`). Blocks: call off the main thread.
+    /// Statuses to and from ccez-words (`words.server`), and with them the
+    /// screen words' schedule (best effort: a server without `/review`
+    /// keeps each device its own). Blocks: call off the main thread.
     pub fn sync_words(&self, from: String) -> Result<u32, KeysError> {
         let server = self.lock().settings.get("words.server").and_then(|v| v.as_str()).unwrap_or("").to_string();
         if server.is_empty() {
             return Err(KeysError::Bad("no words.server set".into()));
         }
-        self.learn.sync(&server, &from).map_err(KeysError::Bad)
+        let came = self.learn.sync(&server, &from).map_err(KeysError::Bad)?;
+        match self.learn.block_on(review::sync(&server, &self.review)) {
+            Ok(n) => self.log.write("info", "review-sync", &serde_json::json!({"came": n}).to_string()),
+            Err(e) => self.log.write("warn", "review-sync-failed", &serde_json::json!({"error": e}).to_string()),
+        }
+        Ok(came)
+    }
+
+    // --- words on screen ---
+
+    /// Words to put on screen now (up to `learning.screen` of them, from
+    /// the first `learning.screen_langs` learning languages, the languages
+    /// taking turns), never one in `up` already or not yet due. Each with
+    /// its short meaning. Dictionary lookups: call off the main thread.
+    pub fn screen_words(&self, up: Vec<LearningWord>) -> Vec<ScreenWord> {
+        let (count, langs_limit, langs) = {
+            let s = self.lock();
+            let count = s.settings.get("learning.screen").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let limit = s.settings.get("learning.screen_langs").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            (count, limit, s.settings.strings("languages.learning"))
+        };
+        if count == 0 {
+            return Vec::new();
+        }
+        let keep: Vec<&String> = if langs_limit == 0 { langs.iter().collect() } else { langs.iter().take(langs_limit).collect() };
+        let words: Vec<(String, String)> = self
+            .learning_words()
+            .into_iter()
+            .filter(|w| keep.iter().any(|l| **l == w.lang))
+            .map(|w| (w.lang, w.word))
+            .collect();
+        let up: Vec<(String, String)> = up.into_iter().map(|w| (w.lang, w.word)).collect();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let seed = self.screen_seed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize;
+        let picked = {
+            let r = self.review.lock().unwrap_or_else(|e| e.into_inner());
+            r.next(&review::mixed(words), &up, count.saturating_sub(up.len()), now, seed)
+        };
+        picked
+            .into_iter()
+            .map(|(lang, word)| {
+                let meanings = |w: &str| self.learn.card(&lang, w, "").map(|c| c.meanings).unwrap_or_default();
+                let (shown, meaning, tags) = gloss::short_gloss(&word, &meanings(&word), meanings);
+                ScreenWord { lang, word, shown, meaning, tags }
+            })
+            .collect()
+    }
+
+    /// A screen word graded: Good later and later, Easy two steps, Again
+    /// in two minutes. Syncs with the word statuses (`sync_words`).
+    pub fn grade_screen_word(&self, lang: String, word: String, grade: Grade) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        self.review.lock().unwrap_or_else(|e| e.into_inner()).grade(&lang, &word, grade, now);
     }
 
     // --- Japanese and Chinese ---

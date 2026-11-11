@@ -19,7 +19,7 @@ use objc2_app_kit::{NSBox, NSButton, NSColor, NSEvent, NSFont, NSPanel, NSScreen
 use objc2_foundation::{NSRect, NSString};
 
 use crate::model::Rect;
-use crate::review::{Grade, Review};
+use ccez_keys_core::review::{Grade, Review};
 use crate::view::{fade_over, label, new_panel, rect, rgb};
 
 /// How long a word stays when left alone.
@@ -283,7 +283,7 @@ impl Floaters {
         let taken: Vec<Rect> = self.words.borrow().iter().map(|w| w.cell).collect();
         let Some(cell) = free.into_iter().find(|c| !taken.contains(c)) else { return };
         let up: Vec<(String, String)> = self.words.borrow().iter().map(|w| (w.lang.clone(), w.word.clone())).collect();
-        let list = crate::review::mixed(words());
+        let list = ccez_keys_core::review::mixed(words());
         let Some((lang, word)) = self.review.borrow().next(&list, &up, 1, Self::now(), self.seed.get()).into_iter().next() else { return };
         self.seed.set(self.seed.get() + 1);
         let id = self.next_id.get();

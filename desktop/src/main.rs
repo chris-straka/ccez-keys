@@ -34,8 +34,6 @@ mod paths;
 mod pc;
 mod prefs;
 mod preview;
-#[allow(dead_code)]
-mod review;
 #[cfg(target_os = "macos")]
 mod speak;
 #[cfg(target_os = "macos")]
@@ -209,7 +207,7 @@ mod app {
             },
             |lang: &str, word: &str| {
                 let meanings = |w: &str| app.engine.word_card(lang.into(), w.into(), String::new()).map(|c| c.meanings).unwrap_or_default();
-                crate::cards::short_gloss(word, &meanings(word), meanings)
+                ccez_keys_core::gloss::short_gloss(word, &meanings(word), meanings)
             },
         );
         let p = app.preview.borrow();

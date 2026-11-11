@@ -1,7 +1,14 @@
 //! When each learning word comes back on screen, as Anki would have it
 //! (owner, 2026-11-11): Good puts it off for longer each time, Easy longer
 //! still (two steps at once), Again brings it back in a couple of minutes.
-//! Kept in screen-words.json.
+//! Kept in screen-words.json beside the settings, on the Mac and the phone
+//! alike (moved here from the Mac app so both share it, 2026-11-11).
+//!
+//! Synced through ccez-words with the word statuses ([`sync`]): `GET
+//! /review` answers `{"cards": {"<lang>\t<word>": {"due", "step", "at"}}}`,
+//! `POST /review` takes the same shape; the later grade (`at`) wins per
+//! word, so a word graded on one device isn't asked on another. A server
+//! without `/review` (404) leaves each device its own schedule.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -11,7 +18,7 @@ const GOOD: [u64; 7] = [600, 3_600, 86_400, 3 * 86_400, 7 * 86_400, 21 * 86_400,
 /// After Again.
 const AGAIN: u64 = 120;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, uniffi::Enum)]
 pub enum Grade {
     Good,
     Easy,
@@ -24,6 +31,8 @@ struct Card {
     due: u64,
     /// Goods in a row.
     step: u8,
+    /// Unix seconds it was last graded (the newest grade wins a sync).
+    at: u64,
 }
 
 #[derive(Default)]
@@ -36,30 +45,66 @@ fn key(lang: &str, word: &str) -> String {
     format!("{lang}\t{word}")
 }
 
+fn cards_of(v: &serde_json::Value) -> HashMap<String, Card> {
+    let mut cards = HashMap::new();
+    if let Some(o) = v.as_object() {
+        for (k, c) in o {
+            let due = c["due"].as_u64().unwrap_or(0);
+            let step = c["step"].as_u64().unwrap_or(0).min(255) as u8;
+            let at = c["at"].as_u64().unwrap_or(0);
+            cards.insert(k.clone(), Card { due, step, at });
+        }
+    }
+    cards
+}
+
+fn json_of(cards: &HashMap<String, Card>) -> serde_json::Value {
+    let o: serde_json::Map<String, serde_json::Value> =
+        cards.iter().map(|(k, c)| (k.clone(), serde_json::json!({"due": c.due, "step": c.step, "at": c.at}))).collect();
+    serde_json::Value::Object(o)
+}
+
 impl Review {
     pub fn load(dir: &Path) -> Review {
         let path = dir.join("screen-words.json");
-        let mut cards = HashMap::new();
-        if let Ok(t) = std::fs::read_to_string(&path)
-            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&t)
-            && let Some(o) = v.as_object()
-        {
-            for (k, c) in o {
-                let due = c["due"].as_u64().unwrap_or(0);
-                let step = c["step"].as_u64().unwrap_or(0).min(255) as u8;
-                cards.insert(k.clone(), Card { due, step });
-            }
-        }
+        let cards = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .map(|v| cards_of(&v))
+            .unwrap_or_default();
         Review { cards, path: Some(path) }
     }
 
     fn save(&self) {
         let Some(path) = &self.path else { return };
-        let o: serde_json::Map<String, serde_json::Value> = self.cards.iter().map(|(k, c)| (k.clone(), serde_json::json!({"due": c.due, "step": c.step}))).collect();
         let tmp = path.with_extension("tmp");
-        if std::fs::write(&tmp, serde_json::Value::Object(o).to_string()).is_ok() {
+        if std::fs::write(&tmp, json_of(&self.cards).to_string()).is_ok() {
             let _ = std::fs::rename(&tmp, path);
         }
+    }
+
+    /// The whole schedule as kept on disk (and as sent to ccez-words).
+    pub fn export(&self) -> String {
+        json_of(&self.cards).to_string()
+    }
+
+    /// Takes in another device's schedule: a word graded there later than
+    /// here keeps its later card. Returns how many cards changed.
+    pub fn merge(&mut self, json: &str) -> usize {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return 0 };
+        // The server wraps it as {"cards": …}; a bare map is taken too.
+        let incoming = cards_of(v.get("cards").unwrap_or(&v));
+        let mut took = 0;
+        for (k, c) in incoming {
+            if self.cards.get(&k).is_none_or(|l| c.at > l.at) {
+                self.cards.insert(k, c);
+                took += 1;
+            }
+        }
+        if took > 0 {
+            self.save();
+        }
+        took
     }
 
     pub fn grade(&mut self, lang: &str, word: &str, g: Grade, now: u64) {
@@ -79,6 +124,7 @@ impl Review {
                 c.step = 0;
             }
         }
+        c.at = now;
         self.save();
     }
 
@@ -101,6 +147,34 @@ impl Review {
             .collect();
         ready.sort();
         ready.into_iter().take(n).map(|(_, _, w)| w.clone()).collect()
+    }
+}
+
+/// One round with ccez-words at `server`: what was graded elsewhere comes
+/// down (newest grade per word wins), then the merged schedule goes up.
+/// Returns how many cards changed here. A server without `/review` is not
+/// an error: nothing syncs.
+pub async fn sync(server: &str, review: &std::sync::Mutex<Review>) -> Result<u32, String> {
+    let base = server.trim_end_matches('/');
+    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(20)).build().unwrap_or_default();
+    let res = http.get(format!("{base}/review")).send().await.map_err(|e| e.to_string())?;
+    if res.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(0);
+    }
+    if !res.status().is_success() {
+        return Err(format!("review: {}", res.status()));
+    }
+    let down = res.text().await.map_err(|e| e.to_string())?;
+    let (took, up) = {
+        let mut r = review.lock().unwrap_or_else(|e| e.into_inner());
+        let took = r.merge(&down);
+        (took, serde_json::json!({"cards": json_of(&r.cards)}).to_string())
+    };
+    let posted = http.post(format!("{base}/review")).header("content-type", "application/json").body(up).send().await;
+    match posted {
+        Ok(r) if r.status().is_success() || r.status() == reqwest::StatusCode::NOT_FOUND => Ok(took as u32),
+        Ok(r) => Err(format!("review: {}", r.status())),
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -169,5 +243,21 @@ mod tests {
         r.grade("fr", "c", Grade::Again, 0); // due at 120
         assert_eq!(r.next(&words, &[w("a")], 3, 300, 0), vec![w("c"), w("d")]);
         assert_eq!(r.next(&words, &[], 2, 700, 0), vec![w("c"), w("b")]);
+    }
+
+    #[test]
+    fn a_grade_elsewhere_puts_the_word_off_here_too() {
+        let mut mac = Review::default();
+        mac.grade("fr", "lugubre", Grade::Good, 1000);
+        let mut phone = Review::default();
+        assert!(phone.due("fr", "lugubre", 1100));
+        assert_eq!(phone.merge(&format!("{{\"cards\": {}}}", mac.export())), 1);
+        assert!(!phone.due("fr", "lugubre", 1100));
+        // An older grade coming back down doesn't undo a newer one.
+        phone.grade("fr", "lugubre", Grade::Again, 2000);
+        assert_eq!(phone.merge(&mac.export()), 0);
+        assert!(phone.due("fr", "lugubre", 2200));
+        // The old file shape (no "at") still reads.
+        assert_eq!(phone.merge(r#"{"fr\tvieux": {"due": 5, "step": 2}}"#), 1);
     }
 }
