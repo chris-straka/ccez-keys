@@ -101,7 +101,7 @@ pub(crate) fn fade_over(panel: &NSPanel, visible: bool, on: std::rc::Rc<std::cel
 }
 
 /// The pointing hand over `b` (a word), even though the preview never has focus.
-fn pointer(b: &NSButton) {
+pub(crate) fn pointer(b: &NSButton) {
     use objc2::AllocAnyThread;
     use objc2_app_kit::{NSTrackingArea, NSTrackingAreaOptions};
     let opts = NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::ActiveAlways | NSTrackingAreaOptions::InVisibleRect;

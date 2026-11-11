@@ -531,14 +531,19 @@ mod app {
         let menu_tick = Cell::new(0u32);
 
         // ⌥⏎ in ChatGPT and Claude: the message box into the first learning language.
-        let started = crate::chatswap::start(move || app.prefs.borrow().chat_swap && !app.paused.get() && frontmost().is_some_and(|b| crate::chatswap::APPS.contains(&b.as_str())), {
-            let swapper = app.langs.first().map(|to| crate::chatswap::Swapper::start(to.clone(), app.swapped.clone(), log));
-            move || {
-                if let Some(s) = &swapper {
-                    s.press();
+        let started = crate::chatswap::start(
+            move || app.prefs.borrow().chat_swap && !app.paused.get() && frontmost().is_some_and(|b| crate::chatswap::APPS.contains(&b.as_str())),
+            {
+                let swapper = app.langs.first().map(|to| crate::chatswap::Swapper::start(to.clone(), app.swapped.clone(), log));
+                move || {
+                    if let Some(s) = &swapper {
+                        s.press();
+                    }
                 }
-            }
-        });
+            },
+            // A screenshot key: the words on screen get out of the picture.
+            move || app.floaters.screenshot(),
+        );
         log("info", &format!("chat swap key {}", if started { "on" } else { "unavailable" }));
 
         // Shift + scroll anywhere while the preview is up (owner, 2026-11-11):

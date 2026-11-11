@@ -38,6 +38,15 @@ struct Tap {
     port: Ref,
     on: Box<dyn Fn() -> bool>,
     fire: Box<dyn Fn()>,
+    /// ⇧⌘3, 4, 5 or 6 pressed (a screenshot coming); the key goes on.
+    shot: Box<dyn Fn()>,
+}
+
+/// ⇧⌘ with 3, 4, 5 or 6: macOS's screenshot keys.
+pub fn is_screenshot_key(keycode: i64, flags: u64) -> bool {
+    const SHIFT: u64 = 0x0002_0000;
+    const CMD: u64 = 0x0010_0000;
+    matches!(keycode, 20 | 21 | 23 | 22) && flags & SHIFT != 0 && flags & CMD != 0
 }
 
 extern "C" fn callback(_proxy: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref {
@@ -45,6 +54,10 @@ extern "C" fn callback(_proxy: Ref, kind: u32, event: Ref, info: *mut c_void) ->
     // Turned off by the system for a slow answer, or by input: back on.
     if kind == 0xFFFF_FFFE || kind == 0xFFFF_FFFF {
         unsafe { CGEventTapEnable(tap.port, true) };
+        return event;
+    }
+    if kind == 10 && is_screenshot_key(unsafe { CGEventGetIntegerValueField(event, 9) }, unsafe { CGEventGetFlags(event) }) {
+        (tap.shot)();
         return event;
     }
     // Key down only (10); the keycode field is 9.
@@ -103,8 +116,8 @@ pub fn scroll_tap(on: impl Fn() -> bool + 'static, step: impl Fn(f64, bool) + 's
 
 /// Starts watching for ⌥⏎ on the main run loop: `on` says whether it applies
 /// now (the app in front, the switch); `fire` does the swap.
-pub fn start(on: impl Fn() -> bool + 'static, fire: impl Fn() + 'static) -> bool {
-    let tap = Box::leak(Box::new(Tap { port: std::ptr::null(), on: Box::new(on), fire: Box::new(fire) }));
+pub fn start(on: impl Fn() -> bool + 'static, fire: impl Fn() + 'static, shot: impl Fn() + 'static) -> bool {
+    let tap = Box::leak(Box::new(Tap { port: std::ptr::null(), on: Box::new(on), fire: Box::new(fire), shot: Box::new(shot) }));
     // Session tap, at the head, able to drop events; key downs.
     let port = unsafe { CGEventTapCreate(1, 0, 0, 1 << 10, callback, tap as *mut Tap as *mut c_void) };
     if port.is_null() {
@@ -196,6 +209,12 @@ fn swap(h: &mut crate::apple::Helper, to: &str, done: &Arc<Mutex<Option<String>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screenshot_keys() {
+        assert!(is_screenshot_key(21, 0x0012_0000));
+        assert!(!is_screenshot_key(21, 0x0010_0000));
+    }
 
     #[test]
     fn only_option_return() {

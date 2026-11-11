@@ -23,7 +23,10 @@ use crate::review::{Grade, Review};
 use crate::view::{fade_over, label, new_panel, rect, rgb};
 
 /// How long a word stays when left alone.
-const STAYS: Duration = Duration::from_secs(90);
+const STAYS: Duration = Duration::from_secs(150);
+/// Kept off the screen this long after a screenshot key, and while the
+/// screenshot tools run (owner, 2026-11-11: not in screenshots).
+const SHOT_QUIET: Duration = Duration::from_secs(8);
 /// Fading in this slowly, they don't pull the eye (owner, 2026-11-11).
 const FADE_IN: f64 = 2.0;
 const FADE_OUT: f64 = 0.8;
@@ -52,6 +55,15 @@ objc2::define_class!(
     pub struct FloatWord;
 
     impl FloatWord {
+        // The pointing finger over a word (it takes clicks).
+        #[unsafe(method(mouseEntered:))]
+        fn mouse_entered(&self, _e: &NSEvent) {
+            objc2_app_kit::NSCursor::pointingHandCursor().set();
+        }
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited(&self, _e: &NSEvent) {
+            objc2_app_kit::NSCursor::arrowCursor().set();
+        }
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, _e: &NSEvent) {
             fire(self.tag(), 0);
@@ -103,6 +115,10 @@ pub struct Floaters {
     next_id: Cell<isize>,
     seed: Cell<usize>,
     last: Cell<Instant>,
+    /// Off the screen until then (a screenshot key was pressed).
+    quiet_until: Cell<Option<Instant>>,
+    /// When the screenshot tools were last looked for, and whether they were up.
+    capture_seen: Cell<(Instant, bool)>,
     /// From the spot thread: the free spots, and whether a video holds the display.
     spots: Arc<Mutex<Option<Vec<Rect>>>>,
     video: Arc<AtomicBool>,
@@ -140,6 +156,8 @@ impl Floaters {
             next_id: Cell::new(1),
             seed: Cell::new((std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) % 997) as usize),
             last: Cell::new(Instant::now()),
+            quiet_until: Cell::new(None),
+            capture_seen: Cell::new((Instant::now(), false)),
             spots,
             video: playing,
             screen,
@@ -178,6 +196,19 @@ impl Floaters {
                 true
             }
         });
+        let (at, up) = self.capture_seen.get();
+        let up = if at.elapsed() > Duration::from_millis(600) {
+            let now = capturing();
+            self.capture_seen.set((Instant::now(), now));
+            now
+        } else {
+            up
+        };
+        let quiet = self.quiet_until.get().is_some_and(|t| Instant::now() < t) || up;
+        if quiet {
+            self.hide_now();
+            return;
+        }
         if !enabled || (!while_video && self.video.load(Ordering::Relaxed)) {
             self.clear();
             return;
@@ -242,6 +273,22 @@ impl Floaters {
         self.leaving.borrow_mut().push((w.panel, Instant::now()));
     }
 
+    /// A screenshot key: every word off the screen at once, no fade, for a while.
+    pub fn screenshot(&self) {
+        self.quiet_until.set(Some(Instant::now() + SHOT_QUIET));
+        self.hide_now();
+    }
+
+    fn hide_now(&self) {
+        for w in self.words.borrow_mut().drain(..) {
+            w.on.set(false);
+            w.panel.orderOut(None);
+        }
+        for (p, _) in self.leaving.borrow_mut().drain(..) {
+            p.orderOut(None);
+        }
+    }
+
     /// All of them away (switched off, paused, a video playing).
     pub fn clear(&self) {
         let all: Vec<Word> = self.words.borrow_mut().drain(..).collect();
@@ -276,6 +323,31 @@ impl Floaters {
             }
         }
     }
+}
+
+/// The screenshot tools are up: ⇧⌘5's panel, or `screencapture` picking an
+/// area or a window (⇧⌘4).
+fn capturing() -> bool {
+    use objc2_app_kit::NSRunningApplication;
+    if !NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str("com.apple.screencaptureui")).is_empty() {
+        return true;
+    }
+    process_running("screencapture")
+}
+
+fn process_running(name: &str) -> bool {
+    #[link(name = "proc", kind = "dylib")]
+    unsafe extern "C" {
+        fn proc_listallpids(buffer: *mut i32, size: i32) -> i32;
+        fn proc_name(pid: i32, buffer: *mut u8, size: u32) -> i32;
+    }
+    let mut pids = vec![0i32; 4096];
+    let n = unsafe { proc_listallpids(pids.as_mut_ptr(), (pids.len() * 4) as i32) };
+    let mut buf = [0u8; 64];
+    pids.iter().take(n.max(0) as usize).any(|&pid| {
+        let len = unsafe { proc_name(pid, buf.as_mut_ptr(), buf.len() as u32) };
+        len > 0 && &buf[..len as usize] == name.as_bytes()
+    })
 }
 
 /// A tag as a small grey pill: (it, width, height).
@@ -323,6 +395,8 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
     };
     button.setBordered(false);
     button.setTag(id);
+    // Never in a screenshot or a screen share (where macOS still honours it).
+    panel.setSharingType(objc2_app_kit::NSWindowSharingType::None);
     let mut w = Word { id, lang, word, shown, meaning, tags, cell, panel, bg, button, meaning_label: None, on: Default::default(), came: Instant::now(), open: false, hold_until: None, top: None };
     lay_out(mtm, &mut w, primary_h);
     w.on.set(true);
@@ -362,6 +436,10 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let height = wh + mh + 10.0;
     w.button.setFrame(rect((width - ww) / 2.0, mh + 5.0, ww, wh));
     content.addSubview(&w.button);
+    for t in w.button.trackingAreas().iter() {
+        w.button.removeTrackingArea(&t);
+    }
+    crate::view::pointer(&w.button);
     let mut x = (width - mw_all) / 2.0;
     if let Some(m) = &m {
         m.setFrame(rect(x, 4.0, mw, mh));
