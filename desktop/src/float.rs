@@ -599,29 +599,29 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     w.button.sizeToFit();
     let wh = w.button.frame().size.height;
     let m = (w.open && !w.meaning.is_empty()).then(|| label(mtm, &w.meaning, 13.0, true));
-    // Its tags as small pills after the meaning.
+    // Its tags as small pills beside the word (owner, 2026-11-11), the word
+    // kept in the middle so it doesn't move when they come.
     let pills: Vec<(Retained<NSBox>, f64, f64)> = if w.open { w.tags.iter().map(|t| pill(mtm, t)).collect() } else { Vec::new() };
     let pills_w: f64 = pills.iter().map(|(_, pw, _)| pw + 4.0).sum();
-    let (mw, mh) = m.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0 - pills_w), l.frame().size.height)).unwrap_or((0.0, 0.0));
-    let mw_all = mw + pills_w;
-    let width = ww.max(mw_all) + 20.0;
+    let (mw, mh) = m.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0), l.frame().size.height)).unwrap_or((0.0, 0.0));
+    let width = (ww + 2.0 * pills_w).max(mw) + 20.0;
     let height = wh + mh + 10.0;
-    w.button.setFrame(rect((width - ww) / 2.0, mh + 5.0, ww, wh));
+    let wx = (width - ww) / 2.0;
+    w.button.setFrame(rect(wx, mh + 5.0, ww, wh));
     content.addSubview(&w.button);
     for t in w.button.trackingAreas().iter() {
         w.button.removeTrackingArea(&t);
     }
     crate::view::pointer(&w.button);
-    let mut x = (width - mw_all) / 2.0;
-    if let Some(m) = &m {
-        m.setFrame(rect(x, 4.0, mw, mh));
-        content.addSubview(m);
-        x += mw + 4.0;
-    }
+    let mut x = wx + ww + 4.0;
     for (p, pw, ph) in &pills {
-        p.setFrame(rect(x, 4.0 + (mh - ph) / 2.0, *pw, *ph));
+        p.setFrame(rect(x, mh + 5.0 + (wh - ph) / 2.0, *pw, *ph));
         content.addSubview(p);
         x += pw + 4.0;
+    }
+    if let Some(m) = &m {
+        m.setFrame(rect((width - mw) / 2.0, 4.0, mw, mh));
+        content.addSubview(m);
     }
     w.meaning_label = m;
     // Its spot's middle, in Cocoa's coordinates; the top stays where it first was.

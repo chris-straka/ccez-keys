@@ -42,10 +42,17 @@ pub fn form_of(meaning: &str) -> Option<String> {
 /// shows with it ("parvenir à": "to reach"), and leading labels become
 /// tags ("tr"). (word as shown, meaning, tags)
 pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<String>) -> (String, String, Vec<String>) {
-    let own = meanings.iter().find(|m| form_of(m).is_none()).cloned();
-    let picked = own.or_else(|| meanings.iter().find_map(|m| form_of(m)).and_then(|b| base(&b).into_iter().find(|m| form_of(m).is_none())));
-    let Some(m) = picked else { return (word.to_string(), String::new(), Vec::new()) };
+    let own: Vec<String> = meanings.iter().filter(|m| form_of(m).is_none()).cloned().collect();
+    let senses = if own.is_empty() {
+        meanings.iter().find_map(|m| form_of(m)).map(|b| base(&b).into_iter().filter(|m| form_of(m).is_none()).collect()).unwrap_or_default()
+    } else {
+        own
+    };
+    let Some(m) = everyday_sense(&senses) else { return (word.to_string(), String::new(), Vec::new()) };
     let first = m.split(';').next().unwrap_or("").trim().to_string();
+    // "to sap (to subvert by digging)": the explanation in brackets at the
+    // end goes; the short meaning is what comes before it.
+    let first = drop_trailing_note(&first);
     // "(transitive) to hold back": the labels are tags (tags_of), not words of the meaning.
     let tags = tags_of(&first);
     let first = untagged(&first).to_string();
@@ -63,6 +70,53 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
         }
         _ => (word.to_string(), first, tags),
     }
+}
+
+/// Of a word's first few senses, the everyday one: the first that isn't
+/// marked rare, old or of a trade (archaic, nautical, military…) and doesn't
+/// need a bracketed explanation (saper: "to sap, do sapping work on (to
+/// subvert by digging)" gives way to "to erode, wear down, undermine";
+/// owner, 2026-11-11). The first sense when none is plainer.
+fn everyday_sense(senses: &[String]) -> Option<String> {
+    const NICHE: [&str; 13] =
+        ["archaic", "obsolete", "dated", "rare", "historical", "nautical", "military", "law", "legal", "heraldry", "dialectal", "regional", "slang"];
+    let plain = |m: &String| {
+        let mut labels = String::new();
+        let mut rest = m.trim();
+        while let Some((inner, after)) = rest.strip_prefix('(').and_then(|r| r.split_once(')')) {
+            labels.push_str(&inner.to_lowercase());
+            labels.push(',');
+            rest = after.trim_start();
+        }
+        let niche = labels.split(',').any(|l| NICHE.contains(&l.trim()));
+        let explained = rest.trim_end().ends_with(')') && rest.contains(" (");
+        !niche && !explained
+    };
+    senses.iter().take(3).find(|m| plain(m)).or_else(|| senses.first()).cloned()
+}
+
+/// A meaning without a bracketed note at its end ("to sap (to subvert by
+/// digging)" → "to sap"); kept whole when that's all there is.
+fn drop_trailing_note(m: &str) -> String {
+    let t = m.trim_end();
+    if !t.ends_with(')') {
+        return t.to_string();
+    }
+    let mut depth = 0i32;
+    for (i, ch) in t.char_indices().rev() {
+        match ch {
+            ')' => depth += 1,
+            '(' => {
+                depth -= 1;
+                if depth == 0 {
+                    let before = t[..i].trim_end().trim_end_matches(',').trim_end();
+                    return if before.is_empty() { t.to_string() } else { before.to_string() };
+                }
+            }
+            _ => {}
+        }
+    }
+    t.to_string()
 }
 
 /// The short tags a meaning's leading labels make ("(transitive)" → "tr",
@@ -121,4 +175,26 @@ fn glosses_skip_form_lines_and_take_their_partner_word() {
     assert_eq!(form_of("third-person plural present indicative/subjunctive of porter").as_deref(), Some("porter"));
     assert_eq!(form_of("a cup of tea"), None);
     assert_eq!(short_gloss("retenir", &["(transitive) to hold back, rein in".into()], base), ("retenir".into(), "to hold back, rein in".into(), vec!["tr".to_string()]));
+}
+
+#[cfg(test)]
+mod everyday_tests {
+    use super::*;
+
+    #[test]
+    fn the_everyday_sense_without_its_bracketed_note() {
+        let saper = vec![
+            "(transitive) to sap, do sapping work on (to subvert by digging)".to_string(),
+            "(transitive, figurative) to erode, wear down, undermine".to_string(),
+        ];
+        let forms = vec!["inflection of saper: first-person plural present indicative".to_string()];
+        let base = |w: &str| if w == "saper" { saper.clone() } else { vec![] };
+        let (shown, meaning, tags) = short_gloss("sapons", &forms, base);
+        assert_eq!((shown.as_str(), meaning.as_str()), ("sapons", "to erode, wear down, undermine"));
+        assert_eq!(tags, ["tr", "fig"]);
+        assert_eq!(drop_trailing_note("to sap (to subvert by digging (slowly))"), "to sap");
+        let none = |_: &str| vec![];
+        assert_eq!(short_gloss("cap", &["(geography) cape".into(), "(archaic) head".into()], none).1, "cape");
+        assert_eq!(short_gloss("retenir", &["(transitive) to hold back, rein in".into()], none).1, "to hold back, rein in");
+    }
 }
