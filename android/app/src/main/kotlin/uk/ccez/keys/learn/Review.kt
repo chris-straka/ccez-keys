@@ -9,8 +9,9 @@ import uk.ccez.keys.ui.Langs
 /**
  * Words to review, one at a time: the owner's Learning words (from every app,
  * through ccez-words) in a shuffled round kept in prefs, so each comes up.
- * The home-screen widget and the keyboard (an empty field) draw from the same
- * round and share Later: put off for 1, 3, 7, 14, then 30 days.
+ * The keyboard shows one in the strip on an empty field; Later puts it off
+ * for 1, 3, 7, 14, then 30 days. (The prefs are still called "widget": they
+ * kept the home-screen widget's round, replaced by the words on screen.)
  */
 object Review {
     private val DAYS = listOf(1L, 3L, 7L, 14L, 30L)

@@ -41,15 +41,6 @@ class App : Application() {
         log("info", "start", "version" to BuildConfig.VERSION_NAME)
         keepMainThreadAlive()
         loadLanguages()
-        // A widget placed before an update: its timer again (an update clears the app's alarms).
-        runCatching {
-            val m = android.appwidget.AppWidgetManager.getInstance(this)
-            if (m.getAppWidgetIds(android.content.ComponentName(this, uk.ccez.keys.learn.WordWidget::class.java)).isNotEmpty()) {
-                uk.ccez.keys.learn.WordWidget.schedule(this)
-                // Drawn again now (an update leaves it empty until its next turn).
-                uk.ccez.keys.learn.WordWidget.refresh(this, advance = false)
-            }
-        }
     }
 
     /** Loads the languages most likely typed: the default, the current one, the first learning ones. */

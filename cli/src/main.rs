@@ -25,7 +25,6 @@ fn main() {
     let (method, arg, value) = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["status"] => ("status", None, None),
         ["keymap"] => ("keymap", None, None),
-        ["widget"] => ("widget", None, None),
         ["screen"] => ("screen", None, None),
         ["get"] => ("get", None, None),
         ["get", key] => ("get", Some(key.to_string()), None),
