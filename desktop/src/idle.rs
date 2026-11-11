@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use crate::model::Rect;
 
-/// Quiet this long before the words come.
-pub const AFTER: Duration = Duration::from_secs(180);
+/// Quiet this long before the words come (owner, 2026-11-11: 3 min was too long).
+pub const AFTER: Duration = Duration::from_secs(10);
 /// Words shown at once, at most.
 pub const MOST: usize = 8;
 
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn shows_after_quiet_minutes_not_with_a_video_and_goes_on_any_input() {
-        assert_eq!(decide(true, false, Duration::from_secs(30), || false), Do::Nothing);
+        assert_eq!(decide(true, false, Duration::from_secs(5), || false), Do::Nothing);
         assert_eq!(decide(true, false, AFTER, || false), Do::Show);
         assert_eq!(decide(true, false, AFTER, || true), Do::Nothing, "a video plays");
         assert_eq!(decide(false, false, AFTER, || false), Do::Nothing, "switched off");

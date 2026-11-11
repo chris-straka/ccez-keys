@@ -534,6 +534,11 @@ impl View {
         }
     }
 
+    /// The preview is up.
+    pub fn is_shown(&self) -> bool {
+        self.shown.get()
+    }
+
     /// The pointer is over the preview or its card (while they're up).
     pub fn under_mouse(&self, mtm: MainThreadMarker) -> bool {
         let _ = mtm;

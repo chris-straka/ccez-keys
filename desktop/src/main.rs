@@ -200,7 +200,7 @@ mod app {
     /// and screen no other app's window covers.
     fn spots(screen: crate::model::Rect) -> Vec<crate::model::Rect> {
         let pid = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
-        let (front, content) = ax::content_frames(pid, 4000, std::time::Duration::from_millis(400));
+        let (front, content) = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
         crate::idle::free_spots(screen, front, &content, &crate::idle::windows(pid), 8, 6)
     }
 
@@ -577,44 +577,35 @@ mod app {
         let menu_tick = Cell::new(0u32);
 
         // ⌥⏎ in ChatGPT and Claude: the message box into the first learning language.
-        let started = crate::chatswap::start(
-            move || app.prefs.borrow().chat_swap && !app.paused.get() && frontmost().is_some_and(|b| crate::chatswap::APPS.contains(&b.as_str())),
+        let started = crate::chatswap::start(move || app.prefs.borrow().chat_swap && !app.paused.get() && frontmost().is_some_and(|b| crate::chatswap::APPS.contains(&b.as_str())), {
+            let swapper = app.langs.first().map(|to| crate::chatswap::Swapper::start(to.clone(), app.swapped.clone(), log));
             move || {
-                if let Some(to) = app.langs.first() {
-                    crate::chatswap::swap(to.clone(), app.swapped.clone(), log);
+                if let Some(s) = &swapper {
+                    s.press();
                 }
-            },
-        );
+            }
+        });
         log("info", &format!("chat swap key {}", if started { "on" } else { "unavailable" }));
 
-        // Shift + scroll over the preview (owner, 2026-11-11): back through a
-        // long sentence and forward again. macOS turns Shift + wheel into a
-        // sideways scroll, so either axis counts; a word per notch.
+        // Shift + scroll anywhere while the preview is up (owner, 2026-11-11):
+        // back through a long sentence and forward again, a word per notch;
+        // the app under the pointer doesn't scroll sideways meanwhile.
         {
-            use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
             let acc = Cell::new(0.0f64);
-            let handler = block2::RcBlock::new(move |ev: std::ptr::NonNull<NSEvent>| -> *mut NSEvent {
-                let e = unsafe { ev.as_ref() };
-                let Some(mtm) = MainThreadMarker::new() else {
-                    return ev.as_ptr();
-                };
-                if !e.modifierFlags().contains(NSEventModifierFlags::Shift) || !app.view.under_mouse(mtm) {
-                    return ev.as_ptr();
-                }
-                let d = if e.scrollingDeltaX().abs() > e.scrollingDeltaY().abs() { e.scrollingDeltaX() } else { e.scrollingDeltaY() };
-                // Trackpads send many small deltas, a wheel one per notch.
-                let step = if e.hasPreciseScrollingDeltas() { 12.0 } else { 1.0 };
-                acc.set(acc.get() + d / step);
-                let n = acc.get().trunc();
-                if n != 0.0 {
-                    acc.set(acc.get() - n);
-                    app.view.scroll(mtm, n as isize);
-                    app.preview.borrow_mut().touch(Instant::now());
-                }
-                std::ptr::null_mut()
-            });
-            let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::ScrollWheel, &handler) };
-            std::mem::forget(monitor);
+            let on = crate::chatswap::scroll_tap(
+                move || app.view.is_shown(),
+                move |d: f64, precise: bool| {
+                    let Some(mtm) = MainThreadMarker::new() else { return };
+                    acc.set(acc.get() + d / if precise { 12.0 } else { 1.0 });
+                    let n = acc.get().trunc();
+                    if n != 0.0 {
+                        acc.set(acc.get() - n);
+                        app.view.scroll(mtm, n as isize);
+                        app.preview.borrow_mut().touch(Instant::now());
+                    }
+                },
+            );
+            log("info", &format!("preview scroll {}", if on { "on" } else { "unavailable" }));
         }
 
         // A word clicked: its card; Learning / Known on the card set its status
