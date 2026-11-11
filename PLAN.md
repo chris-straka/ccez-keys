@@ -1,3 +1,36 @@
+# Owner notes, 2026-11-10 (from ccez-keeps)
+
+Work these off and delete each when it ships.
+
+Keyboard (phone):
+- Does it learn from what's typed? Make sure it does.
+- Empty field: the latest copy (picture, word, phrase) right of the
+  clipboard button.
+- Hold a picture in the clipboard panel: it opens large.
+- New lines start with a capital (not in web forms); after a full stop the
+  next word is capitalised (English and the languages that do this);
+  "im" becomes "I'm" and the other usual fixes.
+- Hold a suggestion: offers to remove it from suggestions (a saved
+  "ccezkeys" instead of "ccez-keys"); a word typed exactly can be saved
+  to suggestions by holding it (buzz and a toast).
+- Suggestions feel weak; do they use the whole paragraph? Going back to a
+  misspelled word (space, then delete) should offer corrections again.
+- A space after a full stop or comma, and after closing ) } ] " '.
+- The review word comes back when the field is emptied again (holding
+  delete).
+- Preview line: drag left/right scrolls the sentence; swipe up/down
+  switches language; the flag shows undimmed for a moment after a switch.
+- SwiftKey's key placement and spacing may be better: compare.
+
+Mac preview app:
+- Card: the form as the short tags and icons the other apps use (3rd
+  sing. etc.), not "third-person singular imperfect indicative"; the
+  meaning-here "Appeared in the menu" was wrong (Apple's model). Clicking a
+  word copies it, with a toast at the top: `docs/feedback/2026-11-10/mac-card-apparaissait.jpg`.
+- Maybe the cause of flicker in Chromium apps (ccez-keeps in the browser):
+  asking them for accessibility (AXEnhancedUserInterface) can make them
+  repaint. Check.
+
 # Plan
 
 Owner's ask (2026-11-08): a language-learning keyboard for Android, mostly
