@@ -75,6 +75,11 @@ objc2::define_class!(
 /// Fades a panel in (from wherever it is) or out (then takes it off screen,
 /// unless `on` says it was asked back meanwhile).
 pub(crate) fn fade(panel: &NSPanel, visible: bool, on: std::rc::Rc<std::cell::Cell<bool>>) {
+    fade_over(panel, visible, on, if visible { 0.18 } else { 0.3 });
+}
+
+/// [fade], taking `secs`.
+pub(crate) fn fade_over(panel: &NSPanel, visible: bool, on: std::rc::Rc<std::cell::Cell<bool>>, secs: f64) {
     use objc2::Message;
     use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
     if visible && !panel.isVisible() {
@@ -83,7 +88,7 @@ pub(crate) fn fade(panel: &NSPanel, visible: bool, on: std::rc::Rc<std::cell::Ce
     }
     let target = panel.retain();
     let change = block2::RcBlock::new(move |ctx: std::ptr::NonNull<NSAnimationContext>| {
-        unsafe { ctx.as_ref() }.setDuration(if visible { 0.18 } else { 0.3 });
+        unsafe { ctx.as_ref() }.setDuration(secs);
         target.animator().setAlphaValue(if visible { 1.0 } else { 0.0 });
     });
     let gone = panel.retain();

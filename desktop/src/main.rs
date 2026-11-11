@@ -192,9 +192,15 @@ mod app {
         }
         app.view.tick_toast();
         let most = if app.paused.get() { 0 } else { app.prefs.borrow().words_on_screen };
+        let (while_video, while_typing) = {
+            let p = app.prefs.borrow();
+            (p.words_video, p.words_typing)
+        };
         app.floaters.tick(
             mtm,
             most,
+            while_video,
+            while_typing,
             || {
                 // From the first few learning languages only, when the menu says so.
                 let n = app.prefs.borrow().words_langs;
@@ -486,6 +492,9 @@ mod app {
         for (_, c) in &lang_counts {
             let _ = langs_menu.append(c);
         }
+        let words_typing = CheckMenuItem::new("While typing", true, app.prefs.borrow().words_typing, None);
+        let words_video = CheckMenuItem::new("While a video plays", true, app.prefs.borrow().words_video, None);
+        let _ = words_menu.append_items(&[&PredefinedMenuItem::separator(), &langs_menu, &PredefinedMenuItem::separator(), &words_typing, &words_video]);
         let chat_swap = CheckMenuItem::new("⌥⏎ in ChatGPT and Claude: into my language", true, app.prefs.borrow().chat_swap, None);
         // Translations run on this Mac, in the languages downloaded in System
         // Settings: this opens that page, and names any still missing.
@@ -495,7 +504,7 @@ mod app {
         let sep = PredefinedMenuItem::separator();
         let sep2 = PredefinedMenuItem::separator();
         let sep3 = PredefinedMenuItem::separator();
-        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &words_menu, &langs_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
+        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &words_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_title("文").with_tooltip("ccez-keys").build();
         // Bold and a size up: the menu bar's regular text left 文 thin and small.
         if let Ok(t) = &tray
@@ -518,6 +527,7 @@ mod app {
         let (pause_id, lang_id, login_id, quit_id) = (pause.id().clone(), languages.id().clone(), login.id().clone(), quit.id().clone());
         let (readings_id, off_id) = (readings.id().clone(), off_here.id().clone());
         let (selection_id, copy_id, swap_id) = (selection.id().clone(), copy_click.id().clone(), chat_swap.id().clone());
+        let (typing_id, video_id) = (words_typing.id().clone(), words_video.id().clone());
         let menu_tick = Cell::new(0u32);
 
         // ⌥⏎ in ChatGPT and Claude: the message box into the first learning language.
@@ -679,12 +689,14 @@ mod app {
                         app.prefs.borrow_mut().readings = readings.is_checked();
                         app.prefs.borrow().save(&dirs());
                         app.preview.borrow_mut().redo();
-                    } else if e.id == selection_id || e.id == copy_id || e.id == swap_id {
+                    } else if e.id == selection_id || e.id == copy_id || e.id == swap_id || e.id == typing_id || e.id == video_id {
                         {
                             let mut p = app.prefs.borrow_mut();
                             p.selection = selection.is_checked();
                             p.copy_click = copy_click.is_checked();
                             p.chat_swap = chat_swap.is_checked();
+                            p.words_typing = words_typing.is_checked();
+                            p.words_video = words_video.is_checked();
                             p.save(&dirs());
                         }
                         app.preview.borrow_mut().redo();

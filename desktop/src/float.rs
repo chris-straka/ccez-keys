@@ -20,10 +20,13 @@ use objc2_foundation::{NSRect, NSString};
 
 use crate::model::Rect;
 use crate::review::{Grade, Review};
-use crate::view::{fade, label, new_panel, rect, rgb};
+use crate::view::{fade_over, label, new_panel, rect, rgb};
 
 /// How long a word stays when left alone.
 const STAYS: Duration = Duration::from_secs(90);
+/// Fading in this slowly, they don't pull the eye (owner, 2026-11-11).
+const FADE_IN: f64 = 2.0;
+const FADE_OUT: f64 = 0.8;
 /// Spots looked for this often (and a new word may come).
 const EVERY: Duration = Duration::from_secs(4);
 
@@ -150,19 +153,22 @@ impl Floaters {
     /// `most` is how many may be up (the menu's count; 0: none, also when
     /// paused), `words` gives the learning words (lang, word) and `meaning` a
     /// word as shown and its short meaning.
-    pub fn tick(&self, mtm: MainThreadMarker, most: usize, words: impl FnOnce() -> Vec<(String, String)>, meaning: impl Fn(&str, &str) -> (String, String)) {
+    /// With `while_video` off they go while a video holds the display
+    /// awake; with `while_typing` off none comes while keys are being typed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn tick(&self, mtm: MainThreadMarker, most: usize, while_video: bool, while_typing: bool, words: impl FnOnce() -> Vec<(String, String)>, meaning: impl Fn(&str, &str) -> (String, String)) {
         let enabled = most > 0;
         self.looking.store(enabled, Ordering::Relaxed);
         // Words that faded out: off the screen.
         self.leaving.borrow_mut().retain(|(p, at)| {
-            if at.elapsed() > Duration::from_millis(400) {
+            if at.elapsed() > Duration::from_secs_f64(FADE_OUT + 0.1) {
                 p.orderOut(None);
                 false
             } else {
                 true
             }
         });
-        if !enabled || self.video.load(Ordering::Relaxed) {
+        if !enabled || (!while_video && self.video.load(Ordering::Relaxed)) {
             self.clear();
             return;
         }
@@ -204,7 +210,7 @@ impl Floaters {
         }
         // A new word now and then, in a spot nobody holds.
         let Some(free) = fresh else { return };
-        if self.last.get().elapsed() < EVERY || self.words.borrow().len() >= most {
+        if self.last.get().elapsed() < EVERY || self.words.borrow().len() >= most || (!while_typing && typing()) {
             return;
         }
         self.last.set(Instant::now());
@@ -222,7 +228,7 @@ impl Floaters {
 
     fn leave(&self, w: Word) {
         w.on.set(false);
-        fade(&w.panel, false, w.on.clone());
+        fade_over(&w.panel, false, w.on.clone(), FADE_OUT);
         self.leaving.borrow_mut().push((w.panel, Instant::now()));
     }
 
@@ -262,6 +268,17 @@ impl Floaters {
     }
 }
 
+/// A key pressed in the last two seconds.
+fn typing() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGEventSourceSecondsSinceLastEventType(state: i32, kind: u32) -> f64;
+    }
+    // Combined session state, key down.
+    let since = unsafe { CGEventSourceSecondsSinceLastEventType(0, 10) };
+    since < 2.0
+}
+
 /// A word put up in `cell`, faint, its meaning hidden.
 #[allow(clippy::too_many_arguments)]
 fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, cell: Rect, primary_h: f64) -> Word {
@@ -282,7 +299,7 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
     w.on.set(true);
     w.panel.setAlphaValue(0.0);
     w.panel.orderFrontRegardless();
-    fade(&w.panel, true, w.on.clone());
+    fade_over(&w.panel, true, w.on.clone(), FADE_IN);
     w
 }
 

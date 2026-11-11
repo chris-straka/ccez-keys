@@ -25,13 +25,30 @@ pub struct Prefs {
     pub words_on_screen: usize,
     /// How many of the learning languages (in the owner's order) those words come from (0: all).
     pub words_langs: usize,
+    /// Words come while keys are being typed, and while a video plays.
+    pub words_typing: bool,
+    pub words_video: bool,
     /// ⌥⏎ in ChatGPT and Claude puts the message box into the first learning language.
     pub chat_swap: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { shown: 6, readings: true, off: vec![], on: vec![], paused: false, login_set: false, selection: true, copy_click: true, words_on_screen: 4, words_langs: 0, chat_swap: true }
+        Prefs {
+            shown: 6,
+            readings: true,
+            off: vec![],
+            on: vec![],
+            paused: false,
+            login_set: false,
+            selection: true,
+            copy_click: true,
+            words_on_screen: 4,
+            words_langs: 0,
+            words_typing: true,
+            words_video: true,
+            chat_swap: true,
+        }
     }
 }
 
@@ -60,12 +77,14 @@ impl Prefs {
             copy_click: v["copy_click"].as_bool().unwrap_or(d.copy_click),
             words_on_screen: v["words_on_screen"].as_u64().map(|n| n as usize).unwrap_or(if v["idle_words"].as_bool() == Some(false) { 0 } else { d.words_on_screen }),
             words_langs: v["words_langs"].as_u64().map(|n| n as usize).unwrap_or(d.words_langs),
+            words_typing: v["words_typing"].as_bool().unwrap_or(d.words_typing),
+            words_video: v["words_video"].as_bool().unwrap_or(d.words_video),
             chat_swap: v["chat_swap"].as_bool().unwrap_or(d.chat_swap),
         }
     }
 
     pub fn save(&self, dir: &std::path::Path) {
-        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set, "selection": self.selection, "copy_click": self.copy_click, "words_on_screen": self.words_on_screen, "words_langs": self.words_langs, "chat_swap": self.chat_swap});
+        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set, "selection": self.selection, "copy_click": self.copy_click, "words_on_screen": self.words_on_screen, "words_langs": self.words_langs, "words_typing": self.words_typing, "words_video": self.words_video, "chat_swap": self.chat_swap});
         let tmp = path(dir).with_extension("tmp");
         if std::fs::write(&tmp, v.to_string()).is_ok() {
             let _ = std::fs::rename(&tmp, path(dir));
