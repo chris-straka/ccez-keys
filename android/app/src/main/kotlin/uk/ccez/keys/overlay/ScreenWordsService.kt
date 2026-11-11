@@ -122,6 +122,7 @@ class ScreenWordsService : AccessibilityService() {
         var videoFull = false
         var password = false
         var screenshot = false
+        val own = words.ownWindows()
         for (window in windows.orEmpty()) {
             if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
                 keyboardUp = true
@@ -130,7 +131,11 @@ class ScreenWordsService : AccessibilityService() {
             if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION && window.type != AccessibilityWindowInfo.TYPE_SYSTEM) continue
             val root = window.root ?: continue
             val pkg = root.packageName?.toString().orEmpty()
-            if (pkg == packageName) {
+            // Our own word windows aren't the front app's content (our own
+            // app's windows are: its buttons block like anyone's).
+            val rootBounds = Rect()
+            root.getBoundsInScreen(rootBounds)
+            if (pkg == packageName && own.any { it.left == rootBounds.left && it.top == rootBounds.top && it.right == rootBounds.right && it.bottom == rootBounds.bottom }) {
                 root.recycle()
                 continue
             }
@@ -158,8 +163,18 @@ class ScreenWordsService : AccessibilityService() {
                     if (area > 0) {
                         if (FreeSpace.isVideoClass(node.className) && area > screenRect.width().toLong() * screenRect.height() * 3 / 5) videoFull = true
                         val content = FreeSpace.isContentClass(node.className) || node.isClickable || node.isEditable || node.isCheckable
-                        // A big empty container is a backdrop, not content (as on the Mac).
-                        if (content && area < windowArea * FreeSpace.BIG) blockers += FreeSpace.Box(b.left, b.top, b.right, b.bottom)
+                        // As on the Mac: content counts at any size short of the
+                        // whole window; any other node only as a small leaf (a
+                        // big empty container is a backdrop, not content).
+                        val counted = when {
+                            area >= windowArea * 9 / 10 -> false
+                            content -> true
+                            node.childCount == 0 && area < windowArea * FreeSpace.BIG -> true
+                            else -> false
+                        }
+                        // Never a word's own window (it would crowd itself out).
+                        val ours = own.any { b.left >= it.left && b.top >= it.top && b.right <= it.right && b.bottom <= it.bottom }
+                        if (counted && !ours) blockers += FreeSpace.Box(b.left, b.top, b.right, b.bottom)
                         if (pkg == "com.android.systemui" && node.viewIdResourceName?.contains("screenshot", ignoreCase = true) == true) screenshot = true
                     }
                 }

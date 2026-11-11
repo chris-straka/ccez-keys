@@ -239,6 +239,11 @@ class ScreenWords(private val ctx: Context) {
         runCatching { wm.updateViewLayout(w.view, w.params) }
     }
 
+    /** Where the words' own windows are, so the spot look doesn't count a word as content crowding itself out. Main thread. */
+    fun ownWindows(): List<FreeSpace.Box> = up.map {
+        FreeSpace.Box(it.params.x, it.params.y, it.params.x + it.view.width, it.params.y + it.view.height)
+    }
+
     /** For `keys screen` (checks): how many are up, and which. Main thread not needed. */
     fun status(): String {
         val o = org.json.JSONObject()
