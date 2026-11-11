@@ -1,46 +1,30 @@
-# Phone: learning words on screen (owner, 2026-11-11)
+# Phone: learning words on screen — what's left (built 2026-11-11)
 
-The Mac's "words on screen" (`desktop/src/float.rs`, `review.rs`,
-`cards.rs` `short_gloss`/`tags_of`/`form_of`) on the phone, as an overlay
-over every app, from the keyboard app (`android/`). The owner chose an
-overlay over a live wallpaper; it replaces the home-screen widget.
+Steps 1–6 shipped: `core/src/review.rs` + `core/src/gloss.rs` (the Mac
+calls them too; `learning.screen*` settings; `keys screen` for checks),
+the accessibility spot look (bounds only, every 4 s), one overlay
+window per word (tap Good, double-tap Easy, long-press Again), the
+settings section with the two permission rows, and the home-screen
+widget is gone. Battery (step 6): `dumpsys batterystats` on the
+emulator, screen on with words cycling — 0.052 mAh estimated in 1 h
+(uid of the app, all of it CPU; the emulator's power profile is
+synthetic, so read it as "next to nothing", not a phone number).
 
-1. Move into the core (Rust, `core/`, UniFFI) so the Mac and Android share
-   them: `review.rs` (Anki-like schedule: Good 10 min → 60 d, Easy two
-   steps, Again 2 min; its state synced with the word statuses through
-   ccez-words so a word graded on one device isn't asked on another), and
-   the short-meaning rules (form lines → the base word's meaning, "[with
-   à]" → "parvenir à", leading labels → tags "tr", "intr", "refl", "fig").
-   The Mac app then calls the core's versions (keep its tests passing).
-2. Free space inside whatever app is in front: an AccessibilityService
-   (`canRetrieveWindowContent`) reads the node bounds of the active
-   window(s); cells of a grid that no visible node with text, an image or a
-   control touches are free (big empty container nodes don't count, as on
-   the Mac: under 8% of the window's area). Throttle: look at most every
-   4 s, and on window changes. Off on the lock screen, in password fields,
-   and while a video plays full screen (a switch, on for now).
-3. Each word its own small overlay window (`TYPE_APPLICATION_OVERLAY`,
-   `FLAG_NOT_FOCUSABLE`): touches elsewhere reach the app below. Tap =
-   Good, long-press = Again (meaning shown a moment), double-tap = Easy.
-   Faint (about 75% opacity) until touched; a touch shows the meaning under
-   the word without moving it; tags as small pills. Fade in over 2 s,
-   never fade under a finger, leave after 90 s. A few at a time, the
-   languages taking turns.
-4. Settings (the keyboard's settings screen): words on screen (off, 1–12),
-   languages on screen (all, 1…n), while typing (the keyboard up), while
-   a video plays. Setup: the "Display over other apps" permission, and the
-   accessibility service (sideloaded apps need "Allow restricted settings"
-   in App info first on Android 13+; say so in one line where it's turned on).
-5. Never in screenshots: `FLAG_SECURE` isn't per window for overlays, so
-   hide the words when a screenshot starts (Android 14+
-   `Activity.ScreenCaptureCallback` doesn't cover other apps; the
-   accessibility service sees the screenshot UI window appear: hide then).
-6. Battery: no work while the screen is off; the accessibility service
-   only reads bounds, never text; measure with `dumpsys batterystats` on
-   the emulator over an hour and write the number here.
+Left:
 
-Verify on the emulator (`fleet run --emulator`), screenshots in
-`$FLEET_ARTIFACTS`; never the owner's phone unless asked.
+- ccez-words needs `GET`/`POST /review` (contract in
+  `core/src/review.rs`) for a grade on one device to put the word off
+  on the other; the client side is in (`sync_words` carries it, an old
+  server's 404 is fine), so until then each device keeps its own
+  schedule. That repo wasn't touched from here.
+- Screenshots: `FLAG_SECURE` **is** per window for overlays on the
+  emulator (Android 16) — the saved screenshot blanks each word
+  window. Hiding when the screenshot UI appears is in too (8 s quiet),
+  for scrolling screenshots. Recheck the blanking on the S24.
+- Not separately shown on the emulator: the password-field case on
+  its own (the PIN lock screen covers keyguard + `isPassword`
+  together), and the full-screen-video switch off (detection is a
+  big Surface/Texture/PlayerView; no real player tried).
 
 # Owner notes, 2026-11-11 (desktop preview)
 
