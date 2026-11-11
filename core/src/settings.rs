@@ -72,6 +72,7 @@ pub const DEFS: &[Def] = &[
     Def { key: "learning.screen_langs", kind: Kind::Int { min: 0, max: 24 }, default: || json!(0), about: "How many of the learning languages (in your order) screen words come from (0: all)." },
     Def { key: "learning.screen_typing", kind: Kind::Bool, default: || json!(true), about: "Screen words stay up while the keyboard is up." },
     Def { key: "learning.screen_video", kind: Kind::Bool, default: || json!(true), about: "Screen words stay up while a video plays full screen." },
+    Def { key: "learning.screen_hide_shots", kind: Kind::Bool, default: || json!(true), about: "Screen words stay out of screenshots and screen recordings (off: they show, to share them)." },
     Def {
         key: "words.server",
         kind: Kind::Text,

@@ -90,6 +90,7 @@ class ScreenWordsService : AccessibilityService() {
         event ?: return
         // The screenshot panel arriving: words off the screen at once.
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            App.instance.flag("learning.screen_hide_shots") &&
             FreeSpace.isScreenshotWindow(event.packageName, null, event.className, emptyList())
         ) {
             quietUntil = System.currentTimeMillis() + SHOT_QUIET_MS
@@ -200,6 +201,7 @@ class ScreenWordsService : AccessibilityService() {
             }
             while (queue.isNotEmpty()) queue.removeFirst().recycle()
         }
+        if (!app.flag("learning.screen_hide_shots")) screenshot = false
         if (screenshot) quietUntil = System.currentTimeMillis() + SHOT_QUIET_MS
         when {
             screenshot || System.currentTimeMillis() < quietUntil -> words.hideNow()

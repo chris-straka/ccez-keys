@@ -805,6 +805,7 @@ private fun ScreenWordsSettings(version: Int) {
         listOf(
             Triple(Icons.capital, "While typing", "learning.screen_typing"),
             Triple(Icons.cam, "While a video plays", "learning.screen_video"),
+            Triple(Icons.dot, "Hide in screenshots", "learning.screen_hide_shots"),
         ),
         version,
     )

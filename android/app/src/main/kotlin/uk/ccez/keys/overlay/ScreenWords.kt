@@ -178,7 +178,8 @@ class ScreenWords(private val ctx: Context) {
             // per-window FLAG_SECURE is honoured for overlays; hiding when
             // the screenshot UI appears (the service) is the second belt.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_SECURE,
+                // Off in settings (owner, 2026-11-11: to show them): they show.
+                (if (App.instance.flag("learning.screen_hide_shots")) WindowManager.LayoutParams.FLAG_SECURE else 0),
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
