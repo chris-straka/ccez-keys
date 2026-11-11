@@ -110,7 +110,9 @@ struct Word {
 
 pub struct Floaters {
     words: RefCell<Vec<Word>>,
-    leaving: RefCell<Vec<(Retained<NSPanel>, Instant)>>,
+    /// Words fading out: since when, and whether the pointer landing on one
+    /// brings it back (not after a click: that fade is the answer).
+    leaving: RefCell<Vec<(Word, Instant, bool)>>,
     review: RefCell<Review>,
     next_id: Cell<isize>,
     seed: Cell<usize>,
@@ -187,15 +189,35 @@ impl Floaters {
     ) {
         let enabled = most > 0;
         self.looking.store(enabled, Ordering::Relaxed);
-        // Words that faded out: off the screen.
-        self.leaving.borrow_mut().retain(|(p, at)| {
-            if at.elapsed() > Duration::from_secs_f64(FADE_OUT + 0.1) {
-                p.orderOut(None);
-                false
-            } else {
-                true
+        // A word fading out with the pointer on it: back, lit (owner,
+        // 2026-11-11: never fade under the pointer). The rest: off the screen.
+        let mouse = NSEvent::mouseLocation();
+        let under = |p: &NSPanel| {
+            let f = p.frame();
+            mouse.x >= f.origin.x && mouse.x <= f.origin.x + f.size.width && mouse.y >= f.origin.y && mouse.y <= f.origin.y + f.size.height
+        };
+        let mut back = Vec::new();
+        self.leaving.borrow_mut().retain_mut(|(w, at, revive)| {
+            if *revive && under(&w.panel) && w.panel.isVisible() {
+                back.push(w.id);
+                return true;
             }
+            if at.elapsed() > Duration::from_secs_f64(FADE_OUT + 0.1) {
+                w.panel.orderOut(None);
+                return false;
+            }
+            true
         });
+        for id in back {
+            let i = self.leaving.borrow().iter().position(|(w, _, _)| w.id == id);
+            if let Some(i) = i {
+                let (mut w, _, _) = self.leaving.borrow_mut().remove(i);
+                w.on.set(true);
+                w.came = Instant::now();
+                fade_over(&w.panel, true, w.on.clone(), 0.25);
+                self.words.borrow_mut().push(w);
+            }
+        }
         let (at, up) = self.capture_seen.get();
         let up = if at.elapsed() > Duration::from_millis(600) {
             let now = capturing();
@@ -218,7 +240,6 @@ impl Floaters {
         let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(vis.size.height);
         *self.screen.lock().unwrap() = Rect { x: vis.origin.x, y: primary_h - (vis.origin.y + vis.size.height), w: vis.size.width, h: vis.size.height };
         let fresh = self.spots.lock().unwrap().take();
-        let mouse = NSEvent::mouseLocation();
         // Hovered: its meaning shows; left: it closes again. Old or crowded out: it goes.
         let mut gone = Vec::new();
         for (i, w) in self.words.borrow_mut().iter_mut().enumerate() {
@@ -230,24 +251,28 @@ impl Floaters {
                 w.open = open;
                 lay_out(mtm, w, primary_h);
             }
+            // Under the pointer, nothing makes it go.
+            if over {
+                continue;
+            }
             if w.hold_until.is_some_and(|t| Instant::now() >= t) {
-                gone.push(i);
+                gone.push((i, false));
                 continue;
             }
             let crowded = fresh.as_ref().is_some_and(|s| !s.contains(&w.cell));
-            if (w.came.elapsed() > STAYS && !over) || crowded {
-                gone.push(i);
+            if w.came.elapsed() > STAYS || crowded {
+                gone.push((i, true));
             }
         }
         // Fewer asked for in the menu: the newest go.
         let over = self.words.borrow().len().saturating_sub(most);
         let n = self.words.borrow().len();
-        gone.extend(n - over..n);
-        gone.sort_unstable();
-        gone.dedup();
-        for i in gone.into_iter().rev() {
+        gone.extend((n - over..n).map(|i| (i, false)));
+        gone.sort_unstable_by_key(|g| g.0);
+        gone.dedup_by_key(|g| g.0);
+        for (i, revive) in gone.into_iter().rev() {
             let w = self.words.borrow_mut().remove(i);
-            self.leave(w);
+            self.leave(w, revive);
         }
         // A new word now and then, in a spot nobody holds.
         let Some(free) = fresh else { return };
@@ -267,10 +292,10 @@ impl Floaters {
         self.words.borrow_mut().push(show(mtm, id, lang, word, shown, m, tags, cell, primary_h));
     }
 
-    fn leave(&self, w: Word) {
+    fn leave(&self, w: Word, revive: bool) {
         w.on.set(false);
         fade_over(&w.panel, false, w.on.clone(), FADE_OUT);
-        self.leaving.borrow_mut().push((w.panel, Instant::now()));
+        self.leaving.borrow_mut().push((w, Instant::now(), revive));
     }
 
     /// A screenshot key: every word off the screen at once, no fade, for a while.
@@ -284,8 +309,8 @@ impl Floaters {
             w.on.set(false);
             w.panel.orderOut(None);
         }
-        for (p, _) in self.leaving.borrow_mut().drain(..) {
-            p.orderOut(None);
+        for (w, _, _) in self.leaving.borrow_mut().drain(..) {
+            w.panel.orderOut(None);
         }
     }
 
@@ -293,7 +318,7 @@ impl Floaters {
     pub fn clear(&self) {
         let all: Vec<Word> = self.words.borrow_mut().drain(..).collect();
         for w in all {
-            self.leave(w);
+            self.leave(w, false);
         }
     }
 
@@ -318,7 +343,7 @@ impl Floaters {
             k => {
                 self.review.borrow_mut().grade(&lang, &word, if k == 2 { Grade::Easy } else { Grade::Good }, Self::now());
                 let w = self.words.borrow_mut().remove(i);
-                self.leave(w);
+                self.leave(w, false);
                 Some(())
             }
         }
