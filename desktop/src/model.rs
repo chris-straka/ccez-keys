@@ -29,6 +29,8 @@ pub struct Field {
     pub caret: Option<Rect>,
     /// The field itself on screen (same coordinates), when the app says.
     pub frame: Option<Rect>,
+    /// Text selected in it (empty: just a cursor).
+    pub selected: String,
 }
 
 /// A word on the preview (or a space or mark between words).

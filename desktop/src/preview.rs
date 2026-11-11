@@ -4,7 +4,8 @@
 //! translations that came back. No system calls here.
 //!
 //! The owner's rules (docs/mac.md): not while typing; once typing stops, when
-//! every language is in, all together; then 8 s (up to 20 s for a long
+//! every language is in, all together (after 0.2 s when they're already in,
+//! else 0.5 s); then 8 s (up to 20 s for a long
 //! sentence), and while the pointer is over it; gone at once on typing again,
 //! leaving the field, a new line or an emptied field. Nothing secret-looking is
 //! ever translated or shown.
@@ -115,7 +116,12 @@ impl Preview {
         self.seq += 1;
     }
 
-    pub fn tick(&mut self, i: Inputs, answer: Option<Shown>, render: &dyn Fn(&Shown) -> Vec<Row>) -> Outputs {
+    pub fn tick(
+        &mut self,
+        i: Inputs,
+        answer: Option<Shown>,
+        render: &dyn Fn(&Shown) -> Vec<Row>,
+    ) -> Outputs {
         let mut out = Outputs::default();
         if i.off {
             return out;
@@ -125,9 +131,15 @@ impl Preview {
             self.line.clear();
             return out;
         };
-        // The sentence typed, still shown after its full stop and a space; a
-        // new line or an emptied field starts blank (sentence_of).
-        let sentence = sentence_of(field.before.clone());
+        // Text selected: that (owner, 2026-11-11). Else the sentence up to the
+        // cursor, still shown after its full stop and a space; a new line or an
+        // emptied field starts blank (sentence_of).
+        let picked = field.selected.trim();
+        let sentence = if picked.is_empty() {
+            sentence_of(field.before.clone())
+        } else {
+            picked.chars().take(400).collect()
+        };
         // Just swapped in for a translation (and typed on from there): nothing to show.
         if !self.swapped.is_empty() {
             if sentence.starts_with(self.swapped.as_str()) {
@@ -136,8 +148,20 @@ impl Preview {
             self.swapped.clear();
         }
         // Nothing secret is ever shown or translated: the sentence, or what's near it.
-        let tail: String = field.before.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
-        if sentence.trim().is_empty() || looks_secret(tail) || looks_secret(sentence.clone()) {
+        let tail: String = field
+            .before
+            .chars()
+            .rev()
+            .take(300)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        if sentence.trim().is_empty()
+            || looks_secret(tail)
+            || looks_secret(sentence.clone())
+            || looks_secret(field.selected.clone())
+        {
             if !self.sentence.is_empty() {
                 // An answer still on its way for the old sentence is dropped.
                 self.drop_answers();
@@ -149,31 +173,53 @@ impl Preview {
         }
         if self.sentence != sentence {
             // Another sentence (not this one typed on): the old translation goes at once.
-            let n = self.sentence.chars().count().min(sentence.chars().count()).min(12);
+            let n = self
+                .sentence
+                .chars()
+                .count()
+                .min(sentence.chars().count())
+                .min(12);
             if n == 0 || self.sentence.chars().take(n).ne(sentence.chars().take(n)) {
                 self.line.clear();
                 out.close_card = true;
             } else {
                 // Typed on: lines still waiting were for the old words.
-                self.line.retain(|r| !r.toks.iter().any(|t| t.key == PENDING));
+                self.line
+                    .retain(|r| !r.toks.iter().any(|t| t.key == PENDING));
             }
             self.sentence = sentence.clone();
             // Answers for what was there before don't belong to this one.
             self.drop_answers();
-            self.place = Place { caret: field.caret, frame: field.frame };
+            self.place = Place {
+                caret: field.caret,
+                frame: field.frame,
+            };
             self.changed = i.now;
             self.asked = false;
         } else if field.caret.is_some() || field.frame.is_some() {
-            self.place = Place { caret: field.caret, frame: field.frame };
+            self.place = Place {
+                caret: field.caret,
+                frame: field.frame,
+            };
         }
         // Translated once typing pauses a moment, not for every letter.
         if !self.asked && i.now.duration_since(self.changed) >= PAUSE {
             self.asked = true;
             self.complete = false;
             self.drop_answers();
-            let langs: Vec<String> = if i.shown == 0 { i.langs.to_vec() } else { i.langs.iter().take(i.shown + 2).cloned().collect() };
+            let langs: Vec<String> = if i.shown == 0 {
+                i.langs.to_vec()
+            } else {
+                i.langs.iter().take(i.shown + 2).cloned().collect()
+            };
             self.asking = sentence.clone();
-            out.ask = Some(Ask { seq: self.seq, text: sentence, from: "en".into(), langs, max: if i.shown == 0 { usize::MAX } else { i.shown } });
+            out.ask = Some(Ask {
+                seq: self.seq,
+                text: sentence,
+                from: "en".into(),
+                langs,
+                max: if i.shown == 0 { usize::MAX } else { i.shown },
+            });
         }
         if let Some(shown) = answer.filter(|s| s.seq == self.seq) {
             self.line = render(&shown);
@@ -186,13 +232,20 @@ impl Preview {
         }
         // Not while typing; once stopped, when every language is in, all
         // together; then a while from when it showed, or while pointed at.
-        let typing = i.now.duration_since(self.changed) < STILL;
+        // Every line already in for this very sentence (from the session's
+        // cache, say): it may show once typing pauses, not after the full wait
+        // (owner, 2026-11-11: show it sooner when it's ready).
+        let ready = self.complete && self.line_for == self.sentence;
+        let typing = i.now.duration_since(self.changed) < if ready { PAUSE } else { STILL };
         let recent = i.now.duration_since(self.appeared) < linger(self.sentence.chars().count());
         if i.under_mouse {
             self.hovered = Some(i.now);
         }
-        let hovered = self.hovered.is_some_and(|t| i.now.duration_since(t) < HOVER);
-        out.show = (((recent || hovered) && !typing && self.complete) || i.held) && !self.line.is_empty();
+        let hovered = self
+            .hovered
+            .is_some_and(|t| i.now.duration_since(t) < HOVER);
+        out.show =
+            (((recent || hovered) && !typing && self.complete) || i.held) && !self.line.is_empty();
         out
     }
 }
@@ -204,16 +257,40 @@ mod tests {
     use crate::worker::Line;
 
     fn field(before: &str) -> Option<Field> {
-        Some(Field { secure: false, before: before.into(), caret: None, frame: None })
+        Some(Field {
+            secure: false,
+            before: before.into(),
+            ..Default::default()
+        })
     }
 
     fn render(s: &Shown) -> Vec<Row> {
-        s.lines.iter().map(|l| Row { lang: l.lang.clone(), flag: String::new(), toks: l.toks.clone() }).collect()
+        s.lines
+            .iter()
+            .map(|l| Row {
+                lang: l.lang.clone(),
+                flag: String::new(),
+                toks: l.toks.clone(),
+            })
+            .collect()
     }
 
     fn answer(seq: u64, text: &str, pending: &[&str]) -> Shown {
-        let tok = Tok { text: text.into(), reading: String::new(), word: true, key: text.into(), status: 0 };
-        Shown { seq, lines: vec![Line { lang: "fr".into(), toks: vec![tok] }], pending: pending.iter().map(|p| p.to_string()).collect() }
+        let tok = Tok {
+            text: text.into(),
+            reading: String::new(),
+            word: true,
+            key: text.into(),
+            status: 0,
+        };
+        Shown {
+            seq,
+            lines: vec![Line {
+                lang: "fr".into(),
+                toks: vec![tok],
+            }],
+            pending: pending.iter().map(|p| p.to_string()).collect(),
+        }
     }
 
     /// Ticks with `before` typed, `at` ms after the start.
@@ -226,14 +303,34 @@ mod tests {
     impl Run {
         fn new() -> Run {
             let t0 = Instant::now();
-            Run { p: Preview::new(t0), t0, langs: vec!["fr".into(), "de".into()] }
+            Run {
+                p: Preview::new(t0),
+                t0,
+                langs: vec!["fr".into(), "de".into()],
+            }
         }
         fn tick(&mut self, at: u64, before: &str, answer: Option<Shown>) -> Outputs {
-            let i = Inputs { now: self.t0 + Duration::from_millis(at), off: false, field: field(before), held: false, under_mouse: false, shown: 6, langs: &self.langs };
+            let i = Inputs {
+                now: self.t0 + Duration::from_millis(at),
+                off: false,
+                field: field(before),
+                held: false,
+                under_mouse: false,
+                shown: 6,
+                langs: &self.langs,
+            };
             self.p.tick(i, answer, &render)
         }
         fn hover(&mut self, at: u64, before: &str) -> Outputs {
-            let i = Inputs { now: self.t0 + Duration::from_millis(at), off: false, field: field(before), held: false, under_mouse: true, shown: 6, langs: &self.langs };
+            let i = Inputs {
+                now: self.t0 + Duration::from_millis(at),
+                off: false,
+                field: field(before),
+                held: false,
+                under_mouse: true,
+                shown: 6,
+                langs: &self.langs,
+            };
             self.p.tick(i, None, &render)
         }
     }
@@ -247,9 +344,19 @@ mod tests {
         assert_eq!(ask.text, "Je");
         // One language in, one to come: not yet.
         assert!(!r.tick(400, "Je", Some(answer(ask.seq, "I", &["de"]))).show);
-        // Still within half a second of the last key: not yet either.
-        assert!(!r.tick(450, "Je", Some(answer(ask.seq, "I", &[]))).show);
-        assert!(r.tick(600, "Je", None).show);
+        // Every line in once typing has paused: it shows at once.
+        assert!(r.tick(450, "Je", Some(answer(ask.seq, "I", &[]))).show);
+    }
+
+    #[test]
+    fn a_line_still_coming_waits_for_the_full_pause() {
+        let mut r = Run::new();
+        r.tick(0, "Je", None);
+        let ask = r.tick(250, "Je", None).ask.unwrap();
+        // Typed on: the line in hand was for "Je", so the full wait holds.
+        r.tick(300, "Je", Some(answer(ask.seq, "I", &[])));
+        assert!(!r.tick(350, "Je v", None).show);
+        assert!(!r.tick(600, "Je v", None).show);
     }
 
     #[test]
@@ -295,8 +402,24 @@ mod tests {
     fn nothing_secret_is_asked_or_shown() {
         let mut r = Run::new();
         r.tick(0, "my key sk-proj-abcdefghijklmnop1234", None);
-        assert!(r.tick(400, "my key sk-proj-abcdefghijklmnop1234", None).ask.is_none());
-        let i = Inputs { now: r.t0, off: false, field: Some(Field { secure: true, before: "hunter2".into(), caret: None, frame: None }), held: false, under_mouse: false, shown: 6, langs: &r.langs };
+        assert!(
+            r.tick(400, "my key sk-proj-abcdefghijklmnop1234", None)
+                .ask
+                .is_none()
+        );
+        let i = Inputs {
+            now: r.t0,
+            off: false,
+            field: Some(Field {
+                secure: true,
+                before: "hunter2".into(),
+                ..Default::default()
+            }),
+            held: false,
+            under_mouse: false,
+            shown: 6,
+            langs: &r.langs,
+        };
         assert!(r.p.tick(i, None, &render).ask.is_none());
     }
 
@@ -309,6 +432,45 @@ mod tests {
         // Something else typed: back to normal.
         r.tick(500, "Hello", None);
         assert!(r.tick(800, "Hello", None).ask.is_some());
+    }
+
+    #[test]
+    fn a_selection_is_previewed_and_a_cursor_mid_sentence_previews_up_to_it() {
+        let mut r = Run::new();
+        let sel = Field {
+            before: "I said hello. ".into(),
+            selected: "the weather is nice".into(),
+            ..Default::default()
+        };
+        let i = Inputs {
+            now: r.t0,
+            off: false,
+            field: Some(sel.clone()),
+            held: false,
+            under_mouse: false,
+            shown: 6,
+            langs: &r.langs,
+        };
+        r.p.tick(i, None, &render);
+        let i = Inputs {
+            now: r.t0 + Duration::from_millis(250),
+            off: false,
+            field: Some(sel),
+            held: false,
+            under_mouse: false,
+            shown: 6,
+            langs: &r.langs,
+        };
+        assert_eq!(
+            r.p.tick(i, None, &render).ask.unwrap().text,
+            "the weather is nice"
+        );
+        // The cursor placed inside "We went to the beach": up to the cursor.
+        r.tick(1000, "Hi. We went to", None);
+        assert_eq!(
+            r.tick(1300, "Hi. We went to", None).ask.unwrap().text,
+            "We went to"
+        );
     }
 
     #[test]

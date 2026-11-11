@@ -17,24 +17,56 @@ pub struct Prefs {
     /// "Open at login" was set on the first start (on, as decided); after
     /// that it's the owner's, from the menu.
     pub login_set: bool,
+    /// Selected text gets a preview too.
+    pub selection: bool,
+    /// A word clicked on the preview is copied (with a toast).
+    pub copy_click: bool,
+    /// Learning words over the screen while it sits idle.
+    pub idle_words: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { shown: 6, readings: true, off: vec![], on: vec![], paused: false, login_set: false }
+        Prefs {
+            shown: 6,
+            readings: true,
+            off: vec![],
+            on: vec![],
+            paused: false,
+            login_set: false,
+            selection: true,
+            copy_click: true,
+            idle_words: true,
+        }
     }
 }
 
 pub fn path(dir: &std::path::Path) -> PathBuf {
-    dir.join(if cfg!(target_os = "macos") { "mac.json" } else { "desktop.json" })
+    dir.join(if cfg!(target_os = "macos") {
+        "mac.json"
+    } else {
+        "desktop.json"
+    })
 }
 
 impl Prefs {
     pub fn load(dir: &std::path::Path) -> Prefs {
         let d = Prefs::default();
-        let Ok(t) = std::fs::read_to_string(path(dir)) else { return d };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else { return d };
-        let list = |k: &str| v[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+        let Ok(t) = std::fs::read_to_string(path(dir)) else {
+            return d;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else {
+            return d;
+        };
+        let list = |k: &str| {
+            v[k].as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
         Prefs {
             shown: v["shown"].as_u64().map(|n| n as usize).unwrap_or(d.shown),
             readings: v["readings"].as_bool().unwrap_or(d.readings),
@@ -42,11 +74,14 @@ impl Prefs {
             on: list("on"),
             paused: v["paused"].as_bool().unwrap_or(false),
             login_set: v["login_set"].as_bool().unwrap_or(false),
+            selection: v["selection"].as_bool().unwrap_or(d.selection),
+            copy_click: v["copy_click"].as_bool().unwrap_or(d.copy_click),
+            idle_words: v["idle_words"].as_bool().unwrap_or(d.idle_words),
         }
     }
 
     pub fn save(&self, dir: &std::path::Path) {
-        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set});
+        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set, "selection": self.selection, "copy_click": self.copy_click, "idle_words": self.idle_words});
         let tmp = path(dir).with_extension("tmp");
         if std::fs::write(&tmp, v.to_string()).is_ok() {
             let _ = std::fs::rename(&tmp, path(dir));

@@ -31,7 +31,12 @@ fn before_caret(el: &UIElement) -> Option<String> {
     if let Ok(tp) = el.get_pattern::<UITextPattern>() {
         let doc = tp.get_document_range().ok()?;
         let (_, caret) = tp.get_caret_range().ok()?;
-        doc.move_endpoint_by_range(TextPatternRangeEndpoint::End, &caret, TextPatternRangeEndpoint::Start).ok()?;
+        doc.move_endpoint_by_range(
+            TextPatternRangeEndpoint::End,
+            &caret,
+            TextPatternRangeEndpoint::Start,
+        )
+        .ok()?;
         return doc.get_text(-1).ok();
     }
     el.get_pattern::<UIValuePattern>().ok()?.get_value().ok()
@@ -39,43 +44,79 @@ fn before_caret(el: &UIElement) -> Option<String> {
 
 fn rect(el: &UIElement) -> Option<Rect> {
     let r = el.get_bounding_rectangle().ok()?;
-    (r.get_width() > 0 && r.get_height() > 0).then(|| Rect { x: f64::from(r.get_left()), y: f64::from(r.get_top()), w: f64::from(r.get_width()), h: f64::from(r.get_height()) })
+    (r.get_width() > 0 && r.get_height() > 0).then(|| Rect {
+        x: f64::from(r.get_left()),
+        y: f64::from(r.get_top()),
+        w: f64::from(r.get_width()),
+        h: f64::from(r.get_height()),
+    })
 }
 
 /// The process's executable name ("WindowsTerminal.exe").
 fn process_name(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
+    use windows::Win32::System::Threading::{
+        OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        QueryFullProcessImageNameW,
+    };
     unsafe {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; 260];
         let mut len = buf.len() as u32;
-        let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, windows::core::PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let ok = QueryFullProcessImageNameW(
+            h,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        )
+        .is_ok();
         let _ = CloseHandle(h);
-        ok.then(|| String::from_utf16_lossy(&buf[..len as usize]).rsplit('\\').next().unwrap_or("").to_string())
+        ok.then(|| {
+            String::from_utf16_lossy(&buf[..len as usize])
+                .rsplit('\\')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
     }
 }
 
 fn serve(rx: Receiver<Ask>) {
     let Ok(uia) = UIAutomation::new() else { return };
-    let editable = |el: &UIElement| el.get_pattern::<UITextPattern>().is_ok() || el.get_pattern::<UIValuePattern>().is_ok();
+    let editable = |el: &UIElement| {
+        el.get_pattern::<UITextPattern>().is_ok() || el.get_pattern::<UIValuePattern>().is_ok()
+    };
     for ask in rx {
         match ask {
             Ask::Focused(reply) => {
                 let f = uia.get_focused_element().ok().and_then(|el| {
                     if el.is_password().unwrap_or(false) {
-                        return Some(Field { secure: true, ..Default::default() });
+                        return Some(Field {
+                            secure: true,
+                            ..Default::default()
+                        });
                     }
                     if !editable(&el) {
                         return None;
                     }
-                    Some(Field { secure: false, before: before_caret(&el)?, caret: None, frame: rect(&el) })
+                    Some(Field {
+                        secure: false,
+                        before: before_caret(&el)?,
+                        caret: None,
+                        frame: rect(&el),
+                        selected: String::new(),
+                    })
                 });
                 let _ = reply.send(f);
             }
             Ask::Front(reply) => {
-                let name = uia.get_focused_element().ok().and_then(|el| el.get_process_id().ok()).and_then(process_name);
-                let _ = reply.send(name.map(|n| (n.clone(), n.trim_end_matches(".exe").to_string())));
+                let name = uia
+                    .get_focused_element()
+                    .ok()
+                    .and_then(|el| el.get_process_id().ok())
+                    .and_then(process_name);
+                let _ =
+                    reply.send(name.map(|n| (n.clone(), n.trim_end_matches(".exe").to_string())));
             }
             Ask::Swap(sentence, trailing, text, reply) => {
                 let r = (|| {
@@ -88,12 +129,22 @@ fn serve(rx: Receiver<Ask>) {
                         return Err("the field moved on".into());
                     }
                     // The sentence and its spaces selected from the cursor back, then typed over.
-                    let tp = el.get_pattern::<UITextPattern>().map_err(|e| e.to_string())?;
+                    let tp = el
+                        .get_pattern::<UITextPattern>()
+                        .map_err(|e| e.to_string())?;
                     let (_, range) = tp.get_caret_range().map_err(|e| e.to_string())?;
                     let n = (sentence.chars().count() + trailing.chars().count()) as i32;
-                    range.move_endpoint_by_unit(TextPatternRangeEndpoint::Start, TextUnit::Character, -n).map_err(|e| e.to_string())?;
+                    range
+                        .move_endpoint_by_unit(
+                            TextPatternRangeEndpoint::Start,
+                            TextUnit::Character,
+                            -n,
+                        )
+                        .map_err(|e| e.to_string())?;
                     range.select().map_err(|e| e.to_string())?;
-                    uiautomation::inputs::Keyboard::new().send_text(&format!("{text}{trailing}")).map_err(|e| e.to_string())?;
+                    uiautomation::inputs::Keyboard::new()
+                        .send_text(&format!("{text}{trailing}"))
+                        .map_err(|e| e.to_string())?;
                     Ok("typed over")
                 })();
                 let _ = reply.send(r);
@@ -128,8 +179,11 @@ impl crate::pc::Access for Access {
     fn swap(&mut self, sentence: &str, trailing: &str, text: &str) -> Result<&'static str, String> {
         let (s, t, x) = (sentence.to_string(), trailing.to_string(), text.to_string());
         let (tx, rx) = channel();
-        self.tx.send(Ask::Swap(s, t, x, tx)).map_err(|e| e.to_string())?;
-        rx.recv_timeout(Duration::from_secs(3)).map_err(|_| "the field didn't answer".to_string())?
+        self.tx
+            .send(Ask::Swap(s, t, x, tx))
+            .map_err(|e| e.to_string())?;
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "the field didn't answer".to_string())?
     }
 }
 
@@ -156,10 +210,17 @@ pub fn say(lang: &str, text: &str) {
 /// The preview window never takes the keyboard from the app being typed in.
 pub fn no_activate(hwnd: isize) {
     use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        WS_EX_TOPMOST,
+    };
     unsafe {
         let h = HWND(hwnd as *mut core::ffi::c_void);
         let style = GetWindowLongPtrW(h, GWL_EXSTYLE);
-        SetWindowLongPtrW(h, GWL_EXSTYLE, style | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0) as isize);
+        SetWindowLongPtrW(
+            h,
+            GWL_EXSTYLE,
+            style | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0) as isize,
+        );
     }
 }
