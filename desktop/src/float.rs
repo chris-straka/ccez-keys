@@ -351,11 +351,21 @@ impl Floaters {
         let Some(cell) = free.into_iter().find(|c| !taken.contains(c)) else { return };
         let up: Vec<(String, String)> = self.words.borrow().iter().map(|w| (w.lang.clone(), w.word.clone())).collect();
         let list = ccez_keys_core::review::mixed(words());
-        let Some((lang, word)) = self.engine.with_review(|r| r.next(&list, &up, 1, Self::now(), self.seed.get())).into_iter().next() else { return };
+        // The first of a few that the dictionary can give a meaning to.
+        let picks = self.engine.with_review(|r| r.next(&list, &up, 4, Self::now(), self.seed.get()));
         self.seed.set(self.seed.get() + 1);
+        let Some((lang, word, (shown, m, tags))) = picks
+            .into_iter()
+            .map(|(l, w)| {
+                let m = meaning(&l, &w);
+                (l, w, m)
+            })
+            .find(|p| !p.2.1.is_empty())
+        else {
+            return;
+        };
         let id = self.next_id.get();
         self.next_id.set(id + 1);
-        let (shown, m, tags) = meaning(&lang, &word);
         let w = show(mtm, id, lang, word, shown, m, tags, cell, primary_h);
         if !self.hide_in_shots.get() {
             w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);

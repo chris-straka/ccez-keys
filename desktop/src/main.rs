@@ -206,19 +206,7 @@ mod app {
                 let keep: Vec<&String> = if n == 0 { app.langs.iter().collect() } else { app.langs.iter().take(n).collect() };
                 app.engine.learning_words().into_iter().filter(|w| keep.iter().any(|l| **l == w.lang)).map(|w| (w.lang, w.word)).collect()
             },
-            |lang: &str, word: &str| {
-                let meanings = |w: &str| app.engine.word_card(lang.into(), w.into(), String::new()).map(|c| c.meanings).unwrap_or_default();
-                let (shown, meaning, tags) = ccez_keys_core::gloss::short_gloss(word, &meanings(word), meanings);
-                // A noun with its article, as its card has it ("le cap", "das Wasser").
-                let shown = if shown == word {
-                    let tok = crate::model::Tok { text: word.into(), reading: String::new(), word: true, key: word.into(), status: 0 };
-                    let card = app.engine.word_card(lang.into(), word.into(), String::new());
-                    crate::cards::card_face(&app.engine, lang, &tok, card.as_ref()).0
-                } else {
-                    shown
-                };
-                (shown, meaning, tags)
-            },
+            |lang: &str, word: &str| screen_meaning(&app.engine, lang, word),
         );
         let p = app.preview.borrow();
         if out.show {
@@ -407,6 +395,40 @@ mod app {
         }
     }
 
+    /// A screen word as shown, its meaning and its tags (no meaning: the
+    /// dictionary can't place it, and it isn't shown). A word cut off when it
+    /// was saved ("rechtskräft", from a subtitle) shows whole
+    /// ("rechtskräftig") when one common ending makes a dictionary word.
+    fn screen_meaning(engine: &ccez_keys_core::Engine, lang: &str, word: &str) -> (String, String, Vec<String>) {
+        const ENDINGS: [&str; 8] = ["ig", "e", "en", "er", "lich", "ung", "es", "s"];
+        let meanings = |w: &str| engine.word_card(lang.into(), w.into(), String::new()).map(|c| c.meanings).unwrap_or_default();
+        let mut word = word.to_string();
+        if meanings(&word).is_empty() && word.chars().count() >= 6 {
+            if let Some(whole) = ENDINGS.iter().map(|e| format!("{word}{e}")).find(|w| !meanings(w).is_empty()) {
+                word = whole;
+            }
+        }
+        // A phrase saved whole ("découler de"): its first word's meaning, the
+        // phrase as it was saved.
+        if meanings(&word).is_empty()
+            && let Some((head, _)) = word.split_once(' ')
+            && !meanings(head).is_empty()
+        {
+            let (_, meaning, tags) = ccez_keys_core::gloss::short_gloss(head, &meanings(head), meanings);
+            return (word, meaning, tags);
+        }
+        let (shown, meaning, tags) = ccez_keys_core::gloss::short_gloss(&word, &meanings(&word), meanings);
+        // A noun with its article, as its card has it ("le cap", "das Wasser").
+        let shown = if shown == word {
+            let tok = crate::model::Tok { text: word.clone(), reading: String::new(), word: true, key: word.clone(), status: 0 };
+            let card = engine.word_card(lang.into(), word.clone(), String::new());
+            crate::cards::card_face(engine, lang, &tok, card.as_ref()).0
+        } else {
+            shown
+        };
+        (shown, meaning, tags)
+    }
+
     pub fn run() {
         let mtm = MainThreadMarker::new().expect("main thread");
         let args: Vec<String> = std::env::args().collect();
@@ -452,6 +474,16 @@ mod app {
             for kind in kinds {
                 unsafe { CGEventPost(0, CGEventCreateMouseEvent(std::ptr::null(), kind, P { x, y }, button)) };
                 std::thread::sleep(std::time::Duration::from_millis(60));
+            }
+            return;
+        }
+        // `--meaning lang word`: what a screen word shows (word, meaning, tags).
+        if let Some(i) = args.iter().position(|a| a == "--meaning") {
+            let engine = ccez_keys_core::Engine::new(dirs().to_string_lossy().into_owned());
+            let (lang, word) = (args.get(i + 1).cloned().unwrap_or_default(), args.get(i + 2).cloned().unwrap_or_default());
+            println!("{:?}", screen_meaning(&engine, &lang, &word));
+            for m in engine.word_card(lang.clone(), word.clone(), String::new()).map(|c| c.meanings).unwrap_or_default().iter().take(6) {
+                println!("  sense: {m}");
             }
             return;
         }

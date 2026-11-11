@@ -32,7 +32,11 @@ pub fn form_of(meaning: &str) -> Option<String> {
     if !FORMS.iter().any(|f| head.contains(f)) || head.split_whitespace().count() > 7 {
         return None;
     }
-    let target = m[at + 4..].split([':', ',', ';', '(']).next()?.trim().trim_end_matches('.');
+    let target = m[at + 4..]
+        .split([':', ',', ';', '('])
+        .next()?
+        .trim()
+        .trim_end_matches('.');
     (!target.is_empty() && target.split_whitespace().count() <= 3).then(|| target.to_string())
 }
 
@@ -41,14 +45,33 @@ pub fn form_of(meaning: &str) -> Option<String> {
 /// pencher: …"), and a word the dictionary pairs with another ("[with à]")
 /// shows with it ("parvenir à": "to reach"), and leading labels become
 /// tags ("tr"). (word as shown, meaning, tags)
-pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<String>) -> (String, String, Vec<String>) {
-    let own: Vec<String> = meanings.iter().filter(|m| form_of(m).is_none()).cloned().collect();
+pub fn short_gloss(
+    word: &str,
+    meanings: &[String],
+    base: impl Fn(&str) -> Vec<String>,
+) -> (String, String, Vec<String>) {
+    let own: Vec<String> = meanings
+        .iter()
+        .filter(|m| form_of(m).is_none())
+        .cloned()
+        .collect();
     let senses = if own.is_empty() {
-        meanings.iter().find_map(|m| form_of(m)).map(|b| base(&b).into_iter().filter(|m| form_of(m).is_none()).collect()).unwrap_or_default()
+        meanings
+            .iter()
+            .find_map(|m| form_of(m))
+            .map(|b| {
+                base(&b)
+                    .into_iter()
+                    .filter(|m| form_of(m).is_none())
+                    .collect()
+            })
+            .unwrap_or_default()
     } else {
         own
     };
-    let Some(m) = everyday_sense(&senses) else { return (word.to_string(), String::new(), Vec::new()) };
+    let Some(m) = everyday_sense(&senses) else {
+        return (word.to_string(), String::new(), Vec::new());
+    };
     let first = m.split(';').next().unwrap_or("").trim().to_string();
     // "to sap (to subvert by digging)": the explanation in brackets at the
     // end goes; the short meaning is what comes before it.
@@ -65,7 +88,9 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
     });
     match with {
         Some((a, b, w)) if !w.is_empty() && w.split_whitespace().count() <= 2 => {
-            let gloss = format!("{} {}", first[..a].trim(), first[b..].trim()).trim().to_string();
+            let gloss = format!("{} {}", first[..a].trim(), first[b..].trim())
+                .trim()
+                .to_string();
             (format!("{word} {w}"), gloss, tags)
         }
         _ => (word.to_string(), first, tags),
@@ -78,8 +103,24 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
 /// subvert by digging)" gives way to "to erode, wear down, undermine";
 /// owner, 2026-11-11). The first sense when none is plainer.
 fn everyday_sense(senses: &[String]) -> Option<String> {
-    const NICHE: [&str; 13] =
-        ["archaic", "obsolete", "dated", "rare", "historical", "nautical", "military", "law", "legal", "heraldry", "dialectal", "regional", "slang"];
+    const NICHE: [&str; 16] = [
+        "archaic",
+        "obsolete",
+        "dated",
+        "rare",
+        "historical",
+        "nautical",
+        "military",
+        "law",
+        "legal",
+        "heraldry",
+        "dialectal",
+        "regional",
+        "slang",
+        "chiefly in compounds",
+        "literary",
+        "euphemistic",
+    ];
     let plain = |m: &String| {
         let mut labels = String::new();
         let mut rest = m.trim();
@@ -89,10 +130,22 @@ fn everyday_sense(senses: &[String]) -> Option<String> {
             rest = after.trim_start();
         }
         let niche = labels.split(',').any(|l| NICHE.contains(&l.trim()));
-        let explained = rest.trim_end().ends_with(')') && rest.contains(" (");
+        // "to sap (to subvert by digging)": a gloss that needs explaining; a
+        // short note ("water (H₂O)") is no reason to pass a sense over.
+        let note = rest
+            .trim_end()
+            .strip_suffix(')')
+            .and_then(|r| r.rsplit_once(" ("))
+            .map(|(_, n)| n);
+        let explained = note.is_some_and(|n| n.split_whitespace().count() >= 3);
         !niche && !explained
     };
-    senses.iter().take(3).find(|m| plain(m)).or_else(|| senses.first()).cloned()
+    senses
+        .iter()
+        .take(3)
+        .find(|m| plain(m))
+        .or_else(|| senses.first())
+        .cloned()
 }
 
 /// A meaning without a bracketed note at its end ("to sap (to subvert by
@@ -110,7 +163,11 @@ fn drop_trailing_note(m: &str) -> String {
                 depth -= 1;
                 if depth == 0 {
                     let before = t[..i].trim_end().trim_end_matches(',').trim_end();
-                    return if before.is_empty() { t.to_string() } else { before.to_string() };
+                    return if before.is_empty() {
+                        t.to_string()
+                    } else {
+                        before.to_string()
+                    };
                 }
             }
             _ => {}
@@ -160,21 +217,64 @@ pub fn untagged(meaning: &str) -> &str {
 #[test]
 fn leading_labels_become_tags() {
     assert_eq!(tags_of("(transitive) to hold back, rein in"), ["tr"]);
-    assert_eq!(tags_of("(reflexive, figuratively) (informal) to calm down"), ["refl", "fig", "informal"]);
-    assert_eq!(untagged("(transitive) to hold back, rein in"), "to hold back, rein in");
+    assert_eq!(
+        tags_of("(reflexive, figuratively) (informal) to calm down"),
+        ["refl", "fig", "informal"]
+    );
+    assert_eq!(
+        untagged("(transitive) to hold back, rein in"),
+        "to hold back, rein in"
+    );
     assert!(tags_of("to reach").is_empty());
 }
 
 #[cfg(test)]
 #[test]
 fn glosses_skip_form_lines_and_take_their_partner_word() {
-    let base = |w: &str| if w == "pencher" { vec!["to lean, to tilt".to_string()] } else { vec![] };
-    assert_eq!(short_gloss("penche", &["inflection of pencher: first/third-person singular present".into()], base), ("penche".into(), "to lean, to tilt".into(), vec![]));
-    assert_eq!(short_gloss("parvenir", &["to reach [with à]".into(), "to succeed".into()], base), ("parvenir à".into(), "to reach".into(), vec![]));
-    assert_eq!(short_gloss("plage", &["beach; seaside".into()], base), ("plage".into(), "beach".into(), vec![]));
-    assert_eq!(form_of("third-person plural present indicative/subjunctive of porter").as_deref(), Some("porter"));
+    let base = |w: &str| {
+        if w == "pencher" {
+            vec!["to lean, to tilt".to_string()]
+        } else {
+            vec![]
+        }
+    };
+    assert_eq!(
+        short_gloss(
+            "penche",
+            &["inflection of pencher: first/third-person singular present".into()],
+            base
+        ),
+        ("penche".into(), "to lean, to tilt".into(), vec![])
+    );
+    assert_eq!(
+        short_gloss(
+            "parvenir",
+            &["to reach [with à]".into(), "to succeed".into()],
+            base
+        ),
+        ("parvenir à".into(), "to reach".into(), vec![])
+    );
+    assert_eq!(
+        short_gloss("plage", &["beach; seaside".into()], base),
+        ("plage".into(), "beach".into(), vec![])
+    );
+    assert_eq!(
+        form_of("third-person plural present indicative/subjunctive of porter").as_deref(),
+        Some("porter")
+    );
     assert_eq!(form_of("a cup of tea"), None);
-    assert_eq!(short_gloss("retenir", &["(transitive) to hold back, rein in".into()], base), ("retenir".into(), "to hold back, rein in".into(), vec!["tr".to_string()]));
+    assert_eq!(
+        short_gloss(
+            "retenir",
+            &["(transitive) to hold back, rein in".into()],
+            base
+        ),
+        (
+            "retenir".into(),
+            "to hold back, rein in".into(),
+            vec!["tr".to_string()]
+        )
+    );
 }
 
 #[cfg(test)]
@@ -190,11 +290,38 @@ mod everyday_tests {
         let forms = vec!["inflection of saper: first-person plural present indicative".to_string()];
         let base = |w: &str| if w == "saper" { saper.clone() } else { vec![] };
         let (shown, meaning, tags) = short_gloss("sapons", &forms, base);
-        assert_eq!((shown.as_str(), meaning.as_str()), ("sapons", "to erode, wear down, undermine"));
+        assert_eq!(
+            (shown.as_str(), meaning.as_str()),
+            ("sapons", "to erode, wear down, undermine")
+        );
         assert_eq!(tags, ["tr", "fig"]);
-        assert_eq!(drop_trailing_note("to sap (to subvert by digging (slowly))"), "to sap");
+        assert_eq!(
+            drop_trailing_note("to sap (to subvert by digging (slowly))"),
+            "to sap"
+        );
         let none = |_: &str| vec![];
-        assert_eq!(short_gloss("cap", &["(geography) cape".into(), "(archaic) head".into()], none).1, "cape");
-        assert_eq!(short_gloss("retenir", &["(transitive) to hold back, rein in".into()], none).1, "to hold back, rein in");
+        assert_eq!(
+            short_gloss(
+                "cap",
+                &["(geography) cape".into(), "(archaic) head".into()],
+                none
+            )
+            .1,
+            "cape"
+        );
+        assert_eq!(
+            short_gloss(
+                "retenir",
+                &["(transitive) to hold back, rein in".into()],
+                none
+            )
+            .1,
+            "to hold back, rein in"
+        );
+        let wasser = [
+            "water (H₂O)".into(),
+            "(chiefly in compounds) alcoholic beverage, similar to brandy".into(),
+        ];
+        assert_eq!(short_gloss("Wasser", &wasser, none).1, "water");
     }
 }
