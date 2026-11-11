@@ -75,8 +75,10 @@ objc2::define_class!(
             fire(self.tag(), 1);
         }
         #[unsafe(method(otherMouseDown:))]
-        fn other_mouse_down(&self, _e: &NSEvent) {
-            fire(self.tag(), 2);
+        fn other_mouse_down(&self, e: &NSEvent) {
+            // Shift + middle click: Known (owner, 2026-11-11); middle alone: Easy.
+            let known = e.modifierFlags().contains(objc2_app_kit::NSEventModifierFlags::Shift);
+            fire(self.tag(), if known { 3 } else { 2 });
         }
         #[unsafe(method(acceptsFirstMouse:))]
         fn accepts_first_mouse(&self, _e: Option<&NSEvent>) -> bool {
@@ -361,8 +363,9 @@ impl Floaters {
         }
     }
 
-    /// A click on word `id`: 0 Good, 1 Again, 2 Easy.
-    pub fn clicked(&self, mtm: MainThreadMarker, id: isize, kind: u8) -> Option<()> {
+    /// A click on word `id`: 0 Good, 1 Again, 2 Easy, 3 Known. The word
+    /// (lang, word) for Known, which the caller marks known everywhere.
+    pub fn clicked(&self, mtm: MainThreadMarker, id: isize, kind: u8) -> Option<(String, String)> {
         let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
         let i = self.words.borrow().iter().position(|w| w.id == id)?;
         let (lang, word) = {
@@ -377,13 +380,18 @@ impl Floaters {
                 ws[i].hold_until = Some(Instant::now() + Duration::from_millis(2500));
                 ws[i].open = true;
                 lay_out(mtm, &mut ws[i], primary_h);
-                Some(())
+                None
+            }
+            3 => {
+                let w = self.words.borrow_mut().remove(i);
+                self.leave(w, false);
+                Some((lang, word))
             }
             k => {
                 self.review.borrow_mut().grade(&lang, &word, if k == 2 { Grade::Easy } else { Grade::Good }, Self::now());
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
-                Some(())
+                None
             }
         }
     }

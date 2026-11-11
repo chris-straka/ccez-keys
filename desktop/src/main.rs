@@ -208,7 +208,16 @@ mod app {
             },
             |lang: &str, word: &str| {
                 let meanings = |w: &str| app.engine.word_card(lang.into(), w.into(), String::new()).map(|c| c.meanings).unwrap_or_default();
-                ccez_keys_core::gloss::short_gloss(word, &meanings(word), meanings)
+                let (shown, meaning, tags) = ccez_keys_core::gloss::short_gloss(word, &meanings(word), meanings);
+                // A noun with its article, as its card has it ("le cap", "das Wasser").
+                let shown = if shown == word {
+                    let tok = crate::model::Tok { text: word.into(), reading: String::new(), word: true, key: word.into(), status: 0 };
+                    let card = app.engine.word_card(lang.into(), word.into(), String::new());
+                    crate::cards::card_face(&app.engine, lang, &tok, card.as_ref()).0
+                } else {
+                    shown
+                };
+                (shown, meaning, tags)
             },
         );
         let p = app.preview.borrow();
@@ -579,8 +588,16 @@ mod app {
         // A word on screen clicked: Good, Again or Easy (float.rs).
         crate::float::CLICK.with(|c| {
             *c.borrow_mut() = Some(Box::new(move |id: isize, kind: u8| {
-                if let Some(mtm) = MainThreadMarker::new() {
-                    app.floaters.clicked(mtm, id, kind);
+                if let Some(mtm) = MainThreadMarker::new()
+                    && let Some((lang, word)) = app.floaters.clicked(mtm, id, kind)
+                {
+                    // Known: off the learning list on every device (ccez-words).
+                    app.engine.set_word_status(lang.clone(), word.clone(), ccez_keys_core::WordStatus::Known);
+                    let e = app.engine.clone();
+                    std::thread::spawn(move || {
+                        let _ = e.sync_words("ccez-keys-mac".into());
+                    });
+                    app.view.toast(mtm, &format!("Known: {word}"));
                 }
             }));
         });
