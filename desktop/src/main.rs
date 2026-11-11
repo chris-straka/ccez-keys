@@ -493,7 +493,7 @@ mod app {
             typing_in: RefCell::default(),
             woken: RefCell::default(),
             preview: RefCell::new(crate::preview::Preview::new(Instant::now())),
-            floaters: crate::float::Floaters::new(&dirs(), spots, crate::idle::video),
+            floaters: crate::float::Floaters::new(engine.clone(), spots, crate::idle::video),
             swapped: Default::default(),
         }));
 

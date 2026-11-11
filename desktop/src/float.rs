@@ -3,7 +3,7 @@
 //! spot the front window has no content in and no other window covers,
 //! faint until the pointer is over it, when its meaning shows. Anki's three
 //! on the mouse: left click Good (back later, later each time), right click
-//! Again (its meaning a moment, back in two minutes), middle click Easy (back
+//! Again (its meaning a moment, it stays, due again in two minutes), middle click Easy (back
 //! much later). Each leaves after a while and another comes; one whose spot
 //! fills up goes at once. Looking for spots reads the front window's layout,
 //! so it runs on its own thread every few seconds.
@@ -135,7 +135,8 @@ pub struct Floaters {
     /// Words fading out: since when, and whether the pointer landing on one
     /// brings it back (not after a click: that fade is the answer).
     leaving: RefCell<Vec<(Word, Instant, bool)>>,
-    review: RefCell<Review>,
+    /// The engine: its schedule is the one the sync uses too.
+    engine: std::sync::Arc<ccez_keys_core::Engine>,
     last_answer: RefCell<Option<Answer>>,
     next_id: Cell<isize>,
     seed: Cell<usize>,
@@ -155,7 +156,7 @@ pub struct Floaters {
 }
 
 impl Floaters {
-    pub fn new(dir: &std::path::Path, find: impl Fn(Rect) -> Vec<Rect> + Send + 'static, video: impl Fn() -> bool + Send + 'static) -> Floaters {
+    pub fn new(engine: std::sync::Arc<ccez_keys_core::Engine>, find: impl Fn(Rect) -> Vec<Rect> + Send + 'static, video: impl Fn() -> bool + Send + 'static) -> Floaters {
         let spots: Arc<Mutex<Option<Vec<Rect>>>> = Arc::default();
         let playing: Arc<AtomicBool> = Arc::default();
         let screen: Arc<Mutex<Rect>> = Arc::default();
@@ -193,7 +194,7 @@ impl Floaters {
         Floaters {
             words: RefCell::default(),
             leaving: RefCell::default(),
-            review: RefCell::new(Review::load(dir)),
+            engine,
             last_answer: RefCell::default(),
             next_id: Cell::new(1),
             seed: Cell::new((std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) % 997) as usize),
@@ -311,11 +312,16 @@ impl Floaters {
                 w.open = open;
                 lay_out(mtm, w, primary_h);
             }
-            // Answered Again: its meaning shown a moment, then it goes, pointer
-            // or not (the answer wins; owner, 2026-11-11).
+            // Answered Again: its meaning shown a moment (longer while the
+            // pointer stays), then it closes and the word stays on screen like
+            // the others (owner, 2026-11-11: vanishing after a right click
+            // was weird).
             if w.hold_until.is_some_and(|t| Instant::now() >= t) {
-                gone.push((i, false));
-                continue;
+                w.hold_until = None;
+                if !over {
+                    w.open = false;
+                    lay_out(mtm, w, primary_h);
+                }
             }
             // Otherwise, under the pointer nothing makes it go.
             if over {
@@ -345,7 +351,7 @@ impl Floaters {
         let Some(cell) = free.into_iter().find(|c| !taken.contains(c)) else { return };
         let up: Vec<(String, String)> = self.words.borrow().iter().map(|w| (w.lang.clone(), w.word.clone())).collect();
         let list = ccez_keys_core::review::mixed(words());
-        let Some((lang, word)) = self.review.borrow().next(&list, &up, 1, Self::now(), self.seed.get()).into_iter().next() else { return };
+        let Some((lang, word)) = self.engine.with_review(|r| r.next(&list, &up, 1, Self::now(), self.seed.get())).into_iter().next() else { return };
         self.seed.set(self.seed.get() + 1);
         let id = self.next_id.get();
         self.next_id.set(id + 1);
@@ -395,7 +401,7 @@ impl Floaters {
     /// was Known, which the caller puts back to Learning.
     pub fn undo(&self, mtm: MainThreadMarker) -> Option<(String, String, bool)> {
         let a = self.last_answer.borrow_mut().take().filter(|a| a.at.elapsed() < UNDO_FOR + Duration::from_secs(1))?;
-        self.review.borrow_mut().restore(&a.lang, &a.word, a.before, Self::now());
+        self.engine.with_review(|r| r.restore(&a.lang, &a.word, a.before, Self::now()));
         let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
         // Still up (Again shows its meaning a moment): it just stays.
         let up = self.words.borrow().iter().position(|w| w.lang == a.lang && w.word == a.word);
@@ -420,7 +426,7 @@ impl Floaters {
     /// What a click did, for its toast ("Good · back in 1 h"), from the
     /// word's new time.
     fn said(&self, what: &str, lang: &str, word: &str) -> String {
-        let back = self.review.borrow().due_at(lang, word).map(|d| d.saturating_sub(Self::now()));
+        let back = self.engine.with_review(|r| r.due_at(lang, word)).map(|d| d.saturating_sub(Self::now()));
         match back {
             Some(s) => format!("{what} · back in {}", Review::wait_words(s)),
             None => what.to_string(),
@@ -448,17 +454,18 @@ impl Floaters {
                 meaning: w.meaning.clone(),
                 tags: w.tags.clone(),
                 cell: w.cell,
-                before: self.review.borrow().snapshot(&lang, &word),
+                before: self.engine.with_review(|r| r.snapshot(&lang, &word)),
                 known: kind == 3,
                 at: Instant::now(),
             });
         }
         match kind {
             1 => {
-                self.review.borrow_mut().grade(&lang, &word, Grade::Again, Self::now());
-                // Its meaning a moment, then away.
+                self.engine.with_review(|r| r.grade(&lang, &word, Grade::Again, Self::now()));
+                // Its meaning a moment; the word stays, its time on screen anew.
                 let mut ws = self.words.borrow_mut();
                 ws[i].hold_until = Some(Instant::now() + Duration::from_millis(2500));
+                ws[i].came = Instant::now();
                 ws[i].open = true;
                 lay_out(mtm, &mut ws[i], primary_h);
                 drop(ws);
@@ -470,7 +477,7 @@ impl Floaters {
                 Some((format!("Known: {word}"), Some((lang, word))))
             }
             k => {
-                self.review.borrow_mut().grade(&lang, &word, if k == 2 { Grade::Easy } else { Grade::Good }, Self::now());
+                self.engine.with_review(|r| r.grade(&lang, &word, if k == 2 { Grade::Easy } else { Grade::Good }, Self::now()));
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
                 Some((self.said(if k == 2 { "Easy" } else { "Good" }, &lang, &word), None))

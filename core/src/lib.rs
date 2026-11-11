@@ -96,6 +96,12 @@ pub struct Romaji {
 }
 
 impl Engine {
+    /// The screen words' schedule, for Rust callers (the Mac app): the one
+    /// copy, shared with its sync, so neither overwrites the other's answers.
+    pub fn with_review<T>(&self, f: impl FnOnce(&mut review::Review) -> T) -> T {
+        f(&mut self.review.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
