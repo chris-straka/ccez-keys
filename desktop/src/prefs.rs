@@ -27,26 +27,12 @@ pub struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs {
-            shown: 6,
-            readings: true,
-            off: vec![],
-            on: vec![],
-            paused: false,
-            login_set: false,
-            selection: true,
-            copy_click: true,
-            idle_words: true,
-        }
+        Prefs { shown: 6, readings: true, off: vec![], on: vec![], paused: false, login_set: false, selection: true, copy_click: true, idle_words: true }
     }
 }
 
 pub fn path(dir: &std::path::Path) -> PathBuf {
-    dir.join(if cfg!(target_os = "macos") {
-        "mac.json"
-    } else {
-        "desktop.json"
-    })
+    dir.join(if cfg!(target_os = "macos") { "mac.json" } else { "desktop.json" })
 }
 
 impl Prefs {
@@ -58,15 +44,7 @@ impl Prefs {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else {
             return d;
         };
-        let list = |k: &str| {
-            v[k].as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| x.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
+        let list = |k: &str| v[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
         Prefs {
             shown: v["shown"].as_u64().map(|n| n as usize).unwrap_or(d.shown),
             readings: v["readings"].as_bool().unwrap_or(d.readings),

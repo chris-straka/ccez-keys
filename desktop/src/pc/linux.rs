@@ -7,10 +7,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use atspi::events::{
-    Event, FocusEvents, ObjectEvents, focus::FocusEvent, object::StateChangedEvent,
-    object::TextCaretMovedEvent,
-};
+use atspi::events::{Event, FocusEvents, ObjectEvents, focus::FocusEvent, object::StateChangedEvent, object::TextCaretMovedEvent};
 use atspi::proxy::accessible::AccessibleProxy;
 use atspi::proxy::component::ComponentProxy;
 use atspi::proxy::editable_text::EditableTextProxy;
@@ -39,17 +36,7 @@ fn block<T>(f: impl std::future::Future<Output = Option<T>>) -> Option<T> {
 /// A proxy to `$name` at `$path` (no property cache: values change all the time).
 macro_rules! proxy {
     ($t:ty, $conn:expr, $name:expr, $path:expr) => {
-        async {
-            <$t>::builder($conn)
-                .destination($name.to_string())
-                .ok()?
-                .path($path.to_string())
-                .ok()?
-                .cache_properties(zbus::proxy::CacheProperties::No)
-                .build()
-                .await
-                .ok()
-        }
+        async { <$t>::builder($conn).destination($name.to_string()).ok()?.path($path.to_string()).ok()?.cache_properties(zbus::proxy::CacheProperties::No).build().await.ok() }
     };
 }
 
@@ -75,11 +62,7 @@ impl Access {
                         eprintln!("event {ev:?}");
                     }
                     let item = match ev {
-                        Ok(Event::Object(ObjectEvents::StateChanged(e)))
-                            if e.state == State::Focused && e.enabled =>
-                        {
-                            e.item
-                        }
+                        Ok(Event::Object(ObjectEvents::StateChanged(e))) if e.state == State::Focused && e.enabled => e.item,
                         Ok(Event::Object(ObjectEvents::TextCaretMoved(e))) => e.item,
                         Ok(Event::Focus(FocusEvents::Focus(e))) => e.item,
                         _ => continue,
@@ -101,20 +84,8 @@ impl Access {
 /// The focused, editable object, found by walking each app's tree (at most a
 /// few thousand objects): for when nothing has moved since the app started.
 async fn find_focused(conn: &zbus::Connection) -> Option<(String, String)> {
-    let root = proxy!(
-        AccessibleProxy,
-        conn,
-        "org.a11y.atspi.Registry",
-        "/org/a11y/atspi/accessible/root"
-    )
-    .await?;
-    let mut todo: Vec<(String, String)> = root
-        .get_children()
-        .await
-        .ok()?
-        .iter()
-        .filter_map(|c| Some((c.name()?.to_string(), c.path().to_string())))
-        .collect();
+    let root = proxy!(AccessibleProxy, conn, "org.a11y.atspi.Registry", "/org/a11y/atspi/accessible/root").await?;
+    let mut todo: Vec<(String, String)> = root.get_children().await.ok()?.iter().filter_map(|c| Some((c.name()?.to_string(), c.path().to_string()))).collect();
     let mut seen = 0;
     while let Some((name, path)) = todo.pop() {
         seen += 1;
@@ -127,10 +98,7 @@ async fn find_focused(conn: &zbus::Connection) -> Option<(String, String)> {
         let Ok(states) = acc.get_state().await else {
             continue;
         };
-        if states.contains(State::Focused)
-            && (states.contains(State::Editable)
-                || acc.get_role().await.ok() == Some(Role::PasswordText))
-        {
+        if states.contains(State::Focused) && (states.contains(State::Editable) || acc.get_role().await.ok() == Some(Role::PasswordText)) {
             return Some((name, path));
         }
         // Hidden parts of apps can't hold the keyboard.
@@ -138,11 +106,7 @@ async fn find_focused(conn: &zbus::Connection) -> Option<(String, String)> {
             continue;
         }
         if let Ok(children) = acc.get_children().await {
-            todo.extend(
-                children
-                    .iter()
-                    .filter_map(|c| Some((c.name()?.to_string(), c.path().to_string()))),
-            );
+            todo.extend(children.iter().filter_map(|c| Some((c.name()?.to_string(), c.path().to_string()))));
         }
     }
     None
@@ -160,10 +124,7 @@ impl crate::pc::Access for Access {
             }
             // A password box: never read.
             if acc.get_role().await.ok()? == Role::PasswordText {
-                return Some(Field {
-                    secure: true,
-                    ..Default::default()
-                });
+                return Some(Field { secure: true, ..Default::default() });
             }
             if !states.contains(State::Editable) {
                 return None;
@@ -172,38 +133,14 @@ impl crate::pc::Access for Access {
             let caret = text.caret_offset().await.ok()?.max(0);
             let before = text.get_text(0, caret).await.ok()?;
             let at = (caret - 1).max(0);
-            let (x, y, w, h) = text
-                .get_character_extents(at, CoordType::Screen)
-                .await
-                .unwrap_or((0, 0, 0, 0));
-            let caret_rect = (h > 0 && (x != 0 || y != 0)).then(|| Rect {
-                x: f64::from(x + if caret > 0 { w } else { 0 }),
-                y: f64::from(y),
-                w: 1.0,
-                h: f64::from(h),
-            });
+            let (x, y, w, h) = text.get_character_extents(at, CoordType::Screen).await.unwrap_or((0, 0, 0, 0));
+            let caret_rect = (h > 0 && (x != 0 || y != 0)).then(|| Rect { x: f64::from(x + if caret > 0 { w } else { 0 }), y: f64::from(y), w: 1.0, h: f64::from(h) });
             let comp: Option<ComponentProxy> = proxy!(ComponentProxy, &conn, &name, &path).await;
             let frame = match comp {
-                Some(c) => c
-                    .get_extents(CoordType::Screen)
-                    .await
-                    .ok()
-                    .filter(|e| e.2 > 0 && e.3 > 0)
-                    .map(|(x, y, w, h)| Rect {
-                        x: f64::from(x),
-                        y: f64::from(y),
-                        w: f64::from(w),
-                        h: f64::from(h),
-                    }),
+                Some(c) => c.get_extents(CoordType::Screen).await.ok().filter(|e| e.2 > 0 && e.3 > 0).map(|(x, y, w, h)| Rect { x: f64::from(x), y: f64::from(y), w: f64::from(w), h: f64::from(h) }),
                 None => None,
             };
-            Some(Field {
-                secure: false,
-                before,
-                caret: caret_rect,
-                frame,
-                selected: String::new(),
-            })
+            Some(Field { secure: false, before, caret: caret_rect, frame, selected: String::new() })
         })
     }
 
@@ -215,8 +152,7 @@ impl crate::pc::Access for Access {
             let app = acc.get_application().await.ok()?;
             let app_name = app.name()?.to_string();
             let app_path = app.path().to_string();
-            let appacc: AccessibleProxy =
-                proxy!(AccessibleProxy, &conn, &app_name, &app_path).await?;
+            let appacc: AccessibleProxy = proxy!(AccessibleProxy, &conn, &app_name, &app_path).await?;
             let n = appacc.name().await.ok()?;
             Some((n.clone(), n))
         })
@@ -225,8 +161,7 @@ impl crate::pc::Access for Access {
     fn swap(&mut self, sentence: &str, trailing: &str, text: &str) -> Result<&'static str, String> {
         let (name, path) = self.current().ok_or("no field")?;
         let conn = self.conn.clone();
-        let (sentence, trailing, text) =
-            (sentence.to_string(), trailing.to_string(), text.to_string());
+        let (sentence, trailing, text) = (sentence.to_string(), trailing.to_string(), text.to_string());
         block(async move {
             let t: TextProxy = proxy!(TextProxy, &conn, &name, &path).await?;
             let caret = t.caret_offset().await.ok()?;
@@ -244,11 +179,7 @@ impl crate::pc::Access for Access {
             }
             // Its length in bytes, as AT-SPI (ATK) counts it ("ù" is two).
             let ok = e.insert_text(start, &text, text.len() as i32).await.ok()?;
-            Some(if ok {
-                Ok("at-spi")
-            } else {
-                Err("the field wouldn't take it".to_string())
-            })
+            Some(if ok { Ok("at-spi") } else { Err("the field wouldn't take it".to_string()) })
         })
         .unwrap_or_else(|| Err("the field didn't answer".into()))
     }
@@ -257,7 +188,5 @@ impl crate::pc::Access for Access {
 /// Speech Dispatcher's `spd-say`, in the language's voice (a new line stops the last).
 pub fn say(lang: &str, text: &str) {
     let _ = std::process::Command::new("spd-say").args(["-C"]).status();
-    let _ = std::process::Command::new("spd-say")
-        .args(["-l", lang, "--", text])
-        .spawn();
+    let _ = std::process::Command::new("spd-say").args(["-l", lang, "--", text]).spawn();
 }

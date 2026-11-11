@@ -22,12 +22,7 @@ struct CFRange {
 unsafe extern "C" {
     fn AXUIElementCreateSystemWide() -> Ref;
     fn AXUIElementCopyAttributeValue(element: Ref, attribute: Ref, value: *mut Ref) -> i32;
-    fn AXUIElementCopyParameterizedAttributeValue(
-        element: Ref,
-        attribute: Ref,
-        parameter: Ref,
-        value: *mut Ref,
-    ) -> i32;
+    fn AXUIElementCopyParameterizedAttributeValue(element: Ref, attribute: Ref, parameter: Ref, value: *mut Ref) -> i32;
     fn AXValueGetValue(value: Ref, kind: u32, out: *mut c_void) -> bool;
     fn AXValueCreate(kind: u32, value: *const c_void) -> Ref;
     fn AXIsProcessTrustedWithOptions(options: Ref) -> bool;
@@ -90,8 +85,7 @@ impl Drop for Owned {
 fn attr(el: Ref, name: &str) -> Option<Owned> {
     let mut out: Ref = std::ptr::null();
     let name = s(name);
-    let err =
-        unsafe { AXUIElementCopyAttributeValue(el, Retained::as_ptr(&name) as Ref, &mut out) };
+    let err = unsafe { AXUIElementCopyAttributeValue(el, Retained::as_ptr(&name) as Ref, &mut out) };
     (err == 0 && !out.is_null()).then_some(Owned(out))
 }
 
@@ -120,10 +114,7 @@ fn frame_of(el: Ref) -> Option<Rect> {
     let size = attr(el, "AXSize")?;
     let mut p = [0f64; 2];
     let mut z = [0f64; 2];
-    if !unsafe {
-        AXValueGetValue(pos.0, AX_CGPOINT, p.as_mut_ptr() as *mut c_void)
-            && AXValueGetValue(size.0, AX_CGSIZE, z.as_mut_ptr() as *mut c_void)
-    } {
+    if !unsafe { AXValueGetValue(pos.0, AX_CGPOINT, p.as_mut_ptr() as *mut c_void) && AXValueGetValue(size.0, AX_CGSIZE, z.as_mut_ptr() as *mut c_void) } {
         return None;
     }
     (r.x, r.y, r.w, r.h) = (p[0], p[1], z[0], z[1]);
@@ -133,11 +124,7 @@ fn frame_of(el: Ref) -> Option<Rect> {
 /// Where the front window's content is (its text, pictures and controls,
 /// from its Accessibility tree), and the window itself: what idle words keep
 /// clear of. Stops after `most` elements or `budget`, whichever comes first.
-pub fn content_frames(
-    pid: i32,
-    most: usize,
-    budget: std::time::Duration,
-) -> (Option<Rect>, Vec<Rect>) {
+pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> (Option<Rect>, Vec<Rect>) {
     const CONTENT: [&str; 16] = [
         "AXStaticText",
         "AXTextArea",
@@ -159,8 +146,7 @@ pub fn content_frames(
     let start = std::time::Instant::now();
     let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
     unsafe { AXUIElementSetMessagingTimeout(app.0, 0.25) };
-    let Some(window) = attr(app.0, "AXFocusedWindow").or_else(|| attr(app.0, "AXMainWindow"))
-    else {
+    let Some(window) = attr(app.0, "AXFocusedWindow").or_else(|| attr(app.0, "AXMainWindow")) else {
         return (None, Vec::new());
     };
     let frame = frame_of(window.0);
@@ -173,15 +159,9 @@ pub fn content_frames(
         if seen > most || start.elapsed() > budget {
             break;
         }
-        let kids =
-            attr(el.0, "AXChildren").filter(|a| unsafe { CFGetTypeID(a.0) == CFArrayGetTypeID() });
-        let n = kids
-            .as_ref()
-            .map(|a| unsafe { CFArrayGetCount(a.0) })
-            .unwrap_or(0);
-        let role = attr(el.0, "AXRole")
-            .and_then(|r| string(&r))
-            .unwrap_or_default();
+        let kids = attr(el.0, "AXChildren").filter(|a| unsafe { CFGetTypeID(a.0) == CFArrayGetTypeID() });
+        let n = kids.as_ref().map(|a| unsafe { CFArrayGetCount(a.0) }).unwrap_or(0);
+        let role = attr(el.0, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
         // Content, and any leaf with a size (a web page's text runs, an icon).
         if (CONTENT.contains(&role.as_str()) || n == 0)
             && let Some(f) = frame_of(el.0)
@@ -207,69 +187,26 @@ pub fn content_frames(
 /// The field being typed in, None when the focus isn't on editable text.
 pub fn focused() -> Option<Field> {
     let el = focused_element(0.25)?;
-    let role = attr(el.0, "AXRole")
-        .and_then(|r| string(&r))
-        .unwrap_or_default();
-    let subrole = attr(el.0, "AXSubrole")
-        .and_then(|r| string(&r))
-        .unwrap_or_default();
+    let role = attr(el.0, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
+    let subrole = attr(el.0, "AXSubrole").and_then(|r| string(&r)).unwrap_or_default();
     // A password box: said so by the app, or labelled as one, or macOS's secure
     // input is on (any password box focused, anywhere): never read or shown.
-    let label: String = ["AXPlaceholderValue", "AXDescription", "AXTitle", "AXHelp"]
-        .iter()
-        .filter_map(|a| attr(el.0, a).and_then(|r| string(&r)))
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
-    let secret_label = [
-        "password",
-        "passcode",
-        "passphrase",
-        "pin",
-        "otp",
-        "one-time",
-        "token",
-        "api key",
-        "secret",
-        "2fa",
-        "verification code",
-        "mot de passe",
-        "passwort",
-        "contraseña",
-        "パスワード",
-        "密码",
-    ]
-    .iter()
-    .any(|w| {
-        if *w == "pin" || *w == "otp" {
-            label.split(|c: char| !c.is_alphanumeric()).any(|t| t == *w)
-        } else {
-            label.contains(w)
-        }
-    });
-    let secure = role == "AXSecureTextField"
-        || subrole == "AXSecureTextField"
-        || secret_label
-        || unsafe { IsSecureEventInputEnabled() };
+    let label: String = ["AXPlaceholderValue", "AXDescription", "AXTitle", "AXHelp"].iter().filter_map(|a| attr(el.0, a).and_then(|r| string(&r))).collect::<Vec<_>>().join(" ").to_lowercase();
+    let secret_label =
+        ["password", "passcode", "passphrase", "pin", "otp", "one-time", "token", "api key", "secret", "2fa", "verification code", "mot de passe", "passwort", "contraseña", "パスワード", "密码"]
+            .iter()
+            .any(|w| if *w == "pin" || *w == "otp" { label.split(|c: char| !c.is_alphanumeric()).any(|t| t == *w) } else { label.contains(w) });
+    let secure = role == "AXSecureTextField" || subrole == "AXSecureTextField" || secret_label || unsafe { IsSecureEventInputEnabled() };
     if secure {
-        return Some(Field {
-            secure,
-            ..Default::default()
-        });
+        return Some(Field { secure, ..Default::default() });
     }
-    if !matches!(
-        role.as_str(),
-        "AXTextField" | "AXTextArea" | "AXComboBox" | "AXSearchField" | "AXWebArea"
-    ) {
+    if !matches!(role.as_str(), "AXTextField" | "AXTextArea" | "AXComboBox" | "AXSearchField" | "AXWebArea") {
         return None;
     }
     let value = attr(el.0, "AXValue").and_then(|r| string(&r))?;
     // Dots for letters: a password box that didn't say so.
     if !value.is_empty() && value.chars().all(|c| matches!(c, '•' | '●' | '∙' | '*')) {
-        return Some(Field {
-            secure: true,
-            ..Default::default()
-        });
+        return Some(Field { secure: true, ..Default::default() });
     }
     let mut range = CFRange::default();
     let sel = attr(el.0, "AXSelectedTextRange")?;
@@ -285,44 +222,23 @@ pub fn focused() -> Option<Field> {
     let selected = String::from_utf16_lossy(&units[at..end]);
     // Where the cursor is: the bounds of the character before it (or of the empty range).
     let caret = {
-        let r = CFRange {
-            location: (at as isize - 1).max(0),
-            length: if at > 0 { 1 } else { 0 },
-        };
+        let r = CFRange { location: (at as isize - 1).max(0), length: if at > 0 { 1 } else { 0 } };
         let param = Owned(unsafe { AXValueCreate(AX_CFRANGE, &r as *const _ as *const c_void) });
         let name = s("AXBoundsForRange");
         let mut out: Ref = std::ptr::null();
-        let err = unsafe {
-            AXUIElementCopyParameterizedAttributeValue(
-                el.0,
-                Retained::as_ptr(&name) as Ref,
-                param.0,
-                &mut out,
-            )
-        };
+        let err = unsafe { AXUIElementCopyParameterizedAttributeValue(el.0, Retained::as_ptr(&name) as Ref, param.0, &mut out) };
         if err == 0 && !out.is_null() {
             let o = Owned(out);
             let mut rect = Rect::default();
-            unsafe { AXValueGetValue(o.0, AX_CGRECT, &mut rect as *mut _ as *mut c_void) }
-                .then_some(rect)
-                .filter(|r| r.h > 0.0)
+            unsafe { AXValueGetValue(o.0, AX_CGRECT, &mut rect as *mut _ as *mut c_void) }.then_some(rect).filter(|r| r.h > 0.0)
         } else {
             None
         }
     };
     // Some apps (Electron) answer with nothing or a zero box: kept only when it's inside the field.
     let frame = frame_of(el.0);
-    let caret = caret.filter(|c| {
-        (c.x != 0.0 || c.y != 0.0)
-            && frame.is_none_or(|f| c.y + c.h >= f.y - 2.0 && c.y <= f.y + f.h + 2.0)
-    });
-    Some(Field {
-        secure,
-        before,
-        caret,
-        frame,
-        selected,
-    })
+    let caret = caret.filter(|c| (c.x != 0.0 || c.y != 0.0) && frame.is_none_or(|f| c.y + c.h >= f.y - 2.0 && c.y <= f.y + f.h + 2.0));
+    Some(Field { secure, before, caret, frame, selected })
 }
 
 /// The element with the keyboard: asked of the whole system, or else of the
@@ -333,9 +249,7 @@ fn focused_element(timeout: f32) -> Option<Owned> {
     if let Some(el) = attr(sys.0, "AXFocusedUIElement") {
         return Some(el);
     }
-    let pid = objc2_app_kit::NSWorkspace::sharedWorkspace()
-        .frontmostApplication()?
-        .processIdentifier();
+    let pid = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication()?.processIdentifier();
     let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
     unsafe { AXUIElementSetMessagingTimeout(app.0, timeout) };
     attr(app.0, "AXFocusedUIElement")
@@ -347,12 +261,7 @@ pub fn describe() -> String {
         return "nothing focused".into();
     };
     let get = |a: &str| attr(el.0, a).and_then(|r| string(&r)).unwrap_or_default();
-    format!(
-        "role={} subrole={} frame={:?}",
-        get("AXRole"),
-        get("AXSubrole"),
-        frame_of(el.0)
-    )
+    format!("role={} subrole={} frame={:?}", get("AXRole"), get("AXSubrole"), frame_of(el.0))
 }
 
 /// What putting text in place of a range came to.
@@ -383,10 +292,7 @@ pub fn replace_range(start: usize, len: usize, text: &str) -> Put {
     let Some(el) = focused_element(0.5) else {
         return Put::Nothing;
     };
-    let range = CFRange {
-        location: start as isize,
-        length: len as isize,
-    };
+    let range = CFRange { location: start as isize, length: len as isize };
     let value = Owned(unsafe { AXValueCreate(AX_CFRANGE, &range as *const _ as *const c_void) });
     let name = s("AXSelectedTextRange");
     unsafe { AXUIElementSetAttributeValue(el.0, Retained::as_ptr(&name) as Ref, value.0) };
@@ -394,22 +300,12 @@ pub fn replace_range(start: usize, len: usize, text: &str) -> Put {
     if selection() != Some((start, len)) {
         return Put::Nothing;
     }
-    let before = attr(el.0, "AXValue")
-        .and_then(|r| string(&r))
-        .unwrap_or_default();
+    let before = attr(el.0, "AXValue").and_then(|r| string(&r)).unwrap_or_default();
     let new = s(text);
     let name = s("AXSelectedText");
-    let err = unsafe {
-        AXUIElementSetAttributeValue(
-            el.0,
-            Retained::as_ptr(&name) as Ref,
-            Retained::as_ptr(&new) as Ref,
-        )
-    };
+    let err = unsafe { AXUIElementSetAttributeValue(el.0, Retained::as_ptr(&name) as Ref, Retained::as_ptr(&new) as Ref) };
     std::thread::sleep(std::time::Duration::from_millis(150));
-    let after = attr(el.0, "AXValue")
-        .and_then(|r| string(&r))
-        .unwrap_or_default();
+    let after = attr(el.0, "AXValue").and_then(|r| string(&r)).unwrap_or_default();
     if err == 0 && after != before {
         // Taken (web fields may store its spaces as no-break ones: any change counts).
         Put::Done

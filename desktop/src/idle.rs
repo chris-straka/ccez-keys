@@ -44,18 +44,8 @@ pub fn free_cells(screen: Rect, windows: &[Rect], cols: usize, rows: usize) -> V
     let mut out = Vec::new();
     for r in 0..rows {
         for c in 0..cols {
-            let cell = Rect {
-                x: screen.x + c as f64 * cw,
-                y: screen.y + r as f64 * ch,
-                w: cw,
-                h: ch,
-            };
-            let covered = windows.iter().any(|w| {
-                w.x < cell.x + cell.w
-                    && cell.x < w.x + w.w
-                    && w.y < cell.y + cell.h
-                    && cell.y < w.y + w.h
-            });
+            let cell = Rect { x: screen.x + c as f64 * cw, y: screen.y + r as f64 * ch, w: cw, h: ch };
+            let covered = windows.iter().any(|w| w.x < cell.x + cell.w && cell.x < w.x + w.w && w.y < cell.y + cell.h && cell.y < w.y + w.h);
             if !covered {
                 out.push(cell);
             }
@@ -70,20 +60,9 @@ pub fn free_cells(screen: Rect, windows: &[Rect], cols: usize, rows: usize) -> V
 /// Free spots on a screen with the front window's content known: inside the
 /// front window, cells clear of its `content`; outside it, cells clear of the
 /// `others` (other apps' windows). Top-left coordinates throughout.
-pub fn free_spots(
-    screen: Rect,
-    front: Option<Rect>,
-    content: &[Rect],
-    others: &[Rect],
-    cols: usize,
-    rows: usize,
-) -> Vec<Rect> {
-    let inside = |c: &Rect, w: &Rect| {
-        c.x >= w.x && c.y >= w.y && c.x + c.w <= w.x + w.w && c.y + c.h <= w.y + w.h
-    };
-    let hits = |c: &Rect, r: &Rect| {
-        r.x < c.x + c.w && c.x < r.x + r.w && r.y < c.y + c.h && c.y < r.y + r.h
-    };
+pub fn free_spots(screen: Rect, front: Option<Rect>, content: &[Rect], others: &[Rect], cols: usize, rows: usize) -> Vec<Rect> {
+    let inside = |c: &Rect, w: &Rect| c.x >= w.x && c.y >= w.y && c.x + c.w <= w.x + w.w && c.y + c.h <= w.y + w.h;
+    let hits = |c: &Rect, r: &Rect| r.x < c.x + c.w && c.x < r.x + r.w && r.y < c.y + c.h && c.y < r.y + r.h;
     free_cells(screen, &[], cols, rows)
         .into_iter()
         .filter(|c| match front {
@@ -99,9 +78,7 @@ pub fn pick<T: Clone>(words: &[T], n: usize, seed: usize) -> Vec<T> {
     if words.is_empty() {
         return Vec::new();
     }
-    (0..n.min(words.len()))
-        .map(|i| words[(seed + i) % words.len()].clone())
-        .collect()
+    (0..n.min(words.len())).map(|i| words[(seed + i) % words.len()].clone()).collect()
 }
 
 #[cfg(target_os = "macos")]
@@ -136,12 +113,10 @@ mod sys {
         if unsafe { IOPMCopyAssertionsStatus(&mut out) } != 0 || out.is_null() {
             return false;
         }
-        let Some(d) = (unsafe { Retained::from_raw(out as *mut NSDictionary<NSString, NSNumber>) })
-        else {
+        let Some(d) = (unsafe { Retained::from_raw(out as *mut NSDictionary<NSString, NSNumber>) }) else {
             return false;
         };
-        d.objectForKey(&NSString::from_str("PreventUserIdleDisplaySleep"))
-            .is_some_and(|n| n.integerValue() > 0)
+        d.objectForKey(&NSString::from_str("PreventUserIdleDisplaySleep")).is_some_and(|n| n.integerValue() > 0)
     }
 
     /// The on-screen windows of apps (not the desktop, menu bar or Dock), in
@@ -149,11 +124,7 @@ mod sys {
     pub fn windows(skip_pid: i32) -> Vec<Rect> {
         // On screen only, desktop elements left out.
         let raw = unsafe { CGWindowListCopyWindowInfo(1 | 16, 0) };
-        let Some(list) = (unsafe {
-            Retained::from_raw(
-                raw as *mut NSArray<NSDictionary<NSString, objc2::runtime::AnyObject>>,
-            )
-        }) else {
+        let Some(list) = (unsafe { Retained::from_raw(raw as *mut NSArray<NSDictionary<NSString, objc2::runtime::AnyObject>>) }) else {
             return Vec::new();
         };
         let num = |d: &NSDictionary<NSString, objc2::runtime::AnyObject>, k: &str| -> Option<f64> {
@@ -163,9 +134,7 @@ mod sys {
         let mut out = Vec::new();
         for w in list.iter() {
             // Layer 0: ordinary app windows.
-            if num(&w, "kCGWindowLayer") != Some(0.0)
-                || num(&w, "kCGWindowOwnerPID") == Some(skip_pid as f64)
-            {
+            if num(&w, "kCGWindowLayer") != Some(0.0) || num(&w, "kCGWindowOwnerPID") == Some(skip_pid as f64) {
                 continue;
             }
             let Some(b) = w.objectForKey(&NSString::from_str("kCGWindowBounds")) else {
@@ -174,10 +143,8 @@ mod sys {
             let Some(b) = b.downcast_ref::<NSDictionary>() else {
                 continue;
             };
-            let b: &NSDictionary<NSString, objc2::runtime::AnyObject> =
-                unsafe { std::mem::transmute(b) };
-            if let (Some(x), Some(y), Some(w), Some(h)) =
-                (num(b, "X"), num(b, "Y"), num(b, "Width"), num(b, "Height"))
+            let b: &NSDictionary<NSString, objc2::runtime::AnyObject> = unsafe { std::mem::transmute(b) };
+            if let (Some(x), Some(y), Some(w), Some(h)) = (num(b, "X"), num(b, "Y"), num(b, "Width"), num(b, "Height"))
                 && w > 40.0
                 && h > 40.0
             {
@@ -195,52 +162,23 @@ pub use sys::{idle, video, windows};
 mod tests {
     use super::*;
 
-    const SCREEN: Rect = Rect {
-        x: 0.0,
-        y: 0.0,
-        w: 1200.0,
-        h: 800.0,
-    };
+    const SCREEN: Rect = Rect { x: 0.0, y: 0.0, w: 1200.0, h: 800.0 };
 
     #[test]
     fn shows_after_quiet_minutes_not_with_a_video_and_goes_on_any_input() {
-        assert_eq!(
-            decide(true, false, Duration::from_secs(30), || false),
-            Do::Nothing
-        );
+        assert_eq!(decide(true, false, Duration::from_secs(30), || false), Do::Nothing);
         assert_eq!(decide(true, false, AFTER, || false), Do::Show);
-        assert_eq!(
-            decide(true, false, AFTER, || true),
-            Do::Nothing,
-            "a video plays"
-        );
-        assert_eq!(
-            decide(false, false, AFTER, || false),
-            Do::Nothing,
-            "switched off"
-        );
+        assert_eq!(decide(true, false, AFTER, || true), Do::Nothing, "a video plays");
+        assert_eq!(decide(false, false, AFTER, || false), Do::Nothing, "switched off");
         assert_eq!(decide(true, true, AFTER * 2, || false), Do::Nothing);
-        assert_eq!(
-            decide(true, true, Duration::from_millis(200), || false),
-            Do::Hide
-        );
+        assert_eq!(decide(true, true, Duration::from_millis(200), || false), Do::Hide);
         assert_eq!(decide(false, true, AFTER, || false), Do::Hide);
     }
 
     #[test]
     fn words_go_only_where_no_window_is() {
         // A window over the left half: only right-half cells.
-        let cells = free_cells(
-            SCREEN,
-            &[Rect {
-                x: 0.0,
-                y: 0.0,
-                w: 600.0,
-                h: 800.0,
-            }],
-            4,
-            2,
-        );
+        let cells = free_cells(SCREEN, &[Rect { x: 0.0, y: 0.0, w: 600.0, h: 800.0 }], 4, 2);
         assert_eq!(cells.len(), 4);
         assert!(cells.iter().all(|c| c.x >= 600.0));
         // A full-screen window: nowhere.
@@ -251,22 +189,12 @@ mod tests {
     #[test]
     fn inside_the_front_window_only_its_content_blocks() {
         // A full-screen window with text down its middle column.
-        let text = [Rect {
-            x: 400.0,
-            y: 0.0,
-            w: 400.0,
-            h: 800.0,
-        }];
+        let text = [Rect { x: 400.0, y: 0.0, w: 400.0, h: 800.0 }];
         let spots = free_spots(SCREEN, Some(SCREEN), &text, &[], 6, 4);
         assert!(!spots.is_empty());
         assert!(spots.iter().all(|c| c.x + c.w <= 400.0 || c.x >= 800.0));
         // Half on the window's edge: never.
-        let half = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 700.0,
-            h: 800.0,
-        };
+        let half = Rect { x: 0.0, y: 0.0, w: 700.0, h: 800.0 };
         let spots = free_spots(SCREEN, Some(half), &[], &[], 6, 4);
         assert!(spots.iter().all(|c| c.x + c.w <= 700.0 || c.x >= 700.0));
     }
