@@ -121,6 +121,8 @@ pub struct Floaters {
     last: Cell<Instant>,
     /// Off the screen until then (a screenshot key was pressed).
     quiet_until: Cell<Option<Instant>>,
+    /// The menu's "Hide in screenshots" (owner, 2026-11-11: off, to show them).
+    pub hide_in_shots: Cell<bool>,
     /// When the screenshot tools were last looked for, and whether they were up.
     capture_seen: Cell<(Instant, bool)>,
     /// From the spot thread: the free spots, and whether a video holds the display.
@@ -175,6 +177,7 @@ impl Floaters {
             seed: Cell::new((std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) % 997) as usize),
             last: Cell::new(Instant::now()),
             quiet_until: Cell::new(None),
+            hide_in_shots: Cell::new(true),
             capture_seen: Cell::new((Instant::now(), false)),
             spots,
             video: playing,
@@ -235,14 +238,16 @@ impl Floaters {
             }
         }
         let (at, up) = self.capture_seen.get();
-        let up = if at.elapsed() > Duration::from_millis(600) {
+        let up = if !self.hide_in_shots.get() {
+            false
+        } else if at.elapsed() > Duration::from_millis(600) {
             let now = capturing();
             self.capture_seen.set((Instant::now(), now));
             now
         } else {
             up
         };
-        let quiet = self.quiet_until.get().is_some_and(|t| Instant::now() < t) || up;
+        let quiet = self.hide_in_shots.get() && (self.quiet_until.get().is_some_and(|t| Instant::now() < t) || up);
         if quiet {
             self.hide_now();
             return;
@@ -314,7 +319,11 @@ impl Floaters {
         let id = self.next_id.get();
         self.next_id.set(id + 1);
         let (shown, m, tags) = meaning(&lang, &word);
-        self.words.borrow_mut().push(show(mtm, id, lang, word, shown, m, tags, cell, primary_h));
+        let w = show(mtm, id, lang, word, shown, m, tags, cell, primary_h);
+        if !self.hide_in_shots.get() {
+            w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
+        }
+        self.words.borrow_mut().push(w);
     }
 
     fn leave(&self, w: Word, revive: bool) {
@@ -325,6 +334,9 @@ impl Floaters {
 
     /// A screenshot key: every word off the screen at once, no fade, for a while.
     pub fn screenshot(&self) {
+        if !self.hide_in_shots.get() {
+            return;
+        }
         self.quiet_until.set(Some(Instant::now() + SHOT_QUIET));
         self.hide_now();
     }

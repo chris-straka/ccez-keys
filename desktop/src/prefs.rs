@@ -28,6 +28,8 @@ pub struct Prefs {
     /// Words come while keys are being typed, and while a video plays.
     pub words_typing: bool,
     pub words_video: bool,
+    /// Words leave for screenshots (and stay out of captures).
+    pub words_hide_shots: bool,
     /// ⌥⏎ in ChatGPT and Claude puts the message box into the first learning language.
     pub chat_swap: bool,
 }
@@ -47,6 +49,7 @@ impl Default for Prefs {
             words_langs: 0,
             words_typing: true,
             words_video: true,
+            words_hide_shots: true,
             chat_swap: true,
         }
     }
@@ -79,12 +82,13 @@ impl Prefs {
             words_langs: v["words_langs"].as_u64().map(|n| n as usize).unwrap_or(d.words_langs),
             words_typing: v["words_typing"].as_bool().unwrap_or(d.words_typing),
             words_video: v["words_video"].as_bool().unwrap_or(d.words_video),
+            words_hide_shots: v["words_hide_shots"].as_bool().unwrap_or(d.words_hide_shots),
             chat_swap: v["chat_swap"].as_bool().unwrap_or(d.chat_swap),
         }
     }
 
     pub fn save(&self, dir: &std::path::Path) {
-        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set, "selection": self.selection, "copy_click": self.copy_click, "words_on_screen": self.words_on_screen, "words_langs": self.words_langs, "words_typing": self.words_typing, "words_video": self.words_video, "chat_swap": self.chat_swap});
+        let v = serde_json::json!({"shown": self.shown, "readings": self.readings, "off": self.off, "on": self.on, "paused": self.paused, "login_set": self.login_set, "selection": self.selection, "copy_click": self.copy_click, "words_on_screen": self.words_on_screen, "words_langs": self.words_langs, "words_typing": self.words_typing, "words_video": self.words_video, "words_hide_shots": self.words_hide_shots, "chat_swap": self.chat_swap});
         let tmp = path(dir).with_extension("tmp");
         if std::fs::write(&tmp, v.to_string()).is_ok() {
             let _ = std::fs::rename(&tmp, path(dir));
