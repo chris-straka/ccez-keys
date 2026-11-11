@@ -1,3 +1,47 @@
+# Phone: learning words on screen (owner, 2026-11-11)
+
+The Mac's "words on screen" (`desktop/src/float.rs`, `review.rs`,
+`cards.rs` `short_gloss`/`tags_of`/`form_of`) on the phone, as an overlay
+over every app, from the keyboard app (`android/`). The owner chose an
+overlay over a live wallpaper; it replaces the home-screen widget.
+
+1. Move into the core (Rust, `core/`, UniFFI) so the Mac and Android share
+   them: `review.rs` (Anki-like schedule: Good 10 min → 60 d, Easy two
+   steps, Again 2 min; its state synced with the word statuses through
+   ccez-words so a word graded on one device isn't asked on another), and
+   the short-meaning rules (form lines → the base word's meaning, "[with
+   à]" → "parvenir à", leading labels → tags "tr", "intr", "refl", "fig").
+   The Mac app then calls the core's versions (keep its tests passing).
+2. Free space inside whatever app is in front: an AccessibilityService
+   (`canRetrieveWindowContent`) reads the node bounds of the active
+   window(s); cells of a grid that no visible node with text, an image or a
+   control touches are free (big empty container nodes don't count, as on
+   the Mac: under 8% of the window's area). Throttle: look at most every
+   4 s, and on window changes. Off on the lock screen, in password fields,
+   and while a video plays full screen (a switch, on for now).
+3. Each word its own small overlay window (`TYPE_APPLICATION_OVERLAY`,
+   `FLAG_NOT_FOCUSABLE`): touches elsewhere reach the app below. Tap =
+   Good, long-press = Again (meaning shown a moment), double-tap = Easy.
+   Faint (about 75% opacity) until touched; a touch shows the meaning under
+   the word without moving it; tags as small pills. Fade in over 2 s,
+   never fade under a finger, leave after 90 s. A few at a time, the
+   languages taking turns.
+4. Settings (the keyboard's settings screen): words on screen (off, 1–12),
+   languages on screen (all, 1…n), while typing (the keyboard up), while
+   a video plays. Setup: the "Display over other apps" permission, and the
+   accessibility service (sideloaded apps need "Allow restricted settings"
+   in App info first on Android 13+; say so in one line where it's turned on).
+5. Never in screenshots: `FLAG_SECURE` isn't per window for overlays, so
+   hide the words when a screenshot starts (Android 14+
+   `Activity.ScreenCaptureCallback` doesn't cover other apps; the
+   accessibility service sees the screenshot UI window appear: hide then).
+6. Battery: no work while the screen is off; the accessibility service
+   only reads bounds, never text; measure with `dumpsys batterystats` on
+   the emulator over an hour and write the number here.
+
+Verify on the emulator (`fleet run --emulator`), screenshots in
+`$FLEET_ARTIFACTS`; never the owner's phone unless asked.
+
 # Owner notes, 2026-11-11 (desktop preview)
 
 Work these off and delete each when it ships.
