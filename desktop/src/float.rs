@@ -19,8 +19,8 @@ use objc2_app_kit::{NSBox, NSButton, NSColor, NSEvent, NSFont, NSPanel, NSScreen
 use objc2_foundation::{NSRect, NSString};
 
 use crate::model::Rect;
-use ccez_keys_core::review::{Grade, Review};
 use crate::view::{fade_over, label, new_panel, rect, rgb};
+use ccez_keys_core::review::{Grade, Review};
 
 /// How long a word stays when left alone.
 const STAYS: Duration = Duration::from_secs(90);
@@ -30,7 +30,9 @@ const SHOT_QUIET: Duration = Duration::from_secs(8);
 /// Fading in this slowly, they don't pull the eye (owner, 2026-11-11).
 const FADE_IN: f64 = 2.0;
 const FADE_OUT: f64 = 0.8;
-/// Spots looked for this often (and a new word may come).
+/// The front window's layout read again this often when nothing moved.
+const WALK_EVERY: Duration = Duration::from_secs(2);
+/// A new word may come this often.
 const EVERY: Duration = Duration::from_secs(4);
 
 thread_local! {
@@ -138,11 +140,25 @@ impl Floaters {
         {
             let (spots, playing, screen, looking) = (spots.clone(), playing.clone(), screen.clone(), looking.clone());
             std::thread::spawn(move || {
+                // Windows looked at every 0.3 s (cheap): the moment one moves,
+                // opens or closes, or another app comes forward, the front
+                // window's layout is read again; else every 2 s (its content
+                // scrolls without the windows moving).
+                let mut seen: Option<String> = None;
+                let mut walked = std::time::Instant::now() - WALK_EVERY;
                 loop {
-                    std::thread::sleep(EVERY);
+                    std::thread::sleep(Duration::from_millis(300));
                     if !looking.load(Ordering::Relaxed) {
+                        seen = None;
                         continue;
                     }
+                    let front = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
+                    let now = format!("{front}:{:?}", crate::idle::windows(-1));
+                    if seen.as_deref() == Some(now.as_str()) && walked.elapsed() < WALK_EVERY {
+                        continue;
+                    }
+                    seen = Some(now);
+                    walked = std::time::Instant::now();
                     playing.store(video(), Ordering::Relaxed);
                     let s = *screen.lock().unwrap();
                     if s.w > 0.0 {
@@ -240,7 +256,17 @@ impl Floaters {
         let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(vis.size.height);
         *self.screen.lock().unwrap() = Rect { x: vis.origin.x, y: primary_h - (vis.origin.y + vis.size.height), w: vis.size.width, h: vis.size.height };
         let fresh = self.spots.lock().unwrap().take();
-        // Hovered: its meaning shows; left: it closes again. Old or crowded out: it goes.
+        // Its spot taken (a window moved over it, the page changed): gone at
+        // once, no fade (owner, 2026-11-11).
+        if let Some(free) = fresh.as_ref() {
+            let crowded: Vec<usize> = self.words.borrow().iter().enumerate().filter(|(_, w)| !free.contains(&w.cell)).map(|(i, _)| i).collect();
+            for i in crowded.into_iter().rev() {
+                let w = self.words.borrow_mut().remove(i);
+                w.on.set(false);
+                w.panel.orderOut(None);
+            }
+        }
+        // Hovered: its meaning shows; left: it closes again. Old: it goes.
         let mut gone = Vec::new();
         for (i, w) in self.words.borrow_mut().iter_mut().enumerate() {
             let f = w.panel.frame();
@@ -259,8 +285,7 @@ impl Floaters {
                 gone.push((i, false));
                 continue;
             }
-            let crowded = fresh.as_ref().is_some_and(|s| !s.contains(&w.cell));
-            if w.came.elapsed() > STAYS || crowded {
+            if w.came.elapsed() > STAYS {
                 gone.push((i, true));
             }
         }
