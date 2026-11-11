@@ -613,8 +613,8 @@ mod app {
             *c.borrow_mut() = Some(Box::new(move |id: isize, kind: u8| {
                 let Some(mtm) = MainThreadMarker::new() else { return };
                 let Some((note, known)) = app.floaters.clicked(mtm, id, kind) else { return };
-                // Every answer says what it did (owner, 2026-11-11).
-                app.view.toast(mtm, &note);
+                // Every answer says what it did, with Undo (owner, 2026-11-11).
+                app.view.toast_undo(mtm, &note, crate::float::UNDO_FOR.as_secs_f64());
                 if let Some((lang, word)) = known {
                     // Known: off the learning list on every device (ccez-words).
                     app.engine.set_word_status(lang, word, ccez_keys_core::WordStatus::Known);
@@ -634,6 +634,19 @@ mod app {
                     return;
                 };
                 match tag {
+                    crate::view::UNDO_TAG => {
+                        if let Some((lang, word, known)) = app.floaters.undo(mtm) {
+                            if known {
+                                // Back on the learning list everywhere.
+                                app.engine.set_word_status(lang, word.clone(), ccez_keys_core::WordStatus::Learning);
+                                let e = app.engine.clone();
+                                std::thread::spawn(move || {
+                                    let _ = e.sync_words("ccez-keys-mac".into());
+                                });
+                            }
+                            app.view.toast(mtm, &format!("Undone: {word}"));
+                        }
+                    }
                     -4 => {
                         if let Some((_, _, text)) = app.card.borrow().clone() {
                             copy(&text);

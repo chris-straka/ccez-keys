@@ -35,6 +35,10 @@ struct Card {
     at: u64,
 }
 
+/// A word's schedule kept for Undo (see [Review::snapshot]).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Snapshot(Option<Card>);
+
 #[derive(Default)]
 pub struct Review {
     cards: HashMap<String, Card>,
@@ -125,6 +129,25 @@ impl Review {
             }
         }
         c.at = now;
+        self.save();
+    }
+
+    /// A word's schedule as it is now, to put back after a mistaken answer.
+    pub fn snapshot(&self, lang: &str, word: &str) -> Snapshot {
+        Snapshot(self.cards.get(&key(lang, word)).copied())
+    }
+
+    /// Puts a word's schedule back as [Review::snapshot] took it (Undo).
+    /// Stamped now, so the putting back wins the next sync.
+    pub fn restore(&mut self, lang: &str, word: &str, snap: Snapshot, now: u64) {
+        match snap.0 {
+            Some(c) => {
+                self.cards.insert(key(lang, word), Card { at: now, ..c });
+            }
+            None => {
+                self.cards.remove(&key(lang, word));
+            }
+        }
         self.save();
     }
 
@@ -220,6 +243,22 @@ pub fn mixed(words: Vec<(String, String)>) -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn undo_puts_the_schedule_back() {
+        let mut r = Review::default();
+        let before = r.snapshot("fr", "cap");
+        r.grade("fr", "cap", Grade::Good, 1000);
+        assert!(!r.due("fr", "cap", 1100));
+        r.restore("fr", "cap", before, 1200);
+        assert!(r.due("fr", "cap", 1200), "never graded again");
+        r.grade("fr", "cap", Grade::Good, 2000);
+        let graded = r.snapshot("fr", "cap");
+        r.grade("fr", "cap", Grade::Again, 2100);
+        r.restore("fr", "cap", graded, 2200);
+        assert_eq!(r.due_at("fr", "cap"), Some(2000 + 600));
+    }
+
     use super::*;
 
     fn w(s: &str) -> (String, String) {

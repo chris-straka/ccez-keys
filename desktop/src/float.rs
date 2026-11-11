@@ -20,7 +20,7 @@ use objc2_foundation::{NSRect, NSString};
 
 use crate::model::Rect;
 use crate::view::{fade_over, label, new_panel, rect, rgb};
-use ccez_keys_core::review::{Grade, Review};
+use ccez_keys_core::review::{Grade, Review, Snapshot};
 
 /// How long a word stays when left alone.
 const STAYS: Duration = Duration::from_secs(90);
@@ -114,12 +114,29 @@ struct Word {
     hold_until: Option<Instant>,
 }
 
+/// The last answer, kept a few seconds for Undo.
+struct Answer {
+    lang: String,
+    word: String,
+    shown: String,
+    meaning: String,
+    tags: Vec<String>,
+    cell: Rect,
+    before: Snapshot,
+    known: bool,
+    at: Instant,
+}
+
+/// How long Undo stays offered.
+pub const UNDO_FOR: Duration = Duration::from_secs(4);
+
 pub struct Floaters {
     words: RefCell<Vec<Word>>,
     /// Words fading out: since when, and whether the pointer landing on one
     /// brings it back (not after a click: that fade is the answer).
     leaving: RefCell<Vec<(Word, Instant, bool)>>,
     review: RefCell<Review>,
+    last_answer: RefCell<Option<Answer>>,
     next_id: Cell<isize>,
     seed: Cell<usize>,
     last: Cell<Instant>,
@@ -177,6 +194,7 @@ impl Floaters {
             words: RefCell::default(),
             leaving: RefCell::default(),
             review: RefCell::new(Review::load(dir)),
+            last_answer: RefCell::default(),
             next_id: Cell::new(1),
             seed: Cell::new((std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) % 997) as usize),
             last: Cell::new(Instant::now()),
@@ -372,6 +390,33 @@ impl Floaters {
         }
     }
 
+    /// Undo of the last answer, within [UNDO_FOR]: its schedule as it was
+    /// and the word back on screen. The word (lang, word) when the answer
+    /// was Known, which the caller puts back to Learning.
+    pub fn undo(&self, mtm: MainThreadMarker) -> Option<(String, String, bool)> {
+        let a = self.last_answer.borrow_mut().take().filter(|a| a.at.elapsed() < UNDO_FOR + Duration::from_secs(1))?;
+        self.review.borrow_mut().restore(&a.lang, &a.word, a.before, Self::now());
+        let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
+        // Still up (Again shows its meaning a moment): it just stays.
+        let up = self.words.borrow().iter().position(|w| w.lang == a.lang && w.word == a.word);
+        if let Some(i) = up {
+            let mut ws = self.words.borrow_mut();
+            ws[i].hold_until = None;
+            ws[i].came = Instant::now();
+            ws[i].open = false;
+            lay_out(mtm, &mut ws[i], primary_h);
+        } else {
+            let id = self.next_id.get();
+            self.next_id.set(id + 1);
+            let w = show(mtm, id, a.lang.clone(), a.word.clone(), a.shown, a.meaning, a.tags, a.cell, primary_h);
+            if !self.hide_in_shots.get() {
+                w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
+            }
+            self.words.borrow_mut().push(w);
+        }
+        Some((a.lang, a.word, a.known))
+    }
+
     /// What a click did, for its toast ("Good · back in 1 h"), from the
     /// word's new time.
     fn said(&self, what: &str, lang: &str, word: &str) -> String {
@@ -392,6 +437,22 @@ impl Floaters {
             let ws = self.words.borrow();
             (ws[i].lang.clone(), ws[i].word.clone())
         };
+        // Kept for Undo (owner, 2026-11-11: "just in case I misclicked").
+        {
+            let ws = self.words.borrow();
+            let w = &ws[i];
+            *self.last_answer.borrow_mut() = Some(Answer {
+                lang: lang.clone(),
+                word: word.clone(),
+                shown: w.shown.clone(),
+                meaning: w.meaning.clone(),
+                tags: w.tags.clone(),
+                cell: w.cell,
+                before: self.review.borrow().snapshot(&lang, &word),
+                known: kind == 3,
+                at: Instant::now(),
+            });
+        }
         match kind {
             1 => {
                 self.review.borrow_mut().grade(&lang, &word, Grade::Again, Self::now());

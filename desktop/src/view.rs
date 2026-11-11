@@ -35,6 +35,9 @@ objc2::define_class!(
     }
 );
 
+/// The toast's Undo button.
+pub const UNDO_TAG: isize = -9;
+
 /// A word's click tag: row * WORDS + its index in the row.
 pub const WORDS: isize = 100_000;
 
@@ -403,6 +406,15 @@ impl View {
     /// A short note at the top of the screen (a word copied), gone after a
     /// moment ([`View::tick_toast`] takes it down).
     pub fn toast(&self, mtm: MainThreadMarker, text: &str) {
+        self.toast_for(mtm, text, None);
+    }
+
+    /// A toast with Undo at its end (tag [UNDO_TAG]), up for `secs`.
+    pub fn toast_undo(&self, mtm: MainThreadMarker, text: &str, secs: f64) {
+        self.toast_for(mtm, text, Some(secs));
+    }
+
+    fn toast_for(&self, mtm: MainThreadMarker, text: &str, undo: Option<f64>) {
         let Some(content) = self.toast_bg.contentView() else {
             return;
         };
@@ -411,14 +423,28 @@ impl View {
         }
         let l = label(mtm, text, 13.0, false);
         let (lw, lh) = (l.frame().size.width, l.frame().size.height);
-        let (w, h) = (lw + 28.0, lh + 14.0);
+        // Undo, tinted, after the words: the toast takes clicks only then.
+        let button = undo.map(|_| {
+            let t = Tok { text: "Undo".into(), reading: String::new(), word: true, key: String::new(), status: 1 };
+            let b = word_button(mtm, &self.clicker, &t, 13.0, UNDO_TAG);
+            pointer(&b);
+            b
+        });
+        let bw = button.as_ref().map(|b| b.frame().size.width + 14.0).unwrap_or(0.0);
+        let (w, h) = (lw + 28.0 + bw, lh + 14.0);
         l.setFrame(rect(14.0, 7.0, lw, lh));
         content.addSubview(&l);
+        if let Some(b) = &button {
+            let bh = b.frame().size.height;
+            b.setFrame(rect(14.0 + lw + 14.0, (h - bh) / 2.0, b.frame().size.width, bh));
+            content.addSubview(b);
+        }
+        self.toast.setIgnoresMouseEvents(button.is_none());
         let vis = NSScreen::mainScreen(mtm).map(|m| m.visibleFrame()).unwrap_or(rect(0.0, 0.0, 1200.0, 800.0));
         let (x, y) = (vis.origin.x + (vis.size.width - w) / 2.0, vis.origin.y + vis.size.height - h - 12.0);
         self.toast.setFrame_display(rect(x, y, w, h), true);
         self.toast_bg.setFrame(rect(0.0, 0.0, w, h));
-        self.toast_until.set(Some(std::time::Instant::now() + std::time::Duration::from_millis(1400)));
+        self.toast_until.set(Some(std::time::Instant::now() + std::time::Duration::from_secs_f64(undo.unwrap_or(1.4))));
         if !self.toast_on.get() {
             self.toast_on.set(true);
             fade(&self.toast, true, self.toast_on.clone());
