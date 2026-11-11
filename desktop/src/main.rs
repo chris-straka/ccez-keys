@@ -218,12 +218,21 @@ mod app {
         }
     }
 
+    thread_local! {
+        /// Per app, where its content keeps turning up (the spot thread's own).
+        static BUSY: std::cell::RefCell<crate::idle::Busy> = std::cell::RefCell::new(crate::idle::Busy::default());
+    }
+
     /// Where idle words can go: room in the front window its content leaves,
     /// and screen no other app's window covers.
     fn spots(screen: crate::model::Rect) -> Vec<crate::model::Rect> {
         let pid = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
         let (front, content) = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
-        crate::idle::free_spots(screen, front, &content, &crate::idle::windows(pid), 8, 6)
+        let free = crate::idle::free_spots(screen, front, &content, &crate::idle::windows(pid), 8, 6);
+        // Spots this app keeps filling lately: skipped too.
+        let all = crate::idle::free_cells(screen, &[], 8, 6);
+        let app = NSWorkspace::sharedWorkspace().frontmostApplication().and_then(|a| a.bundleIdentifier()).map(|b| b.to_string()).unwrap_or_default();
+        BUSY.with_borrow_mut(|b| b.look(&app, &all, &free))
     }
 
     /// Puts `text` on the clipboard, as plain text.

@@ -42,6 +42,38 @@ pub fn free_spots(screen: Rect, front: Option<Rect>, content: &[Rect], others: &
         .collect()
 }
 
+/// Where each app's content keeps turning up (owner, 2026-11-11: "learn
+/// which areas of my screen change the most depending on the
+/// application"): per app, a mark per grid cell that's set when the cell
+/// has content and fades a little on every look. A cell free right now but
+/// marked lately (a chat column that grows, a feed that refreshes) is no
+/// place for a word.
+#[derive(Default)]
+pub struct Busy {
+    maps: std::collections::HashMap<String, Vec<f32>>,
+}
+
+/// How much a mark keeps per look (looks come every 0.3–2 s: about two
+/// minutes to fade).
+const KEEP: f32 = 0.97;
+/// Marked above this: avoided.
+const AVOID: f32 = 0.2;
+
+impl Busy {
+    /// One look at `app`: `all` the grid's cells in order, `free` those
+    /// with nothing in them now. The free ones not busy lately.
+    pub fn look(&mut self, app: &str, all: &[Rect], free: &[Rect]) -> Vec<Rect> {
+        let map = self.maps.entry(app.to_string()).or_insert_with(|| vec![0.0; all.len()]);
+        if map.len() != all.len() {
+            *map = vec![0.0; all.len()];
+        }
+        for (i, c) in all.iter().enumerate() {
+            map[i] = if free.contains(c) { map[i] * KEEP } else { 1.0 };
+        }
+        free.iter().filter(|c| all.iter().position(|a| a == *c).is_none_or(|i| map[i] < AVOID)).copied().collect()
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod sys {
     use std::ffi::c_void;
@@ -147,5 +179,21 @@ mod tests {
         let half = Rect { x: 0.0, y: 0.0, w: 700.0, h: 800.0 };
         let spots = free_spots(SCREEN, Some(half), &[], &[], 6, 4);
         assert!(spots.iter().all(|c| c.x + c.w <= 700.0 || c.x >= 700.0));
+    }
+
+    #[test]
+    fn a_cell_that_had_content_lately_is_avoided_until_it_fades() {
+        let all = free_cells(SCREEN, &[], 2, 1);
+        let (left, right) = (all[0], all[1]);
+        let mut b = Busy::default();
+        // Content on the right, then gone: the right stays avoided a while.
+        assert_eq!(b.look("claude", &all, &[left]), vec![left]);
+        assert_eq!(b.look("claude", &all, &[left, right]), vec![left]);
+        for _ in 0..60 {
+            b.look("claude", &all, &[left, right]);
+        }
+        assert_eq!(b.look("claude", &all, &[left, right]).len(), 2);
+        // Another app has its own map.
+        assert_eq!(b.look("notes", &all, &[left, right]).len(), 2);
     }
 }
