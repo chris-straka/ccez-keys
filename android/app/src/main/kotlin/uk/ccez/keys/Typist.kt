@@ -140,6 +140,12 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
     private var shift = Shift.OFF
     private var lastShiftTap = 0L
+    /** Shift was tapped (not set by where the cursor is): late news of the text leaves it be. */
+    private var shiftByHand = false
+    /** When enter last sent a new line as a key (the app takes it in a moment). */
+    private var newlineAt = 0L
+    /** A key typed now takes its capital: shift is on and the letters are up (π on the symbols page stays π). */
+    private val caps get() = shift != Shift.OFF && page == Page.LETTERS
     private var lastSpaceAt = 0L
     private var fix: Pair<String, String>? = null // typed → what it became
     private var autoSpace = false
@@ -181,6 +187,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     fun start(info: EditorInfo) {
         editor = info
+        // Another field, or this one reset (a sent message): its text afresh,
+        // not what the last one held (Chrome keeps one connection for all its fields).
+        cached?.forget()
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
         val variation = info.inputType and InputType.TYPE_MASK_VARIATION
         password = (cls == InputType.TYPE_CLASS_TEXT && variation in PASSWORDS) ||
@@ -462,6 +471,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 }
                 lastShiftTap = now
                 view.shift = shift
+                shiftByHand = shift != Shift.OFF
             }
             KeyKind.BACKSPACE -> backspace()
             KeyKind.SYMBOLS -> setPage(Page.SYMBOLS)
@@ -533,14 +543,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     fun type(text: String) {
         acted()
         ui.ask?.let { a ->
-            val t = if (shift != Shift.OFF) text.uppercase() else text
+            val t = if (caps) text.uppercase() else text
             ui.ask = a.copy(input = a.input + t)
             if (shift == Shift.ONCE) setShift(Shift.OFF)
             return
         }
         val ic = ic ?: return
         if (rawKeys) {
-            val t = if (shift != Shift.OFF) text.uppercase() else text
+            val t = if (caps) text.uppercase() else text
             cached?.forget()
             t.forEach { service.sendKeyChar(it) }
             if (shift == Shift.ONCE) setShift(Shift.OFF)
@@ -563,7 +573,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (telexOn() && !noCorrect && text.length == 1 && text[0].isLetter() && text[0].code < 128) {
             autoSpace = false
             if (telexRaw.isEmpty() && word.isNotEmpty()) telexRaw.append(word)
-            telexRaw.append(if (shift != Shift.OFF) text.uppercase() else text)
+            telexRaw.append(if (caps) text.uppercase() else text)
             word.setLength(0)
             word.append(engine.telex(telexRaw.toString()))
             ic.setComposingText(word, 1)
@@ -591,7 +601,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         }
         if (autoSpaceSwap(text, ic)) return
         if (text.length <= 2 && text.all(::isWordChar) && !password && !numeric) {
-            val t = if (shift != Shift.OFF) text.uppercase() else text
+            val t = if (caps) text.uppercase() else text
             // A non-letter amid Korean or Telex letters: what's shown so far is the word now.
             jamo.setLength(0)
             jamoBase = ""
@@ -604,7 +614,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             return
         }
         endWord(correct = true)
-        val t = if (shift != Shift.OFF && text.length == 1) text.uppercase() else text
+        val t = if (caps && text.length == 1) text.uppercase() else text
         // A space after . , ! ? and what closes ) ] } " (not in addresses, numbers, or scripts without spaces).
         val spaced = text.length == 1 && !noCorrect && !numeric && !noSpaces() &&
             uk.ccez.keys.core.spaceAfterMark(ic.getTextBeforeCursor(CachedInput.READ, 0)?.toString().orEmpty() + t)
@@ -878,6 +888,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             updateShift()
         } else {
             cached?.forget()
+            newlineAt = SystemClock.uptimeMillis()
             service.sendKeyChar('\n')
             // The app takes the key in a moment: the new line is counted on.
             updateShift(pending = "\n")
@@ -1037,6 +1048,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     private fun setShift(s: Shift) {
         shift = s
+        shiftByHand = false
         view.shift = s
     }
 
@@ -1107,8 +1119,12 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             // The cursor moved away from the word: keep it as typed.
             ic?.finishComposingText()
             clearWord()
-        } else {
-            if (ours || candStart != -1) return
+        } else if (ours || candStart != -1) {
+            // The app may have changed the text after our key (a message sent on
+            // enter empties the field): capitals for what's there now, at once.
+            // (Not just after a new line: the app may not have it yet, and it's counted on.)
+            if (!shiftByHand && SystemClock.uptimeMillis() - newlineAt > 400) updateShift()
+            return
         }
         // The cursor really moved: what was about the last word no longer applies.
         fix = null

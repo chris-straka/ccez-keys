@@ -31,6 +31,18 @@ const val WORD_SECOND_MS = 500L
 /** The wait before the next word, after `n` words gone. */
 fun wordGap(n: Int): Long = if (n == 1) WORD_SECOND_MS else (250L - 30L * maxOf(0, n - 4)).coerceIn(120L, 250L)
 
+/**
+ * A letter as its key shows it: lowercase, a capital exactly when the next
+ * letter takes one (Typist's shift: tapped, locked, or a sentence's start),
+ * and only on the letters page (π on the symbols page stays π).
+ */
+fun shown(c: String, shift: Shift, letters: Boolean): String =
+    if (shift != Shift.OFF && letters && c.length == 1) c.uppercase() else c
+
+/** A letter key's label: its shifted letter (Hindi, Thai, Korean), else [shown]. */
+fun charLabel(k: Key, shift: Shift, letters: Boolean): String =
+    if (shift != Shift.OFF && k.alt.isNotEmpty()) k.alt else shown(k.label, shift, letters)
+
 /** A held key's choices, in this view's coordinates. */
 data class Popup(val key: RectF, val box: RectF, val choices: List<String>, val selected: Int, val codes: List<String> = emptyList(), val cols: Int = choices.size)
 
@@ -58,7 +70,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     var layout: Layout? = null
-        set(v) { field = v; requestLayout(); placeKeys(); invalidate() }
+        set(v) {
+            field = v
+            letters = v?.rows?.any { r -> r.keys.any { it.kind == KeyKind.SHIFT } } == true
+            requestLayout(); placeKeys(); invalidate()
+        }
+    /** The letters page is up (it has ⇧): only its keys show capitals. */
+    private var letters = true
     var shift = Shift.OFF
         set(v) { if (field != v) { field = v; invalidate() } }
     var spaceLabel = ""
@@ -195,7 +213,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
             else -> {
                 val label = when (k.kind) {
-                    KeyKind.CHAR -> if (shift != Shift.OFF && k.alt.isNotEmpty()) k.alt else if (shift != Shift.OFF && k.label.length == 1) k.label.uppercase() else k.label
+                    KeyKind.CHAR -> charLabel(k, shift, letters)
                     KeyKind.SHIFT -> if (shift == Shift.LOCK) "⇪" else "⇧"
                     else -> k.label
                 }
@@ -419,7 +437,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     private fun openPopup(p: Placed) {
-        val choices = p.key.popups.map { if (shift != Shift.OFF && it.length == 1) it.uppercase() else it }
+        val choices = p.key.popups.map { shown(it, shift, letters) }
         // Long lists (Vietnamese vowels) wrap into two rows at most, the
         // first nearest the key: more above the keys would leave the window.
         val cols = min(choices.size, max(8, (choices.size + 1) / 2))
