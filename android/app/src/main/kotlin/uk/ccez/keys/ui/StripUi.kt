@@ -5,8 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -64,9 +64,9 @@ private val RTL = setOf("ar", "fa", "he", "ur")
 private val STRIP_BG = Color(0xFF181818)
 
 /**
- * The learning strip: flags on the left (tap: next language; hold: put
- * this translation in instead of what was typed), the words with their
- * readings (tap: card), 🔊 on the right.
+ * The learning strip: the flag on the left (hold: put this translation in
+ * instead of what was typed), the words (tap: card; drag sideways: the
+ * line scrolls). Swipe up: the next language; down: the one before.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -76,17 +76,17 @@ fun StripRow(s: StripView, typist: Typist) {
     Row(
         Modifier.fillMaxSize().background(STRIP_BG)
             .pointerInput(s.lang) {
-                detectHorizontalDragGestures(
-                    // Right: the language before on the owner's list; left: the one after.
-                    // (The words don't scroll by hand, so a swipe anywhere on the line works.)
-                    onDragEnd = { if (drag > 60f) typist.strip.step(-1) else if (drag < -60f) typist.strip.step(1); drag = 0f },
+                val far = 16.dp.toPx()
+                detectVerticalDragGestures(
+                    // Up: the next language on the owner's list; down: the one before.
+                    onDragEnd = { if (drag < -far) typist.strip.step(1) else if (drag > far) typist.strip.step(-1); drag = 0f },
                     onDragCancel = { drag = 0f },
-                ) { _, d -> drag += d }
+                ) { change, d -> change.consume(); drag += d }
             }
             .padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // A new language slides in from the side swiped towards; the AI's wording
+        // A new language slides in the way it was swiped; the AI's wording
         // fades in over ML Kit's. Typing updates the line in place.
         androidx.compose.animation.AnimatedContent(
             targetState = s,
@@ -95,10 +95,10 @@ fun StripRow(s: StripView, typist: Typist) {
                 val ease = androidx.compose.animation.core.FastOutSlowInEasing
                 if (initialState.lang != targetState.lang) {
                     val dir = targetState.moved
-                    (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(170, easing = ease)) { w -> dir * w / 5 } +
+                    (androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(170, easing = ease)) { h -> dir * h / 2 } +
                         androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150, delayMillis = 20)))
                         .togetherWith(
-                            androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(170, easing = ease)) { w -> -dir * w / 5 } +
+                            androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(170, easing = ease)) { h -> -dir * h / 2 } +
                                 androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(110)),
                         )
                 } else {
@@ -127,17 +127,20 @@ fun StripRow(s: StripView, typist: Typist) {
     }
 }
 
-/** A flag, faded and greyed (owner, 2026-11-08: a bright one drew the eye). */
+/**
+ * A flag, faded and greyed (owner, 2026-11-08: a bright one drew the eye);
+ * `lit` 1 shows it in full colour (a moment after a switch).
+ */
 @Composable
-internal fun MutedFlag(flag: String, size: Int) {
+internal fun MutedFlag(flag: String, size: Int, lit: Float = 0f) {
     Text(
         flag,
         fontSize = size.sp,
         modifier = Modifier.graphicsLayer {
-            alpha = 0.55f
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
+            alpha = 0.55f + 0.45f * lit
+            if (android.os.Build.VERSION.SDK_INT >= 31 && lit < 1f) {
                 renderEffect = android.graphics.RenderEffect.createColorFilterEffect(
-                    android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.25f) }),
+                    android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.25f + 0.75f * lit) }),
                 ).asComposeRenderEffect()
             }
         },
@@ -182,10 +185,19 @@ private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, 
     // Hold the first flag: this translation in place of what was typed. No tap
     // (swipes change language).
     Spacer(Modifier.width(4.dp))
+    // Just swiped to: the flag in full colour a moment, then muted again.
+    val lit = remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(s.switchedAt) {
+        if (android.os.SystemClock.uptimeMillis() - s.switchedAt < 3000) {
+            lit.snapTo(1f)
+            kotlinx.coroutines.delay(900)
+            lit.animateTo(0f, androidx.compose.animation.core.tween(500))
+        }
+    }
     Box(
         level.clip(RoundedCornerShape(4.dp)).combinedClickable(onClick = {}, onLongClick = { typist.replaceSentence(s.text, of = s.source) }),
         contentAlignment = Alignment.Center,
-    ) { MutedFlag(s.flag, 12) }
+    ) { MutedFlag(s.flag, 12, lit.value) }
     Spacer(Modifier.width(5.dp))
     if (more.isNotEmpty()) {
         // The same in the next languages, "chat | Katze | gato", as many as fit;
@@ -193,9 +205,9 @@ private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, 
         var shift by remember(s.text) { mutableFloatStateOf(0f) }
         FitRow(
             Modifier.weight(1f).clipToBounds().pointerInput(s.text) {
-                detectDragGesturesAfterLongPress(onDragStart = { typist.holdBuzz() }) { change, d ->
+                detectHorizontalDragGestures { change, d ->
                     change.consume()
-                    shift += d.x
+                    shift += d
                 }
             },
             shift,
@@ -219,10 +231,10 @@ private fun androidx.compose.foundation.layout.RowScope.StripLine(s: StripView, 
     CompositionLocalProvider(LocalLayoutDirection provides if (s.lang in RTL) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         Row(
             Modifier.weight(1f).horizontalScroll(scroll, enabled = false).pointerInput(s.text) {
-                // Hold, then drag: the line moves (a plain swipe changes language).
-                detectDragGesturesAfterLongPress(onDragStart = { typist.holdBuzz() }) { change, d ->
+                // Drag sideways: the line moves (up and down change language).
+                detectHorizontalDragGestures { change, d ->
                     change.consume()
-                    scroll.dispatchRawDelta(-d.x)
+                    scroll.dispatchRawDelta(-d)
                 }
             },
             verticalAlignment = Alignment.CenterVertically,

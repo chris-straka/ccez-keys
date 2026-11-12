@@ -32,6 +32,8 @@ data class StripView(
     val moved: Int = 1,
     /** The same in the next languages, as many as fit ("chat | Katze | gato"). */
     val more: List<Segment> = emptyList(),
+    /** When the owner last swiped to another language (uptime ms): its flag lights up a moment. */
+    val switchedAt: Long = 0,
 )
 
 /** One language's translation of a single word, after the first. */
@@ -104,6 +106,7 @@ class Strip(private val ui: UiState) {
     private var index = 0
     /** The way the last change of language went (1 down the list, -1 up). */
     private var moved = 1
+    private var switchedAt = 0L
     private var source = ""
     private var typing = ""
 
@@ -201,6 +204,7 @@ class Strip(private val ui: UiState) {
         if (n == 0) return
         index = ((index + by) % n + n) % n
         moved = if (by < 0) -1 else 1
+        switchedAt = android.os.SystemClock.uptimeMillis()
         job?.cancel()
         job = app.scope.launch { show(autoSteps = n) }
     }
@@ -228,7 +232,7 @@ class Strip(private val ui: UiState) {
         withContext(Dispatchers.Main) {
             // The other languages stay as they were until their new wording is ready (no blink per key).
             val keep = ui.strip?.takeIf { it.lang == lang }?.more.orEmpty()
-            ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = src, moved = moved, more = keep)
+            ui.strip = StripView(lang, flags[index], next, words, text, refined = better != null, pending = false, source = src, moved = moved, more = keep, switchedAt = switchedAt)
         }
         if (pending) {
             // Shown as pending once the pause has come and the AI is asked.
