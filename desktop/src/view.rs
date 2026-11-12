@@ -247,32 +247,45 @@ pub(crate) fn new_panel(mtm: MainThreadMarker) -> (Retained<NSPanel>, Retained<N
 /// Where the preview goes, in Cocoa's coordinates (from the foot of the main
 /// screen): `place` is in Accessibility's (from the top of the primary
 /// screen, `primary_h` tall), `vis` is the screen's visible area in Cocoa's.
+///
+/// It never covers the field being typed in (owner, 2026-11-12: it sat on
+/// the last lines of Claude's composer): just under the field when there's
+/// room on screen, else just over it, level with the cursor (or the field's
+/// left edge when the app gives no believable cursor). Only a field too tall
+/// to step around (a document) has it by the cursor's line instead.
 pub fn spot((w, h): (f64, f64), place: Place, primary_h: f64, vis: Rect) -> (f64, f64) {
+    const GAP: f64 = 6.0;
     let (floor, ceil) = (vis.y + 4.0, vis.y + vis.h - 4.0);
     let (left, right) = (vis.x + 4.0, vis.x + vis.w - 4.0);
-    // A box small enough to step around (a message or search box); a
-    // document is too big, so its cursor's line is what's kept clear.
-    let anchor = match (place.frame, place.caret) {
-        (Some(f), _) if f.h <= 220.0 => Some(f),
-        (_, Some(c)) => Some(c),
-        (f, None) => f,
+    let frame = place.frame.filter(|f| f.w > 1.0 && f.h > 1.0);
+    // Electron answers with zero boxes, or ones outside the field: no guide.
+    let caret = place.caret.filter(|c| {
+        (c.x != 0.0 || c.y != 0.0)
+            && c.h > 0.0
+            && frame.is_none_or(|f| c.x >= f.x - 2.0 && c.x <= f.x + f.w + 2.0 && c.y + c.h >= f.y - 2.0 && c.y <= f.y + f.h + 2.0)
+    });
+    let x = caret.map(|c| c.x - 6.0).or(frame.map(|f| f.x)).map(|x| x.min(right - w).max(left));
+    let fits = |y: f64| y >= floor && y + h <= ceil;
+    // Just under or just over `r` (in Cocoa's y), where the screen has room.
+    let around = |r: Rect| {
+        let below = primary_h - (r.y + r.h) - h - GAP;
+        let above = primary_h - r.y + GAP;
+        if fits(below) {
+            Some(below)
+        } else if fits(above) {
+            Some(above)
+        } else {
+            None
+        }
     };
-    let Some(a) = anchor else {
-        return (vis.x + (vis.w - w) / 2.0, vis.y + 24.0);
-    };
-    let (top, bottom) = (primary_h - a.y, primary_h - (a.y + a.h));
-    let below = bottom - h - 6.0;
-    let above = top + 6.0;
-    let y = if below >= floor {
-        below
-    } else if above + h <= ceil {
-        above
-    } else {
-        // A box filling the screen top to foot: inside it, at its foot.
-        floor
-    };
-    let x0 = place.caret.map(|c| c.x - 6.0).unwrap_or(a.x);
-    (x0.min(right - w).max(left), y)
+    if let Some(y) = frame.and_then(around) {
+        return (x.unwrap_or(left), y);
+    }
+    match caret.or(frame) {
+        // A field filling the screen top to foot: by the cursor's line, or else inside it at its foot.
+        Some(a) => (x.unwrap_or(left), around(a).unwrap_or(floor)),
+        None => (vis.x + (vis.w - w) / 2.0, vis.y + 24.0),
+    }
 }
 
 impl View {
@@ -498,10 +511,10 @@ impl View {
     }
 
     /// Puts `rows` up (one language each, the first on top) where they cover
-    /// neither the text being typed nor the box it's in: under the box (a
-    /// message box, a search field), or over it when there's no room below; in
-    /// a big document, under the cursor's line (over it near the screen's
-    /// foot). With nothing to go by, at the foot of the screen.
+    /// neither the text being typed nor the box it's in (see `spot`): under
+    /// the box, or over it when there's no room below; only in a document too
+    /// tall for either, by the cursor's line. With nothing to go by, at the
+    /// foot of the screen.
     pub fn show(&self, mtm: MainThreadMarker, rows: &[Row], place: Place) {
         if rows.is_empty() {
             return self.hide();
@@ -674,6 +687,60 @@ mod tests {
         let (x, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
         assert!(span(y).1 <= frame.y);
         assert_eq!(x, 894.0);
+    }
+
+    /// The panel, in Accessibility's coordinates, overlaps `r`.
+    fn covers((x, y): (f64, f64), r: Rect) -> bool {
+        let (top, bottom) = span(y);
+        x < r.x + r.w && x + SIZE.0 > r.x && top < r.y + r.h && bottom > r.y
+    }
+
+    #[test]
+    fn a_tall_composer_keeps_its_last_lines_clear() {
+        // The owner's screenshot (2026-11-12): Claude's composer, several
+        // lines, the cursor at the end near its foot. It went on the last lines.
+        let frame = Rect { x: 672.0, y: 700.0, w: 921.0, h: 330.0 };
+        let caret = Rect { x: 900.0, y: 1000.0, w: 1.0, h: 18.0 };
+        let at = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
+        assert!(!covers(at, frame), "covers the composer: {at:?}");
+        assert_eq!(at.0, 894.0);
+        // A guessed cursor a few lines short of the real one (line heights differ): still clear.
+        let guess = Rect { x: 900.0, y: 900.0, w: 2.0, h: 20.0 };
+        assert!(!covers(spot(SIZE, Place { caret: Some(guess), frame: Some(frame) }, H, VIS), frame));
+        // Higher up the screen: under it.
+        let frame = Rect { x: 672.0, y: 100.0, w: 921.0, h: 300.0 };
+        let caret = Rect { x: 900.0, y: 370.0, w: 1.0, h: 18.0 };
+        let at = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
+        assert!(span(at.1).0 >= frame.y + frame.h);
+        assert!(span(at.1).0 - (frame.y + frame.h) < 10.0, "not just under the field");
+    }
+
+    #[test]
+    fn a_bogus_cursor_falls_back_to_the_field() {
+        let frame = Rect { x: 672.0, y: 700.0, w: 921.0, h: 200.0 };
+        for caret in [None, Some(Rect::default()), Some(Rect { x: 0.0, y: 0.0, w: 0.0, h: 18.0 }), Some(Rect { x: 50.0, y: 40.0, w: 1.0, h: 18.0 })] {
+            let at = spot(SIZE, Place { caret, frame: Some(frame) }, H, VIS);
+            assert_eq!(at.0, frame.x, "{caret:?}");
+            assert!(!covers(at, frame), "{caret:?}");
+        }
+    }
+
+    #[test]
+    fn no_field_that_can_be_stepped_around_is_covered() {
+        for fy in (40..1040).step_by(60) {
+            for fh in [24.0, 60.0, 180.0, 320.0, 600.0] {
+                let frame = Rect { x: 300.0, y: fy as f64, w: 700.0, h: fh };
+                let room = frame.y - 30.0 - 4.0 - 6.0 >= SIZE.1 || H - (frame.y + frame.h) - 4.0 - 6.0 >= SIZE.1;
+                let caret = Rect { x: 640.0, y: frame.y + fh - 20.0, w: 1.0, h: 18.0 };
+                let at = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
+                let (top, bottom) = span(at.1);
+                assert!(top >= 30.0 && bottom <= H, "off screen: {frame:?}");
+                assert!(at.0 >= 0.0 && at.0 + SIZE.0 <= VIS.w);
+                if room {
+                    assert!(!covers(at, frame), "covers {frame:?}: {at:?}");
+                }
+            }
+        }
     }
 
     #[test]
