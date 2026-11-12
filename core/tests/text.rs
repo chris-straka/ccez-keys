@@ -1,6 +1,6 @@
 //! The text-only typing rules (core/src/text.rs).
 
-use ccez_keys_core::text::{delete_span, digit_joins, form_tag, looks_secret, mark_after_space, sentence_of, space_after_mark, space_makes_stop, starts_sentence, word_before};
+use ccez_keys_core::text::{delete_span, digit_joins, form_tag, looks_secret, mark_after_space, sentence_of, space_after_mark, space_makes_stop, sentence_capitals, starts_sentence, word_before};
 
 #[test]
 fn the_sentence_typed() {
@@ -119,4 +119,80 @@ fn form_tags() {
     assert_eq!(form_tag("feminine plural of beau".into()), "feminine 👨‍👨‍👧‍👦 · beau");
     assert_eq!(form_tag("first/third-person singular present subjunctive of aller".into()), "1st/3rd 👤 ▶ subjunctive · aller");
     assert_eq!(form_tag("inflection of garer:".into()), "inflection · garer");
+}
+
+/// Android's field kinds, as in text.rs (InputType, EditorInfo).
+const TEXT: i32 = 1;
+const NUMBER: i32 = 2;
+const PHONE: i32 = 3;
+const CAP_CHARACTERS: i32 = 0x1000;
+const CAP_WORDS: i32 = 0x2000;
+const CAP_SENTENCES: i32 = 0x4000;
+const MULTI_LINE: i32 = 0x20000;
+const NO_SUGGESTIONS: i32 = 0x80000;
+const ACTION_GO: i32 = 2;
+const ACTION_SEARCH: i32 = 3;
+const ACTION_SEND: i32 = 4;
+const NO_ENTER_ACTION: i32 = 0x4000_0000;
+
+fn caps(input_type: i32, ime_options: i32) -> bool {
+    sentence_capitals(input_type, ime_options, String::new())
+}
+
+#[test]
+fn capitals_in_fields_written_in() {
+    // A web comment box (Chrome's textarea: several lines, no flags).
+    assert!(caps(TEXT | 0xa0 | MULTI_LINE, NO_ENTER_ACTION));
+    assert!(caps(TEXT | MULTI_LINE, 0));
+    assert!(caps(TEXT, NO_ENTER_ACTION));
+    // Messages, an email's subject.
+    assert!(caps(TEXT | 0x40, ACTION_SEND));
+    assert!(caps(TEXT | 0x50, 0));
+    assert!(caps(TEXT | 0x30, 0));
+    // A plain line of text, in an app or on a web page.
+    assert!(caps(TEXT, 0));
+    assert!(caps(TEXT | 0xa0, ACTION_GO));
+    // A field that asks for them (Chrome's text inputs: 0xc0a1).
+    assert!(caps(0xc0a1, ACTION_GO));
+    assert!(caps(TEXT | 0x60 | CAP_SENTENCES, 0));
+}
+
+#[test]
+fn no_capitals_where_nothing_is_written_in_sentences() {
+    // Passwords, web and email addresses.
+    for v in [0x80, 0x90, 0xe0, 0x10, 0x20, 0xd0] {
+        assert!(!caps(TEXT | v, 0), "{v:#x}");
+        assert!(!caps(TEXT | v | MULTI_LINE, 0), "{v:#x}");
+    }
+    for v in [0x80, 0x90, 0xe0] {
+        assert!(!caps(TEXT | v | CAP_SENTENCES, 0), "{v:#x}");
+    }
+    // Names and postal addresses follow their own flags (each word: the keyboard reads those).
+    assert!(!caps(TEXT | 0x60, 0));
+    assert!(!caps(TEXT | 0x60 | CAP_WORDS, 0));
+    assert!(!caps(TEXT | 0x70, 0));
+    // Filters, phonetic fields.
+    assert!(!caps(TEXT | 0xb0, 0));
+    assert!(!caps(TEXT | 0xc0, 0));
+    // Searches: by their enter key or their hint.
+    assert!(!caps(TEXT, ACTION_SEARCH));
+    assert!(!caps(TEXT | 0xa0, ACTION_SEARCH));
+    assert!(!caps(TEXT | MULTI_LINE, ACTION_SEARCH));
+    // Chrome asks for sentence capitals in a search box too (0x40a1): a search all the same.
+    assert!(!caps(0x40a1, 0x1200_0003));
+    for hint in ["Search", "Search or type URL", "Rechercher", "Suchen", "Buscar en YouTube", "検索", "Поиск"] {
+        assert!(!sentence_capitals(TEXT, 0, hint.into()), "{hint}");
+    }
+    // A hint that only has the letters inside a word is no search.
+    for hint in ["Écrivez un message", "Research notes", "Para ti"] {
+        assert!(sentence_capitals(TEXT, 0, hint.into()), "{hint}");
+    }
+    // Numbers, phones.
+    assert!(!caps(NUMBER, 0));
+    assert!(!caps(PHONE, 0));
+    // A plain line with no suggestions: codes, usernames.
+    assert!(!caps(TEXT | NO_SUGGESTIONS, 0));
+    assert!(!caps(TEXT | 0xa0 | NO_SUGGESTIONS, 0));
+    // Words or every letter alone aren't sentences (the keyboard follows those flags itself).
+    assert!(!caps(TEXT | 0x60 | CAP_CHARACTERS, 0));
 }

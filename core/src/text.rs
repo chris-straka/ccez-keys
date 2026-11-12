@@ -181,6 +181,75 @@ pub fn starts_sentence(before: String) -> bool {
     true
 }
 
+/// Android's field kinds (InputType, EditorInfo), as the keyboard is told them.
+mod field {
+    pub const CLASS: i32 = 0xf;
+    pub const CLASS_TEXT: i32 = 1;
+    pub const VARIATION: i32 = 0xff0;
+    pub const NORMAL: i32 = 0x00;
+    pub const EMAIL_SUBJECT: i32 = 0x30;
+    pub const SHORT_MESSAGE: i32 = 0x40;
+    pub const LONG_MESSAGE: i32 = 0x50;
+    pub const PASSWORD: i32 = 0x80;
+    pub const VISIBLE_PASSWORD: i32 = 0x90;
+    pub const WEB_EDIT_TEXT: i32 = 0xa0;
+    pub const WEB_PASSWORD: i32 = 0xe0;
+    pub const CAP_SENTENCES: i32 = 0x4000;
+    pub const MULTI_LINE: i32 = 0x20000;
+    pub const NO_SUGGESTIONS: i32 = 0x80000;
+    pub const ACTION: i32 = 0xff;
+    pub const ACTION_SEARCH: i32 = 3;
+    pub const NO_ENTER_ACTION: i32 = 0x4000_0000;
+}
+
+/// "Search" in a field's hint, in the languages the keyboard types.
+const SEARCH_HINTS: &[&str] = &[
+    "search", "recherch", "suche", "busca", "cerca", "pesquis", "zoek", "sök", "søg", "szukaj", "hledat", "поиск", "пошук", "検索", "搜索",
+    "검색", "αναζήτ", "بحث", "חיפוש", "खोज",
+];
+
+/// A search word in the hint, at a word's start ("Search…", "Rechercher").
+fn hint_searches(hint: &str) -> bool {
+    let hint = hint.to_lowercase();
+    SEARCH_HINTS.iter().any(|w| hint.match_indices(w).any(|(i, _)| !hint[..i].chars().next_back().is_some_and(char::is_alphabetic)))
+}
+
+/// Whether a field gets capitals at the start of its sentences when it
+/// doesn't ask for them (owner, 2026-11-12): any field sentences are
+/// written in. Several lines (a web comment or message box), a message or
+/// an email's subject, and a plain line of text that isn't a search. Never
+/// passwords, addresses (web, email), names and postal addresses (their
+/// own flags), filters, phonetic fields, searches, numbers, or a plain
+/// line with no suggestions (codes, usernames). A field that asks for
+/// sentence capitals has them, unless it's a search or a password.
+/// Capitals for each word or every letter are the field's own flags,
+/// read by the keyboard as before.
+#[uniffi::export]
+pub fn sentence_capitals(input_type: i32, ime_options: i32, hint: String) -> bool {
+    use field::*;
+    if input_type & CLASS != CLASS_TEXT {
+        return false;
+    }
+    let variation = input_type & VARIATION;
+    if matches!(variation, PASSWORD | VISIBLE_PASSWORD | WEB_PASSWORD) {
+        return false;
+    }
+    // A search, even one that asks: Chrome asks for sentence capitals in every field of a page.
+    if ime_options & ACTION == ACTION_SEARCH || hint_searches(&hint) {
+        return false;
+    }
+    if input_type & CAP_SENTENCES != 0 {
+        return true;
+    }
+    if !matches!(variation, NORMAL | EMAIL_SUBJECT | SHORT_MESSAGE | LONG_MESSAGE | WEB_EDIT_TEXT) {
+        return false;
+    }
+    if input_type & MULTI_LINE != 0 || ime_options & NO_ENTER_ACTION != 0 || variation != NORMAL && variation != WEB_EDIT_TEXT {
+        return true;
+    }
+    input_type & NO_SUGGESTIONS == 0
+}
+
 /// Text that looks like a password, an API key or a token: never shown,
 /// translated or sent to the AI. A long run of letters and digits mixed,
 /// or a known key prefix.
