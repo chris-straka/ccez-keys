@@ -151,6 +151,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private var autoSpace = false
     private var editor: EditorInfo? = null
     private var password = false
+    /** The field is one sentences are written in: they start with a capital (the core decides). */
+    private var sentenceCaps = false
     private var noLearn = false
     private var noCorrect = false
     /** Number, phone and date fields: digits go straight in, never composed. */
@@ -198,6 +200,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         noCorrect = password || variation in ADDRESSES || info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0
         numeric = cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE || cls == InputType.TYPE_CLASS_DATETIME
         rawKeys = info.inputType == InputType.TYPE_NULL
+        sentenceCaps = uk.ccez.keys.core.sentenceCapitals(info.inputType, info.imeOptions, info.hintText?.toString().orEmpty())
         swiped = null
         page = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE || cls == InputType.TYPE_CLASS_DATETIME) Page.SYMBOLS else Page.LETTERS
         clearWord()
@@ -1067,9 +1070,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /**
      * A capital next: where the field asks for one (each word, every letter),
      * or where a sentence starts (the core's rule: the field's start, a new
-     * line, after a full stop and a space). Sentences are found where the field
-     * asks for them, and in any field for writing (several lines, a message);
-     * a web form, an address or a search box gets only what it asks for.
+     * line, after a full stop and a space) in a field sentences are written
+     * in, asked or not (the core's sentence_capitals: a web comment box, a
+     * message, a plain line; never a search, an address or a code).
      */
     private fun capsHere(info: EditorInfo, pending: String): Boolean {
         val t = info.inputType
@@ -1077,10 +1080,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val ic = ic ?: return false
         val words = t and (InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or InputType.TYPE_TEXT_FLAG_CAP_WORDS)
         if (words != 0 && pending.isEmpty() && ic.getCursorCapsMode(words) != 0) return true
-        val variation = t and InputType.TYPE_MASK_VARIATION
-        val writing = variation in WRITING && info.imeOptions and EditorInfo.IME_MASK_ACTION != EditorInfo.IME_ACTION_SEARCH &&
-            (t and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0 || variation != InputType.TYPE_TEXT_VARIATION_NORMAL)
-        if (t and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0 && !writing) return false
+        if (!sentenceCaps) return false
         val before = ic.getTextBeforeCursor(CachedInput.READ, 0) ?: return false
         return uk.ccez.keys.core.startsSentence(before.toString() + pending)
     }
@@ -1239,13 +1239,6 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             InputType.TYPE_TEXT_VARIATION_PASSWORD,
             InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
             InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
-        )
-        /** Fields for writing in: capitals start sentences there whether the field asks or not. */
-        private val WRITING = setOf(
-            InputType.TYPE_TEXT_VARIATION_NORMAL,
-            InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE,
-            InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE,
-            InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT,
         )
         /** Marks a space goes in after (text.rs, space_after_mark). */
         private const val AUTO_SPACED = ".,!?)]}»”’\""
