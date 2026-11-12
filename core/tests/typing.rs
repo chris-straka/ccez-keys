@@ -136,6 +136,10 @@ fn addresses_and_numbers_left_alone() {
 fn settings_round_trip_and_refuse_bad_values() {
     let e = engine(&["fr"]);
     assert_eq!(e.setting("typing.autocorrect".into()).unwrap(), "true");
+    // A word tapped in the strip is copied unless turned off (owner, 2026-11-12).
+    assert_eq!(e.setting("learning.copy_click".into()).unwrap(), "true");
+    e.set_setting("learning.copy_click".into(), "false".into()).unwrap();
+    assert_eq!(e.setting("learning.copy_click".into()).unwrap(), "false");
     e.set_setting("typing.autocorrect".into(), "false".into()).unwrap();
     assert_eq!(fix(&e, "fr", "deja"), None);
     assert!(e.set_setting("typing.autocorrect".into(), "\"yes\"".into()).is_err());

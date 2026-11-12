@@ -68,6 +68,7 @@ pub const DEFS: &[Def] = &[
         about: "Languages being learned, most wanted first: the learning strip's order. Each one with a layout is typed in too.",
     },
     Def { key: "learning.strip", kind: Kind::Bool, default: || json!(true), about: "The learning strip: what you type, in a language you're learning." },
+    Def { key: "learning.copy_click", kind: Kind::Bool, default: || json!(true), about: "A word tapped in the strip is copied too (as the Mac's preview does). Never in a password or no-learning field." },
     Def { key: "learning.screen", kind: Kind::Int { min: 0, max: 12 }, default: || json!(4), about: "Learning words on screen over other apps (0: off). Needs Display over other apps and the accessibility service." },
     Def { key: "learning.screen_langs", kind: Kind::Int { min: 0, max: 24 }, default: || json!(0), about: "How many of the learning languages (in your order) screen words come from (0: all)." },
     Def { key: "learning.screen_typing", kind: Kind::Bool, default: || json!(true), about: "Screen words stay up while the keyboard is up." },

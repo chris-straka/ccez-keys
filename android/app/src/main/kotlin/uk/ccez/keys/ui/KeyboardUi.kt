@@ -786,8 +786,10 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
             Triple(Icons.clip, "Clipboard", "buttons.clipboard"),
             Triple(Icons.face, "Face key", "buttons.face"),
             Triple(Icons.mic, "Dictation", "buttons.mic"),
-            Triple(Icons.tr, "Translate", "learning.strip"),
             Triple(Icons.cam, "Camera text", "buttons.camera"),
+            Triple(Icons.tr, "Translate", "learning.strip"),
+            // A word tapped in the strip, copied (owner, 2026-11-12).
+            Triple(Icons.copy, "Copy words", "learning.copy_click"),
             Triple(Icons.vibrate, "Vibrate", "typing.vibrate"),
         ),
         version,
@@ -1093,5 +1095,6 @@ internal object Icons {
     val book = stroke("M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z", "M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5")
     val swipe = stroke("M3 15c3-6 5-8 7-5s3 4 5-1 4-3 6 0")
     val number = stroke("M5 9l2-1.5V16", "M10.5 9.5a2 2 0 0 1 4 .5c0 2-4 3.5-4 6h4", "M17.5 8h3l-2 3a2.5 2.5 0 1 1-1.5 4.5")
+    val copy = stroke("M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1v-10a1 1 0 0 1 1 -1z", "M5 15a1 1 0 0 1 -1 -1v-10a1 1 0 0 1 1 -1h10a1 1 0 0 1 1 1v1")
     val size = stroke("M4 9h16M4 15h16", "M12 3v4M12 17v4")
 }

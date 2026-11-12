@@ -261,9 +261,9 @@ private fun Word(w: StripWord, lang: String, typist: Typist, readings: Boolean) 
     Row(
         Modifier.let { m ->
             if (!w.word) m else m.clip(RoundedCornerShape(4.dp)).combinedClickable(
-                // Tap: the card (Learning / Known), and the word said. A hold drags
-                // the line instead (owner, 2026-11-08: to see a long sentence's start).
-                onClick = { typist.strip.open(lang, w) },
+                // Tap: the card (Learning / Known), the word said and copied. A hold
+                // drags the line instead (owner, 2026-11-08: to see a long sentence's start).
+                onClick = { typist.copyWord(w.text); typist.strip.open(lang, w) },
             )
         },
     ) {

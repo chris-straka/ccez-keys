@@ -1170,6 +1170,20 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     fun engineStatus(lang: String, word: String) = engine.wordStatus(lang, word)
 
+    /**
+     * A word tapped in the strip, copied as shown (a Japanese or Chinese word
+     * whole), as the Mac's preview does (owner, 2026-11-12). A normal copy:
+     * the clipboard panel and chip take it like any other. Never in a
+     * no-learning field; a password field has no strip, checked here too.
+     */
+    fun copyWord(word: String) {
+        if (password || noLearn || word.isBlank() || !app.flag("learning.copy_click")) return
+        val cm = service.getSystemService(android.content.ClipboardManager::class.java) ?: return
+        runCatching { cm.setPrimaryClip(android.content.ClipData.newPlainText("word", word)) }.onFailure { return }
+        // Android 13 and later show the copy themselves.
+        if (Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(service, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
 
     /** The word before the cursor, skipping `skip` characters of the word being typed. */
     private fun prevWord(skip: Int): String {
