@@ -47,9 +47,7 @@ Mac preview app:
   sing. etc.), not "third-person singular imperfect indicative"; the
   meaning-here "Appeared in the menu" was wrong (Apple's model). Clicking a
   word copies it, with a toast at the top: `docs/feedback/2026-11-10/mac-card-apparaissait.jpg`.
-- Maybe the cause of flicker in Chromium apps (ccez-keeps in the browser):
-  asking them for accessibility (AXEnhancedUserInterface) can make them
-  repaint. Check.
+
 
 # Plan
 
