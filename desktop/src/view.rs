@@ -409,20 +409,48 @@ impl View {
         self.toast_for(mtm, text, None);
     }
 
-    /// A toast with Undo at its end (tag [UNDO_TAG]), up for `secs`.
-    pub fn toast_undo(&self, mtm: MainThreadMarker, text: &str, secs: f64) {
-        self.toast_for(mtm, text, Some(secs));
+    /// A screen word's answer as a toast with Undo: the answer in its
+    /// colour, as Anki has them (Again red, Good green, Easy blue; Known
+    /// violet), then the word (owner, 2026-11-11: colours, no "back in").
+    pub fn toast_answer(&self, mtm: MainThreadMarker, answer: &str, word: &str, secs: f64) {
+        let (r, g, b) = match answer {
+            "Again" => (0.96, 0.42, 0.40),
+            "Good" => (0.42, 0.82, 0.48),
+            "Easy" => (0.42, 0.66, 0.98),
+            _ => (0.72, 0.58, 0.98),
+        };
+        let a = label(mtm, answer, 13.0, false);
+        a.setFont(Some(&NSFont::boldSystemFontOfSize(13.0)));
+        a.setTextColor(Some(&rgb(r, g, b)));
+        a.sizeToFit();
+        let mut parts = vec![a];
+        if !word.is_empty() {
+            parts.push(label(mtm, word, 13.0, false));
+        }
+        self.toast_with(mtm, parts, Some(secs));
     }
 
     fn toast_for(&self, mtm: MainThreadMarker, text: &str, undo: Option<f64>) {
+        self.toast_with(mtm, vec![label(mtm, text, 13.0, false)], undo);
+    }
+
+    /// A toast of `parts` side by side (a word's gap between them).
+    fn toast_with(&self, mtm: MainThreadMarker, parts: Vec<Retained<NSTextField>>, undo: Option<f64>) {
         let Some(content) = self.toast_bg.contentView() else {
             return;
         };
         for v in content.subviews().iter() {
             v.removeFromSuperview();
         }
-        let l = label(mtm, text, 13.0, false);
-        let (lw, lh) = (l.frame().size.width, l.frame().size.height);
+        let lh = parts.iter().map(|p| p.frame().size.height).fold(0.0, f64::max);
+        let mut x = 14.0;
+        for p in &parts {
+            let pw = p.frame().size.width;
+            p.setFrame(rect(x, 7.0, pw, lh));
+            content.addSubview(p);
+            x += pw + 6.0;
+        }
+        let lw = x - 6.0 - 14.0;
         // Undo, tinted, after the words: the toast takes clicks only then.
         let button = undo.map(|_| {
             let t = Tok { text: "Undo".into(), reading: String::new(), word: true, key: String::new(), status: 1 };
@@ -432,8 +460,6 @@ impl View {
         });
         let bw = button.as_ref().map(|b| b.frame().size.width + 14.0).unwrap_or(0.0);
         let (w, h) = (lw + 28.0 + bw, lh + 14.0);
-        l.setFrame(rect(14.0, 7.0, lw, lh));
-        content.addSubview(&l);
         if let Some(b) = &button {
             let bh = b.frame().size.height;
             b.setFrame(rect(14.0 + lw + 14.0, (h - bh) / 2.0, b.frame().size.width, bh));

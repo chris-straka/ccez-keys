@@ -20,7 +20,7 @@ use objc2_foundation::{NSRect, NSString};
 
 use crate::model::Rect;
 use crate::view::{fade_over, label, new_panel, rect, rgb};
-use ccez_keys_core::review::{Grade, Review, Snapshot};
+use ccez_keys_core::review::{Grade, Snapshot};
 
 /// How long a word stays when left alone.
 const STAYS: Duration = Duration::from_secs(90);
@@ -465,16 +465,6 @@ impl Floaters {
         Some((a.lang, a.word, a.known))
     }
 
-    /// What a click did, for its toast ("Good, back in 1 h"), from the
-    /// word's new time.
-    fn said(&self, what: &str, lang: &str, word: &str) -> String {
-        let back = self.engine.with_review(|r| r.due_at(lang, word)).map(|d| d.saturating_sub(Self::now()));
-        match back {
-            Some(s) => format!("{what}, back in {}", Review::wait_words(s)),
-            None => what.to_string(),
-        }
-    }
-
     /// The word `id` as it shows, without its article ("das Urteil" →
     /// "Urteil"; "parvenir à" stays whole): what a click copies.
     pub fn copy_text(&self, id: isize) -> Option<String> {
@@ -483,7 +473,7 @@ impl Floaters {
         Some(without_article(&w.lang, &w.shown))
     }
 
-    /// A click on word `id`: 0 Good, 1 Again, 2 Easy, 3 Known. What it did
+    /// A click on word `id`: 0 Good, 1 Again, 2 Easy, 3 Known. The answer
     /// (for a toast), and the word (lang, word) when Known, which the caller
     /// marks known everywhere.
     pub fn clicked(&self, mtm: MainThreadMarker, id: isize, kind: u8) -> Option<(String, Option<(String, String)>)> {
@@ -519,18 +509,18 @@ impl Floaters {
                 ws[i].open = true;
                 lay_out(mtm, &mut ws[i], primary_h);
                 drop(ws);
-                Some((self.said("Again", &lang, &word), None))
+                Some(("Again".to_string(), None))
             }
             3 => {
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
-                Some((format!("Known: {word}"), Some((lang, word))))
+                Some(("Known".to_string(), Some((lang, word))))
             }
             k => {
                 self.engine.with_review(|r| r.grade(&lang, &word, if k == 2 { Grade::Easy } else { Grade::Good }, Self::now()));
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
-                Some((self.said(if k == 2 { "Easy" } else { "Good" }, &lang, &word), None))
+                Some(((if k == 2 { "Easy" } else { "Good" }).to_string(), None))
             }
         }
     }

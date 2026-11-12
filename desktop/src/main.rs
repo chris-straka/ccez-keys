@@ -621,14 +621,13 @@ mod app {
                 let Some(mtm) = MainThreadMarker::new() else { return };
                 // Copied too, when "Copy a word when clicked" is on (owner,
                 // 2026-11-11), as a word in the preview is.
-                let copied = app.prefs.borrow().copy_click.then(|| app.floaters.copy_text(id)).flatten();
-                let Some((note, known)) = app.floaters.clicked(mtm, id, kind) else { return };
-                if let Some(t) = &copied {
-                    copy(t);
+                let shown = app.floaters.copy_text(id).unwrap_or_default();
+                let Some((answer, known)) = app.floaters.clicked(mtm, id, kind) else { return };
+                if app.prefs.borrow().copy_click && !shown.is_empty() {
+                    copy(&shown);
                 }
-                // Every answer says what it did, with Undo (owner, 2026-11-11).
-                let note = if copied.is_some() { format!("{note}, copied") } else { note };
-                app.view.toast_undo(mtm, &note, crate::float::UNDO_FOR.as_secs_f64());
+                // Every answer shows, in its colour, with Undo (owner, 2026-11-11).
+                app.view.toast_answer(mtm, &answer, &shown, crate::float::UNDO_FOR.as_secs_f64());
                 if let Some((lang, word)) = known {
                     // Known: off the learning list on every device (ccez-words).
                     app.engine.set_word_status(lang, word, ccez_keys_core::WordStatus::Known);
