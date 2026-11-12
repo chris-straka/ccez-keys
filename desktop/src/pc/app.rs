@@ -163,9 +163,8 @@ impl App {
         let off = self.prefs.paused || self.quiet(&front);
         let field = if off { None } else { self.access.focused() };
         let answer = self.worker.out.lock().unwrap().take();
-        let under_mouse = self.up && ctx.input(|i| i.pointer.hover_pos().is_some());
         let rows_for = |s: &crate::worker::Shown| crate::cards::rows(s, &self.prefs, &self.flags);
-        let inputs = Inputs { now: Instant::now(), off, field, held: false, under_mouse, shown: self.prefs.shown, langs: &self.langs };
+        let inputs = Inputs { now: Instant::now(), off, field, held: false, shown: self.prefs.shown, langs: &self.langs };
         let debug = std::env::var_os("CCEZ_DEBUG").is_some();
         if debug {
             eprintln!("tick front={front:?} off={off} field={:?} answer={}", inputs.field.as_ref().map(|f| (f.secure, f.before.clone(), f.caret, f.frame)), answer.is_some());
