@@ -1022,13 +1022,11 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             val left = if (s.correction != null || !s.typedKnown && mid != typed) typed else rest.getOrNull(0)
             val right = rest.firstOrNull { !it.equals(left, ignoreCase = true) && !it.equals(typed, ignoreCase = true) }
             ui.bar = Bar.Words(left, mid, right, s.correction != null, typed)
-            ui.emptyField = false
             return
         }
         val prev = prevWord(0)
         val next = if (prev.isNotEmpty() && !noLearn) engine.predict(lang, prev) else emptyList()
         ui.bar = if (next.isEmpty()) Bar.Buttons else Bar.Words(next.getOrNull(1), next[0], next.getOrNull(2), false, null)
-        ui.emptyField = next.isEmpty() && fieldEmpty()
     }
 
     // --- capitals and the selection ---

@@ -254,10 +254,11 @@ private fun BarRow(ui: UiState, typist: Typist) {
                     .combinedClickable(onClick = { if (on) typist.showKeys() else ui.panel = Panel.CLIPS }),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.clip, "Clipboard", tint = if (on) Colors.fg else Colors.muted, modifier = Modifier.size(20.dp)) }
-            // Right of it: something just copied, until pasted; on an empty field, the latest copy
-            // (a word, a phrase, a picture or screenshot). Tap: in it goes. Hold: the clipboard.
+            // Right of it: something just copied, until pasted; whenever the bar is idle (an
+            // empty field, or after a full stop: owner, 2026-11-12), the latest copy (a word,
+            // a phrase, a picture or screenshot). Tap: in it goes. Hold: the clipboard.
             val clip = ui.clip
-            val latest = if (ui.emptyField && ui.panel == Panel.KEYS) ui.latest else null
+            val latest = if (ui.panel == Panel.KEYS) ui.latest else null
             if (clip != null && (latest == null || latest is uk.ccez.keys.learn.Latest.Text)) {
                 TextChip(clip, onTap = { typist.paste(clip); ui.clip = null }, onHold = { ui.panel = Panel.CLIPS })
             } else if (latest is uk.ccez.keys.learn.Latest.Text) {
