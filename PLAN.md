@@ -42,11 +42,6 @@ Keyboard (phone):
   switches language; the flag shows undimmed for a moment after a switch.
 - SwiftKey's key placement and spacing may be better: compare.
 
-Mac preview app:
-- Card: the form as the short tags and icons the other apps use (3rd
-  sing. etc.), not "third-person singular imperfect indicative"; the
-  meaning-here "Appeared in the menu" was wrong (Apple's model). Clicking a
-  word copies it, with a toast at the top: `docs/feedback/2026-11-10/mac-card-apparaissait.jpg`.
 
 
 # Plan
