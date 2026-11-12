@@ -215,9 +215,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         findLatest()
     }
 
-    /** The latest copy, for the bar on an empty field. */
+    private var latestJob: kotlinx.coroutines.Job? = null
+
+    /** The latest copy, for the bar when it's idle. A burst of calls (a screenshot being saved) looks once. */
     fun findLatest() {
-        app.scope.launch {
+        latestJob?.cancel()
+        latestJob = app.scope.launch {
+            kotlinx.coroutines.delay(150)
             val l = runCatching { uk.ccez.keys.learn.Clips.latest(service) }.getOrNull()
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { ui.latest = l }
         }

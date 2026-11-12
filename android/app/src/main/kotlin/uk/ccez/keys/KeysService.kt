@@ -67,6 +67,13 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         private set
     private var clipboard: ClipboardManager? = null
     private val onClip = ClipboardManager.OnPrimaryClipChangedListener { readClip() }
+    /**
+     * A new picture saved (a screenshot) while the keyboard is up: Android
+     * doesn't restart the field for it, so the latest copy is looked for again.
+     */
+    private val onMedia = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) { typist.findLatest() }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -77,6 +84,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         App.instance.keymap = { typist.view.keymap() }
         App.instance.onRecovered = { runCatching { ui.panel = Panel.KEYS; ui.popup = null; typist.recover() } }
         clipboard = getSystemService(ClipboardManager::class.java)?.also { it.addPrimaryClipChangedListener(onClip) }
+        runCatching { contentResolver.registerContentObserver(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, onMedia) }
         App.instance.log("info", "keyboard-created")
     }
 
@@ -125,6 +133,7 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
 
     override fun onDestroy() {
         clipboard?.removePrimaryClipChangedListener(onClip)
+        runCatching { contentResolver.unregisterContentObserver(onMedia) }
         // Android finishes the input view inside super.onDestroy (a pause): destroyed after that.
         super.onDestroy()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
