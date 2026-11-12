@@ -23,25 +23,20 @@ Work these off and delete each when it ships.
 Work these off and delete each when it ships.
 
 Keyboard (phone):
-- Does it learn from what's typed? Make sure it does.
-- Empty field: the latest copy (picture, word, phrase) right of the
-  clipboard button.
-- Hold a picture in the clipboard panel: it opens large.
-- New lines start with a capital (not in web forms); after a full stop the
-  next word is capitalised (English and the languages that do this);
-  "im" becomes "I'm" and the other usual fixes.
-- Hold a suggestion: offers to remove it from suggestions (a saved
-  "ccezkeys" instead of "ccez-keys"); a word typed exactly can be saved
-  to suggestions by holding it (buzz and a toast).
-- Suggestions feel weak; do they use the whole paragraph? Going back to a
-  misspelled word (space, then delete) should offer corrections again.
-- A space after a full stop or comma, and after closing ) } ] " '.
-- The review word comes back when the field is emptied again (holding
-  delete).
-- Preview line: drag left/right scrolls the sentence; swipe up/down
-  switches language; the flag shows undimmed for a moment after a switch.
-- SwiftKey's key placement and spacing may be better: compare.
-
+- SwiftKey's key placement and spacing may be better: compare. Left for
+  the owner (a layout change goes through docs/layout.html first).
+  Ours, measured: keys 44 dp tall, 8 dp between rows, 5 dp between keys,
+  3 dp at the sides, so a letter on a 360 dp wide screen is a 30 x 44 dp
+  face in a 35 dp cell; bottom row ?123, ☺, comma, space (3.8 keys),
+  period, enter; shift and delete look narrower than they touch.
+  SwiftKey, as I know its default (not checked side by side: it can't
+  run on the emulator): about the same row height but much thinner gaps
+  (2-3 dp), so each key's face is bigger for the same keyboard; no face
+  key in the bottom row (emoji on its own key or held on enter), so the
+  space bar is wider; and it learns where each thumb lands, shifting the
+  keys' touch areas. Worth trying, if the owner wants: gaps 5 → 3 dp
+  and rows 8 → 4 dp with keys 48 dp tall (about the same height). A
+  SwiftKey screenshot from the S24 would settle the rest.
 
 
 # Plan
@@ -243,7 +238,8 @@ Donate: only in a Play Store build (CCEZ_KEYS_STORE=1, CCEZ_KEYS_DONATE_URL).
   words": asked the owner what they meant.
 - Editing a word's end (swim → swimm): letters after a word go on with it.
 - The four-square button was jarring: swipe the bar for the buttons.
-- A long strip line couldn't be moved: hold and drag scrolls it.
+- A long strip line couldn't be moved: dragging it sideways scrolls it
+  (up and down change language, since 2026-11-12).
 - Screenshots weren't in the clipboard: the panel shows the day's screenshots.
 - Hungarian on an empty line: a new line is empty; a new sentence starts at
   the first language.
