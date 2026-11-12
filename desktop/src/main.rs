@@ -627,7 +627,7 @@ mod app {
                     copy(t);
                 }
                 // Every answer says what it did, with Undo (owner, 2026-11-11).
-                let note = if copied.is_some() { format!("{note} · copied") } else { note };
+                let note = if copied.is_some() { format!("{note}, copied") } else { note };
                 app.view.toast_undo(mtm, &note, crate::float::UNDO_FOR.as_secs_f64());
                 if let Some((lang, word)) = known {
                     // Known: off the learning list on every device (ccez-words).

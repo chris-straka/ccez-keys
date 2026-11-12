@@ -465,12 +465,12 @@ impl Floaters {
         Some((a.lang, a.word, a.known))
     }
 
-    /// What a click did, for its toast ("Good · back in 1 h"), from the
+    /// What a click did, for its toast ("Good, back in 1 h"), from the
     /// word's new time.
     fn said(&self, what: &str, lang: &str, word: &str) -> String {
         let back = self.engine.with_review(|r| r.due_at(lang, word)).map(|d| d.saturating_sub(Self::now()));
         match back {
-            Some(s) => format!("{what} · back in {}", Review::wait_words(s)),
+            Some(s) => format!("{what}, back in {}", Review::wait_words(s)),
             None => what.to_string(),
         }
     }
