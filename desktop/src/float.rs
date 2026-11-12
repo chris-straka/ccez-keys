@@ -57,15 +57,6 @@ objc2::define_class!(
     pub struct FloatWord;
 
     impl FloatWord {
-        // The pointing finger over a word (it takes clicks).
-        #[unsafe(method(mouseEntered:))]
-        fn mouse_entered(&self, _e: &NSEvent) {
-            objc2_app_kit::NSCursor::pointingHandCursor().set();
-        }
-        #[unsafe(method(mouseExited:))]
-        fn mouse_exited(&self, _e: &NSEvent) {
-            objc2_app_kit::NSCursor::arrowCursor().set();
-        }
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, _e: &NSEvent) {
             fire(self.tag(), 0);
@@ -86,6 +77,47 @@ objc2::define_class!(
         }
     }
 );
+
+objc2::define_class!(
+    /// Over a whole word's pill, on top and click-through: the pointing
+    /// finger the moment the pointer is on it and on every move (the app
+    /// underneath puts its own cursor back as the pointer moves), the arrow
+    /// when it leaves. The one place a word sets the cursor, so two never
+    /// take turns.
+    #[unsafe(super(objc2_app_kit::NSView, objc2_app_kit::NSResponder, objc2_foundation::NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "CcezKeysFloatPad"]
+    struct FloatPad;
+
+    impl FloatPad {
+        #[unsafe(method(mouseEntered:))]
+        fn mouse_entered(&self, _e: &NSEvent) {
+            objc2_app_kit::NSCursor::pointingHandCursor().set();
+        }
+        #[unsafe(method(mouseMoved:))]
+        fn mouse_moved(&self, _e: &NSEvent) {
+            objc2_app_kit::NSCursor::pointingHandCursor().set();
+        }
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited(&self, _e: &NSEvent) {
+            objc2_app_kit::NSCursor::arrowCursor().set();
+        }
+        #[unsafe(method(hitTest:))]
+        fn hit_test(&self, _p: objc2_foundation::NSPoint) -> *mut objc2_app_kit::NSView {
+            std::ptr::null_mut()
+        }
+    }
+);
+
+fn pad(mtm: MainThreadMarker, frame: NSRect) -> Retained<objc2_app_kit::NSView> {
+    use objc2::AllocAnyThread;
+    use objc2_app_kit::{NSTrackingArea, NSTrackingAreaOptions};
+    let p: Retained<FloatPad> = unsafe { objc2::msg_send![FloatPad::alloc(mtm), initWithFrame: frame] };
+    let opts = NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::MouseMoved | NSTrackingAreaOptions::ActiveAlways | NSTrackingAreaOptions::InVisibleRect;
+    let area = unsafe { NSTrackingArea::initWithRect_options_owner_userInfo(NSTrackingArea::alloc(), p.bounds(), opts, Some(&p), None) };
+    p.addTrackingArea(&area);
+    Retained::into_super(p)
+}
 
 struct Word {
     id: isize,
@@ -626,10 +658,6 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let wx = (width - ww) / 2.0;
     w.button.setFrame(rect(wx, mh + 5.0, ww, wh));
     content.addSubview(&w.button);
-    for t in w.button.trackingAreas().iter() {
-        w.button.removeTrackingArea(&t);
-    }
-    crate::view::pointer(&w.button);
     let mut x = wx + ww + 4.0;
     for (p, pw, ph) in &pills {
         p.setFrame(rect(x, mh + 5.0 + (wh - ph) / 2.0, *pw, *ph));
@@ -647,5 +675,6 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let frame: NSRect = rect(cx - width / 2.0, top - height, width, height);
     w.panel.setFrame_display(frame, true);
     w.bg.setFrame(rect(0.0, 0.0, width, height));
+    content.addSubview(&pad(mtm, content.bounds()));
     w.bg.setCornerRadius(height.min(28.0) / 2.0);
 }
