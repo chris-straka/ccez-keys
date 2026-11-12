@@ -83,9 +83,38 @@ impl Learn {
         dir.join("dict")
     }
 
-    fn status_of(&self, lang: &str, word: &str, lemma: &str) -> WordStatus {
+    /// A word's status, by the form every app saves it under: its
+    /// dictionary headword (`Words::headword`, ccez-lang-core v0.1.2), so
+    /// "freiner" known covers "freinent". A status still kept under the
+    /// form met (from before the move; ccez-words sends it on to the
+    /// headword) is found too.
+    pub(crate) fn status_of(&self, lang: &str, word: &str, lemma: &str) -> WordStatus {
+        if let Some(head) = self.words.headword(lang, word, if lemma.is_empty() { None } else { Some(lemma) }) {
+            let by_head = self.statuses.status(lang, &head);
+            if by_head != Status::New {
+                return by_head.into();
+            }
+        }
         let by_lemma = if lemma.is_empty() { Status::New } else { self.statuses.status(lang, lemma) };
         if by_lemma != Status::New { by_lemma.into() } else { self.statuses.status(lang, word).into() }
+    }
+
+    /// Sets a word's status under its headword, as every app saves it.
+    /// None (a number, a name, a fragment): nothing to save. New clears
+    /// the word under the form met and its headword alike.
+    pub fn set_status(&self, lang: &str, word: &str, status: Status) {
+        match status {
+            Status::New => {
+                self.statuses.set(lang, word, Status::New);
+                if let Some(head) = self.words.headword(lang, word, None) {
+                    self.statuses.set(lang, &head, Status::New);
+                }
+            }
+            s => {
+                let Some(head) = self.words.headword(lang, word, None) else { return };
+                self.statuses.set(lang, &head, s);
+            }
+        }
     }
 
     pub fn tokens(&self, lang: &str, text: &str) -> Vec<StripWord> {
@@ -160,5 +189,98 @@ impl Learn {
     /// Pulls and pushes statuses; returns how many came down.
     pub fn sync(&self, server: &str, from: &str) -> Result<u32, String> {
         self.rt.block_on(self.statuses.sync(server, from)).map(|v| v.len() as u32).map_err(|e| e.to_string())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// A small French and German dictionary on disk, the way the apps pack one.
+    fn learn_with_dicts() -> (Learn, PathBuf) {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("ccez-keys-learn-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let learn = Learn::new(&dir);
+        let pack = |lang: &str, lines: &[&str]| {
+            let file = dir.join(format!("{lang}.tsv.gz"));
+            let mut gz = flate2::write::GzEncoder::new(
+                std::fs::File::create(&file).unwrap(),
+                flate2::Compression::default(),
+            );
+            for line in lines {
+                writeln!(gz, "{line}").unwrap();
+            }
+            gz.finish().unwrap();
+            learn.words.install(lang, &file).unwrap();
+        };
+        pack(
+            "fr",
+            &[
+                "freinent\t[\"\",[],[[\"freiner\",\"inflection of freiner: third-person plural present indicative\"]]]",
+                "freiner\t[\"/fʁe.ne/\",[[\"verb\",\"\",[\"to brake\"]]],[]]",
+                "maison\t[\"/mɛ.zɔ̃/\",[[\"noun\",\"f\",[\"house\"]]],[]]",
+            ],
+        );
+        pack(
+            "de",
+            &[
+                "Wasser\t[\"/ˈvasɐ/\",[[\"noun\",\"n\",[\"water\"]]],[]]",
+                "häuser\t[\"\",[],[[\"Haus\",\"plural of Haus\"]]]",
+                "Haus\t[\"/haʊ̯s/\",[[\"noun\",\"n\",[\"house\"]]],[]]",
+            ],
+        );
+        (learn, dir)
+    }
+
+    #[test]
+    fn statuses_go_through_the_headword() {
+        let (learn, dir) = learn_with_dicts();
+        // Saved by its form, kept under its headword; the headword's
+        // status covers every form.
+        learn.set_status("fr", "freinent", Status::Learning);
+        assert_eq!(learn.statuses.words("fr", Status::Learning), ["freiner"]);
+        assert_eq!(learn.status_of("fr", "freinent", ""), WordStatus::Learning);
+        assert_eq!(learn.status_of("fr", "freiner", ""), WordStatus::Learning);
+        learn.set_status("fr", "freiner", Status::Known);
+        assert_eq!(learn.status_of("fr", "freinent", ""), WordStatus::Known);
+        // A German noun in lower case is its noun; a plural its word.
+        learn.set_status("de", "wasser", Status::Learning);
+        learn.set_status("de", "Häuser", Status::Known);
+        assert_eq!(learn.statuses.words("de", Status::Learning), ["Wasser"]);
+        assert_eq!(learn.status_of("de", "häuser", ""), WordStatus::Known);
+        assert_eq!(learn.status_of("de", "Haus", ""), WordStatus::Known);
+        // The strip sees it too: a form in a sentence takes its headword's status.
+        let toks = learn.tokens("fr", "ils freinent");
+        assert!(
+            toks.iter()
+                .any(|t| t.text == "freinent" && t.status == WordStatus::Known),
+            "{toks:?}"
+        );
+        // New clears it, asked by either form.
+        learn.set_status("fr", "freinent", Status::New);
+        assert_eq!(learn.status_of("fr", "freiner", ""), WordStatus::New);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_word_with_no_headword_saves_nothing() {
+        let (learn, dir) = learn_with_dicts();
+        learn.set_status("fr", "2024", Status::Learning);
+        learn.set_status("fr", "fre", Status::Known);
+        learn.set_status("de", "Trump", Status::Learning);
+        assert!(learn.statuses.words("fr", Status::Learning).is_empty());
+        assert!(learn.statuses.words("fr", Status::Known).is_empty());
+        assert!(learn.statuses.words("de", Status::Learning).is_empty());
+        assert_eq!(learn.status_of("fr", "maison", ""), WordStatus::New);
+        // Still kept from before the move, under its form: found, and
+        // clearing by the form takes it out.
+        learn.statuses.set("fr", "freinent", Status::Learning);
+        assert_eq!(learn.status_of("fr", "freinent", ""), WordStatus::Learning);
+        learn.set_status("fr", "freinent", Status::New);
+        assert_eq!(learn.status_of("fr", "freinent", ""), WordStatus::New);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

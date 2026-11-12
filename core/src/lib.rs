@@ -519,12 +519,16 @@ impl Engine {
             .collect()
     }
 
+    /// By the word's headword, the form every app saves it under
+    /// (`Words::headword`): "freiner" known covers "freinent".
     pub fn word_status(&self, lang: String, word: String) -> WordStatus {
-        self.learn.statuses.status(&lang, &word).into()
+        self.learn.status_of(&lang, &word, "")
     }
 
+    /// Saved under its headword; a word with none (a number, a name, a
+    /// fragment) saves nothing.
     pub fn set_word_status(&self, lang: String, word: String, status: WordStatus) {
-        self.learn.statuses.set(&lang, &word, status.into());
+        self.learn.set_status(&lang, &word, status.into());
     }
 
     /// Statuses to and from ccez-words (`words.server`), and with them the
