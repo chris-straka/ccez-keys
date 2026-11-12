@@ -14,7 +14,7 @@ ccez-keys-core = { path = "../core" }
 auto-launch = "0.6"
 serde_json = "1"
 sha2 = "0.10"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 # Mozilla's Firefox Translations models, pure Rust (portable: no C++ to build on Windows).
