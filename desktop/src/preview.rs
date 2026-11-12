@@ -131,6 +131,10 @@ impl Preview {
         // emptied field starts blank (sentence_of).
         let picked = field.selected.trim();
         let sentence = if picked.is_empty() { sentence_of(field.before.clone()) } else { picked.chars().take(400).collect() };
+        // Invisible characters aren't text: Discord's empty box holds a
+        // zero-width one, which trim() keeps, and its "sentence" showed as
+        // flags with nothing beside them (owner, 2026-11-12).
+        let sentence: String = sentence.chars().filter(|c| !invisible(*c)).collect();
         // Just swapped in for a translation (and typed on from there): nothing to show.
         if !self.swapped.is_empty() {
             if sentence.starts_with(self.swapped.as_str()) {
@@ -306,6 +310,10 @@ mod tests {
         assert!(r.p.line.is_empty());
         r.tick(900, "Hi", None);
         assert!(!r.tick(1000, "", None).show);
+        // Discord's empty box: a zero-width character, which is no text.
+        let z = r.tick(1100, "\u{FEFF}", None);
+        assert!(!z.show && z.ask.is_none());
+        assert!(r.tick(1500, "\u{200B}", None).ask.is_none(), "nothing asked for it either");
     }
 
     #[test]
@@ -347,4 +355,10 @@ mod tests {
         assert_eq!(linger(140), Duration::from_secs(18));
         assert_eq!(linger(1000), Duration::from_secs(20));
     }
+}
+
+/// Characters with no look of their own: zero-width spaces and joiners,
+/// direction marks, the byte-order mark.
+fn invisible(c: char) -> bool {
+    matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}')
 }
