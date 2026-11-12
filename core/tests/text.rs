@@ -70,9 +70,10 @@ fn secrets_are_never_sent() {
 
 #[test]
 fn form_tags() {
-    assert_eq!(form_tag("participle past of unterhalten".into()), "past participle · unterhalten");
-    assert_eq!(form_tag("third-person singular present indicative of être".into()), "third-person singular present indicative · être");
-    assert_eq!(form_tag("(archaic) plural of Buch.".into()), "plural · Buch");
+    assert_eq!(form_tag("participle past of unterhalten".into()), "⏪ participle · unterhalten");
+    assert_eq!(form_tag("third-person singular present indicative of être".into()), "3rd 👤 ▶ · être");
+    assert_eq!(form_tag("(archaic) plural of Buch.".into()), "👨‍👨‍👧‍👦 · Buch");
+    assert_eq!(form_tag("third-person singular imperfect indicative of apparaître".into()), "3rd 👤 imperfect · apparaître");
     // Real meanings stay meanings.
     assert_eq!(form_tag("to entertain".into()), "");
     assert_eq!(form_tag("the end of the line".into()), "");
@@ -80,7 +81,7 @@ fn form_tags() {
     assert_eq!(form_tag("a form of government".into()), "");
     assert_eq!(form_tag("a variant of chess".into()), "");
     assert_eq!(form_tag("in a tense state of mind".into()), "");
-    assert_eq!(form_tag("feminine plural of beau".into()), "feminine plural · beau");
-    assert_eq!(form_tag("first/third-person singular present subjunctive of aller".into()), "first/third-person singular present subjunctive · aller");
+    assert_eq!(form_tag("feminine plural of beau".into()), "feminine 👨‍👨‍👧‍👦 · beau");
+    assert_eq!(form_tag("first/third-person singular present subjunctive of aller".into()), "1st/3rd 👤 ▶ subjunctive · aller");
     assert_eq!(form_tag("inflection of garer:".into()), "inflection · garer");
 }

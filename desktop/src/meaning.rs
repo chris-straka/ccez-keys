@@ -1,5 +1,6 @@
-//! A word's meaning in its sentence, for its card: Apple's on-device model
-//! through the Swift helper (free, offline), asked once per word and
+//! A word's meaning in its sentence, for its card: the dictionary sense
+//! Apple's on-device model picks for it through the Swift helper (free,
+//! offline), asked once per word and
 //! sentence and kept on disk. Nothing comes back while the model isn't
 //! there (Apple Intelligence off, or still downloading): the card keeps the
 //! dictionary's meaning.
@@ -26,8 +27,10 @@ pub struct Meanings {
     pub out: Arc<Mutex<Option<(String, String)>>>,
 }
 
+/// "2": answers since the model picks a dictionary sense (older ones,
+/// written by the model, were often wrong and aren't used).
 pub fn key(lang: &str, word: &str, sentence: &str) -> String {
-    format!("{lang}\u{1f}{word}\u{1f}{sentence}")
+    format!("2\u{1f}{lang}\u{1f}{word}\u{1f}{sentence}")
 }
 
 impl Meanings {
@@ -43,11 +46,12 @@ impl Meanings {
     }
 
     /// Asks in the background; the answer lands in `out`.
-    pub fn ask(self: &Arc<Self>, lang: String, word: String, sentence: String) {
+    /// `senses`: the word's dictionary senses, one of which comes back.
+    pub fn ask(self: &Arc<Self>, lang: String, word: String, sentence: String, senses: Vec<String>) {
         let me = self.clone();
         std::thread::spawn(move || {
             let k = key(&lang, &word, &sentence);
-            let Some(text) = me.request(&lang, &word, &sentence) else { return };
+            let Some(text) = me.request(&lang, &word, &sentence, &senses) else { return };
             {
                 let mut c = me.cache.lock().unwrap();
                 c.retain(|(old, _)| *old != k);
@@ -64,7 +68,7 @@ impl Meanings {
         });
     }
 
-    fn request(&self, lang: &str, word: &str, sentence: &str) -> Option<String> {
+    fn request(&self, lang: &str, word: &str, sentence: &str, senses: &[String]) -> Option<String> {
         let mut h = self.helper.lock().unwrap();
         if h.is_none() {
             let path = std::env::current_exe().ok()?.with_file_name("ccez-keys-translate");
@@ -74,7 +78,7 @@ impl Meanings {
             *h = Some(Helper { _child: child, stdin, stdout });
         }
         let helper = h.as_mut()?;
-        let ask = serde_json::json!({"id": 1, "meaning": {"lang": lang, "word": word, "sentence": sentence}});
+        let ask = serde_json::json!({"id": 1, "meaning": {"lang": lang, "word": word, "sentence": sentence, "senses": senses}});
         let mut line = String::new();
         let ok = writeln!(helper.stdin, "{ask}").is_ok() && helper.stdin.flush().is_ok() && helper.stdout.read_line(&mut line).is_ok_and(|n| n > 0);
         if !ok {
@@ -85,4 +89,3 @@ impl Meanings {
         v.get("text").and_then(|t| t.as_str()).map(str::to_string).filter(|t| !t.is_empty())
     }
 }
-

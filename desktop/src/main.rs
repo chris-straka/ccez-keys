@@ -741,7 +741,8 @@ mod app {
                         let mkey = crate::meaning::key(&lang, &tok.text, &sentence);
                         let here = app.meanings.known(&mkey);
                         if here.is_none() {
-                            app.meanings.ask(lang.clone(), tok.text.clone(), sentence);
+                            let senses = crate::cards::card_senses(&app.engine, &lang, card.as_ref());
+                            app.meanings.ask(lang.clone(), tok.text.clone(), sentence, senses);
                         }
                         app.view.open_card(mtm, &head, &sub, &crate::cards::card_text(here.as_deref(), &meaning), st);
                         *app.card_view.borrow_mut() = Some((head, sub, meaning, st, mkey));

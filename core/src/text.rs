@@ -131,7 +131,7 @@ const GRAMMAR_WORDS: &[&str] = &[
 ];
 
 /// A meaning that only names the word's form, as a short tag: "participle
-/// past of unterhalten" → "past participle · unterhalten"; "" for a real
+/// past of unterhalten" → "⏪ participle · unterhalten"; "" for a real
 /// meaning ("to entertain").
 #[uniffi::export]
 pub fn form_tag(meaning: String) -> String {
@@ -151,5 +151,32 @@ pub fn form_tag(meaning: String) -> String {
     for tense in ["past", "present", "perfect", "future"] {
         grammar = grammar.replace(&format!("participle {tense}"), &format!("{tense} participle"));
     }
-    format!("{grammar} · {lemma}")
+    format!("{} · {lemma}", short_grammar(&grammar))
+}
+
+/// Grammar words short, as every app draws them (owner, 2026-10-24, from
+/// ccez-llm): persons 1st 2nd 3rd, singular 👤, plural 👨‍👨‍👧‍👦, present ▶,
+/// past ⏪, future ⏩, continuous 🔁; "indicative", the default mood, goes.
+/// "third-person singular imperfect indicative" → "3rd 👤 imperfect".
+pub fn short_grammar(grammar: &str) -> String {
+    const SHORT: [(&str, &str); 11] = [
+        ("first-person", "1st"),
+        ("second-person", "2nd"),
+        ("third-person", "3rd"),
+        ("singular", "👤"),
+        ("plural", "👨‍👨‍👧‍👦"),
+        ("continuous", "🔁"),
+        ("progressive", "🔁"),
+        ("present", "▶"),
+        ("past", "⏪"),
+        ("future", "⏩"),
+        ("indicative", ""),
+    ];
+    let one = |w: &str| SHORT.iter().find(|(long, _)| *long == w).map_or(w.to_string(), |(_, short)| short.to_string());
+    // "first/third-person": each side ("1st/3rd").
+    let word = |w: &str| match w.split_once('/') {
+        Some((a, b)) if b.ends_with("-person") && !a.ends_with("-person") => format!("{}/{}", one(&format!("{a}-person")), one(b)),
+        _ => w.split('/').map(one).collect::<Vec<_>>().join("/"),
+    };
+    grammar.split_whitespace().map(word).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ")
 }

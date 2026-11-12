@@ -7,9 +7,10 @@ import Foundation
 import Translation
 import FoundationModels
 
-// Or, for a word's card: {"id":2,"meaning":{"lang":"fr","word":"d'accord","sentence":"D'accord, on y va."}}
-// → {"id":2,"text":"okay, agreed"} from Apple's on-device model, or {"id":2,"error":"unavailable: …"}.
-struct Meaning: Decodable { let lang: String; let word: String; let sentence: String }
+// Or, for a word's card: {"id":2,"meaning":{"lang":"de","word":"Spur","sentence":"Er wechselte auf die linke Spur.","senses":["trace","lead, clue","lane"]}}
+// → {"id":2,"text":"lane"}: the dictionary sense the word has there, picked by
+// Apple's on-device model, or {"id":2,"error":"unavailable: …"}.
+struct Meaning: Decodable { let lang: String; let word: String; let sentence: String; let senses: [String]? }
 struct Ask: Decodable { let id: Int; let from: String?; let to: String?; let text: String?; let readings: Bool?; let meaning: Meaning? }
 struct Answer: Encodable { let id: Int; let text: String?; let error: String?; var ruby: [[String]]? = nil }
 
@@ -78,17 +79,33 @@ func ruby(_ text: String, _ lang: String) -> [[String]] {
     return out
 }
 
-/// What a word means in its sentence, in a few English words, from the
-/// on-device model (free, offline). A fresh session each time: no history.
+/// Which of a word's dictionary senses it has in its sentence, picked by
+/// the on-device model (free, offline): picked, never written, since asked
+/// for a meaning of its own it translated the words around ("Verdict not
+/// final" for Urteil, "we protect" for sapons; it picked right in 9 of 9
+/// checks). With no senses to pick from, a dictionary-style meaning, at most
+/// four words. A fresh session each time: no history.
 func meaning(_ id: Int, _ m: Meaning) async -> Answer {
     let model = SystemLanguageModel.default
     guard case .available = model.availability else {
         return Answer(id: id, text: nil, error: "unavailable: \(model.availability)")
     }
-    let session = LanguageModelSession(instructions: "You help someone learning a language. Given a sentence and one word or phrase from it, say what that word means in that sentence, in English. Answer with only the meaning: at most six words, no quotes, no explanation.")
+    let senses = m.senses ?? []
     do {
-        let r = try await session.respond(to: "Language: \(m.lang)\nSentence: \(m.sentence)\nWord: \(m.word)")
+        if senses.count == 1 { return Answer(id: id, text: senses[0], error: nil) }
+        if senses.count > 1 {
+            let session = LanguageModelSession(instructions: "You help someone learning a language. You get a sentence, one word from it, and that word's dictionary senses, numbered. Answer with only the number of the sense the word has in this sentence.")
+            let list = senses.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+            let r = try await session.respond(to: "Sentence: \(m.sentence)\nWord: \(m.word)\nSenses:\n\(list)\nNumber:")
+            guard let n = Int(String(r.content.filter(\.isNumber).prefix(2))), n >= 1, n <= senses.count else {
+                return Answer(id: id, text: nil, error: "no pick: \(r.content)")
+            }
+            return Answer(id: id, text: senses[n - 1], error: nil)
+        }
+        let session = LanguageModelSession(instructions: "You are a bilingual dictionary. Given a sentence and one word from it, give the English meaning of that one word as it is used there, the way a dictionary writes it: a verb as \"to …\", a noun without \"the\". Never translate the words around it; at most four words. Answer with the meaning only.")
+        let r = try await session.respond(to: "Language: \(m.lang)\nSentence: \(m.sentence)\nWord: \(m.word)\nMeaning:")
         let text = r.content.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"“”«»."))
+        if text.split(separator: " ").count > 4 { return Answer(id: id, text: nil, error: "too long") }
         return Answer(id: id, text: text, error: nil)
     } catch {
         return Answer(id: id, text: nil, error: "\(error)")
