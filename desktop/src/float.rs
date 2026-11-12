@@ -3,7 +3,7 @@
 //! spot the front window has no content in and no other window covers,
 //! faint until the pointer is over it, when its meaning shows. Anki's three
 //! on the mouse: left click Good (back later, later each time), right click
-//! Again (its meaning a moment, it stays, due again in two minutes), middle click Easy (back
+//! Again (back in two minutes), middle click Easy (back
 //! much later). Each leaves after a while and another comes; one whose spot
 //! fills up goes at once. Looking for spots reads the front window's layout,
 //! so it runs on its own thread every few seconds.
@@ -477,7 +477,7 @@ impl Floaters {
     /// (for a toast), and the word (lang, word) when Known, which the caller
     /// marks known everywhere.
     pub fn clicked(&self, mtm: MainThreadMarker, id: isize, kind: u8) -> Option<(String, Option<(String, String)>)> {
-        let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
+        let _ = mtm;
         let i = self.words.borrow().iter().position(|w| w.id == id)?;
         let (lang, word) = {
             let ws = self.words.borrow();
@@ -501,14 +501,12 @@ impl Floaters {
         }
         match kind {
             1 => {
+                // Fades out at once like the others, back in two minutes
+                // (owner, 2026-11-11: "I expect it to fade out when I right
+                // click it"; staying, then leaving after 2.5 s, both felt off).
                 self.engine.with_review(|r| r.grade(&lang, &word, Grade::Again, Self::now()));
-                // Its meaning a moment; the word stays, its time on screen anew.
-                let mut ws = self.words.borrow_mut();
-                ws[i].hold_until = Some(Instant::now() + Duration::from_millis(2500));
-                ws[i].came = Instant::now();
-                ws[i].open = true;
-                lay_out(mtm, &mut ws[i], primary_h);
-                drop(ws);
+                let w = self.words.borrow_mut().remove(i);
+                self.leave(w, false);
                 Some(("Again".to_string(), None))
             }
             3 => {
