@@ -1,30 +1,13 @@
-# Phone: learning words on screen — what's left (built 2026-11-11)
+# Phone: learning words on screen — removed (2026-11-11)
 
-Steps 1–6 shipped: `core/src/review.rs` + `core/src/gloss.rs` (the Mac
-calls them too; `learning.screen*` settings; `keys screen` for checks),
-the accessibility spot look (bounds only, every 4 s), one overlay
-window per word (tap Good, double-tap Easy, long-press Again), the
-settings section with the two permission rows, and the home-screen
-widget is gone. Battery (step 6): `dumpsys batterystats` on the
-emulator, screen on with words cycling — 0.052 mAh estimated in 1 h
-(uid of the app, all of it CPU; the emulator's power profile is
-synthetic, so read it as "next to nothing", not a phone number).
-
-Left:
-
-- ccez-words needs `GET`/`POST /review` (contract in
-  `core/src/review.rs`) for a grade on one device to put the word off
-  on the other; the client side is in (`sync_words` carries it, an old
-  server's 404 is fine), so until then each device keeps its own
-  schedule. That repo wasn't touched from here.
-- Screenshots: `FLAG_SECURE` **is** per window for overlays on the
-  emulator (Android 16) — the saved screenshot blanks each word
-  window. Hiding when the screenshot UI appears is in too (8 s quiet),
-  for scrolling screenshots. Recheck the blanking on the S24.
-- Not separately shown on the emulator: the password-field case on
-  its own (the PIN lock screen covers keyguard + `isPassword`
-  together), and the full-screen-video switch off (detection is a
-  big Surface/Texture/PlayerView; no real player tried).
+The phone overlay (one window per word over other apps, through an
+accessibility service) was built and then removed at the owner's word
+("remove the overlay thing on my android phone"): ccez-launcher shows the
+words on the home screen instead. Its core half stays, because the
+launcher uses it: `core/src/review.rs` (FSRS, synced through ccez-words'
+`/review`), `core/src/gloss.rs`, `Engine::screen_words` and the
+`learning.screen*` counts. The overlay code is in git history before
+this note if it's ever wanted back.
 
 # Owner notes, 2026-11-11 (desktop preview)
 

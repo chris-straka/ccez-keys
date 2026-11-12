@@ -758,8 +758,6 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
         Spacer(Modifier.weight(1f))
         Text("›", color = Colors.muted, fontSize = 20.sp)
     }
-    Heading("Words on screen")
-    ScreenWordsSettings(version)
     Heading("AI")
     AiSettings(version)
     Heading("About")
@@ -779,69 +777,6 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("Licences", color = Colors.fg, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Text("›", color = Colors.muted, fontSize = 20.sp)
-    }
-}
-
-/** Words on screen over other apps: how many, from how many languages, the two switches, and the two permissions. */
-@Composable
-private fun ScreenWordsSettings(version: Int) {
-    val ctx = LocalContext.current
-    val app = App.instance
-    // The permissions live in Android's own screens: read again each second while this panel is up.
-    var overlay by remember { mutableStateOf(false) }
-    var access by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            overlay = android.provider.Settings.canDrawOverlays(ctx)
-            access = uk.ccez.keys.overlay.ScreenWordsService.enabled(ctx)
-            kotlinx.coroutines.delay(1000)
-        }
-    }
-    NumberRow("Words", remember(version) { app.number("learning.screen") }, 0..12, { if (it == 0) "Off" else "$it" }) { set("learning.screen", it.toString()) }
-    val n = learning().size
-    NumberRow("Languages", remember(version) { app.number("learning.screen_langs") }, 0..n, { if (it == 0) "All" else "$it" }) { set("learning.screen_langs", it.toString()) }
-    TwoColumns(
-        listOf(
-            Triple(Icons.capital, "While typing", "learning.screen_typing"),
-            Triple(Icons.cam, "While a video plays", "learning.screen_video"),
-            Triple(Icons.dot, "Hide in screenshots", "learning.screen_hide_shots"),
-        ),
-        version,
-    )
-    SetupRow("Display over other apps", overlay) {
-        ctx.startActivity(
-            android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + ctx.packageName))
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-    SetupRow("Accessibility: Words on screen", access) {
-        ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
-    if (android.os.Build.VERSION.SDK_INT >= 33 && !access) {
-        Text("Android 13+: App info ⋮ Allow restricted settings first.", color = Colors.dim, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
-    }
-}
-
-@Composable
-private fun NumberRow(label: String, now: Int, range: IntRange, show: (Int) -> String, to: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-        Text("−", color = Colors.fg, fontSize = 18.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).combinedClickableCompat { to((now - 1).coerceIn(range)) }.padding(horizontal = 10.dp, vertical = 4.dp))
-        Text(show(now), color = Colors.muted, fontSize = 12.sp)
-        Text("+", color = Colors.fg, fontSize = 18.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).combinedClickableCompat { to((now + 1).coerceIn(range)) }.padding(horizontal = 10.dp, vertical = 4.dp))
-    }
-}
-
-@Composable
-private fun SetupRow(label: String, on: Boolean, open: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat(open).padding(vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, color = Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-        Text(if (on) "On" else "Off", color = if (on) Colors.accent else Colors.muted, fontSize = 12.sp)
-        Spacer(Modifier.width(6.dp))
         Text("›", color = Colors.muted, fontSize = 20.sp)
     }
 }

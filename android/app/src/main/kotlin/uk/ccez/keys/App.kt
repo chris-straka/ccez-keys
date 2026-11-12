@@ -130,9 +130,6 @@ class App : Application() {
     /** The keyboard resets its typing state after a recovered error. */
     @Volatile var onRecovered: (() -> Unit)? = null
 
-    /** The words on screen, while their accessibility service runs (`keys screen` reads it). */
-    @Volatile var screenWords: uk.ccez.keys.overlay.ScreenWords? = null
-
     /** Never pass typed text here. */
     fun log(level: String, event: String, vararg ctx: Pair<String, Any?>) {
         val o = JSONObject()

@@ -130,15 +130,6 @@ class Control : ContentProvider() {
                     app.log("info", "ai-key", "set" to value.isNotBlank())
                     if (value.isBlank()) "removed" else "saved"
                 }
-                // Words on screen: the permissions and what's up (checks).
-                "screen" -> {
-                    val o = JSONObject()
-                        .put("overlay", android.provider.Settings.canDrawOverlays(app))
-                        .put("accessibility", uk.ccez.keys.overlay.ScreenWordsService.enabled(app))
-                        .put("count", app.number("learning.screen"))
-                    app.screenWords?.let { o.put("words", JSONObject(it.status()).optJSONArray("words")) }
-                    o.toString(2)
-                }
                 "log" -> engine.logTail((arg?.toIntOrNull() ?: 50).coerceIn(1, 5000).toUInt())
                 else -> error("no command called $method")
             }
