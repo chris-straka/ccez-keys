@@ -475,6 +475,14 @@ impl Floaters {
         }
     }
 
+    /// The word `id` as it shows, without its article ("das Urteil" →
+    /// "Urteil"; "parvenir à" stays whole): what a click copies.
+    pub fn copy_text(&self, id: isize) -> Option<String> {
+        let ws = self.words.borrow();
+        let w = ws.iter().find(|w| w.id == id)?;
+        Some(without_article(&w.lang, &w.shown))
+    }
+
     /// A click on word `id`: 0 Good, 1 Again, 2 Easy, 3 Known. What it did
     /// (for a toast), and the word (lang, word) when Known, which the caller
     /// marks known everywhere.
@@ -677,4 +685,31 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     w.bg.setFrame(rect(0.0, 0.0, width, height));
     content.addSubview(&pad(mtm, content.bounds()));
     w.bg.setCornerRadius(height.min(28.0) / 2.0);
+}
+
+/// A word as shown without its article: "das Urteil" → "Urteil", "l'ardoise"
+/// → "ardoise"; "parvenir à" and a word that is itself an article ("la")
+/// stay whole.
+fn without_article(lang: &str, shown: &str) -> String {
+    let base = lang.split(['-', '_']).next().unwrap_or(lang);
+    let articles: &[&str] = match base {
+        "fr" => &["le ", "la ", "les ", "l'", "l’", "un ", "une "],
+        "de" => &["der ", "die ", "das "],
+        "es" => &["el ", "la ", "los ", "las ", "un ", "una "],
+        "it" => &["il ", "lo ", "la ", "i ", "gli ", "le ", "l'", "l’", "un ", "una ", "uno ", "un'"],
+        "pt" => &["o ", "a ", "os ", "as ", "um ", "uma "],
+        _ => &[],
+    };
+    let bare = articles.iter().find_map(|a| shown.strip_prefix(a)).filter(|r| !r.trim().is_empty());
+    bare.unwrap_or(shown).trim().to_string()
+}
+
+#[cfg(test)]
+#[test]
+fn a_click_copies_the_word_without_its_article() {
+    assert_eq!(without_article("de", "das Urteil"), "Urteil");
+    assert_eq!(without_article("fr", "une ardoise"), "ardoise");
+    assert_eq!(without_article("fr", "parvenir à"), "parvenir à");
+    assert_eq!(without_article("fr", "la"), "la");
+    assert_eq!(without_article("ja", "議席"), "議席");
 }

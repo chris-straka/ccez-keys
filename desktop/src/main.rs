@@ -619,8 +619,15 @@ mod app {
         crate::float::CLICK.with(|c| {
             *c.borrow_mut() = Some(Box::new(move |id: isize, kind: u8| {
                 let Some(mtm) = MainThreadMarker::new() else { return };
+                // Copied too, when "Copy a word when clicked" is on (owner,
+                // 2026-11-11), as a word in the preview is.
+                let copied = app.prefs.borrow().copy_click.then(|| app.floaters.copy_text(id)).flatten();
                 let Some((note, known)) = app.floaters.clicked(mtm, id, kind) else { return };
+                if let Some(t) = &copied {
+                    copy(t);
+                }
                 // Every answer says what it did, with Undo (owner, 2026-11-11).
+                let note = if copied.is_some() { format!("{note} · copied") } else { note };
                 app.view.toast_undo(mtm, &note, crate::float::UNDO_FOR.as_secs_f64());
                 if let Some((lang, word)) = known {
                     // Known: off the learning list on every device (ccez-words).
