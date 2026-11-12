@@ -643,7 +643,9 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let ww = objc2_app_kit::NSAttributedStringNSStringDrawing::size(&*title).width.ceil() + 2.0;
     w.button.sizeToFit();
     let wh = w.button.frame().size.height;
-    let m = (w.open && !w.meaning.is_empty()).then(|| label(mtm, &w.meaning, 13.0, true));
+    // The meaning wraps within the word's spot (owner, 2026-11-12: a long
+    // one was cut off at the screen's edge), centred under the word.
+    let m = (w.open && !w.meaning.is_empty()).then(|| wrapped(mtm, &w.meaning, 13.0, (w.cell.w - 24.0).max(120.0)));
     // Its tags as small pills beside the word (owner, 2026-11-11), the word
     // kept in the middle so it doesn't move when they come.
     let pills: Vec<(Retained<NSBox>, f64, f64)> = if w.open { w.tags.iter().map(|t| pill(mtm, t)).collect() } else { Vec::new() };
@@ -700,4 +702,16 @@ fn a_click_copies_the_word_without_its_article() {
     assert_eq!(without_article("fr", "parvenir à"), "parvenir à");
     assert_eq!(without_article("fr", "la"), "la");
     assert_eq!(without_article("ja", "議席"), "議席");
+}
+
+/// A grey label that wraps at `max` points wide, sized to its text.
+fn wrapped(mtm: MainThreadMarker, text: &str, size: f64, max: f64) -> Retained<NSTextField> {
+    let l = NSTextField::wrappingLabelWithString(&NSString::from_str(text), mtm);
+    l.setFont(Some(&NSFont::systemFontOfSize(size)));
+    l.setTextColor(Some(&crate::view::rgb(0.74, 0.74, 0.74)));
+    l.setAlignment(objc2_app_kit::NSTextAlignment::Center);
+    l.setPreferredMaxLayoutWidth(max);
+    let fit = l.fittingSize();
+    l.setFrameSize(objc2_foundation::NSSize::new(fit.width.min(max).ceil(), fit.height.ceil()));
+    l
 }
