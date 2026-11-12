@@ -47,6 +47,14 @@ class UiState {
     var voice by mutableStateOf<uk.ccez.keys.learn.VoiceState?>(null)
     /** An Ask chat is open: the keys type into it. */
     var ask by mutableStateOf<uk.ccez.keys.learn.AskState?>(null)
+    /** A suggestion held: the bar offers to take it out of the suggestions. */
+    var remove by mutableStateOf<String?>(null)
+    /** Nothing in the field: the bar shows the latest copy. */
+    var emptyField by mutableStateOf(false)
+    /** The newest thing copied or screenshot. */
+    var latest by mutableStateOf<uk.ccez.keys.learn.Latest?>(null)
+    /** A picture held in the clipboard panel, shown large. */
+    var bigPicture by mutableStateOf<android.net.Uri?>(null)
 }
 
 /** The keyboard. Compose needs a lifecycle, which an input method doesn't have, so it gets one. */
@@ -131,10 +139,16 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
             clip.description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
         // A picture (a screenshot put there from the panel): no text chip for it.
         val picture = clip.description.hasMimeType("image/*") || (clip.itemCount > 0 && clip.getItemAt(0).uri != null && clip.getItemAt(0).text == null)
-        if (sensitive || clip.itemCount == 0 || picture) { ui.clip = null; return }
+        if (sensitive || clip.itemCount == 0 || picture) {
+            ui.clip = null
+            if (picture && !sensitive) clip.getItemAt(0)?.uri?.let { uk.ccez.keys.learn.Clips.pictureCopied(this, it) }
+            typist.findLatest()
+            return
+        }
         val text = clip.getItemAt(0).coerceToText(this)?.toString()?.trim().orEmpty().take(10_000)
         ui.clip = text.ifEmpty { null }
         if (text.isNotEmpty()) uk.ccez.keys.learn.Clips.add(this, text)
+        typist.findLatest()
     }
 }
 

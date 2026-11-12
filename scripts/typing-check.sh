@@ -29,21 +29,33 @@ check() { # lang, typed, expected, name
   got=$(field)
   if [ "$got" = "$3" ]; then echo "ok   $4"; pass=$((pass+1)); else echo "FAIL $4: got [$got] want [$3]"; fail=$((fail+1)); fi
 }
-check en "teh dog " "the dog " "autocorrect"
-check en "teh ⌫" "teh" "backspace undoes a correction"
-check en "hello a" "hello a" "fast typing keeps words whole"
-check en "hi  " "hi. " "double space"
-check en "swim ⌫ming " "swimming " "letters after a word go on with it"
-check en "guessin " "guessing " "missed last letter"
-check de "einerr " "einer " "German capitals aren't rivals"
+# The test field is a field for writing: its first letter takes a capital.
+check en "teh dog " "The dog " "autocorrect"
+check en "teh ⌫" "Teh" "backspace undoes a correction"
+check en "hello a" "Hello a" "fast typing keeps words whole"
+check en "hi  " "Hi. " "double space"
+check en "swim ⌫ming " "Swimming " "letters after a word go on with it"
+check en "guessin " "Guessing " "missed last letter"
+check de "einerr " "Einer " "German capitals aren't rivals"
 check ja "konnichiha" "こんにちは" "Japanese nn before a vowel"
 check ja "minna" "みんな" "Japanese minna"
 check hi "नमस्ते " "नमस्ते " "Hindi vowel signs stay in the word"
 check ko "ㅎㅏㄴ" "한" "Korean syllable"
-check ru "привет " "привет " "Russian"
+check ru "привет " "Привет " "Russian"
 check th "สวัสดี " "สวัสดี " "Thai marks stay in the word"
+# Capitals after a full stop and on a new line; a space after a full stop or comma.
+check fr "oui.merci" "Oui. Merci" "a space and a capital after a full stop"
+check fr "oui. merci" "Oui. Merci" "no second space after a full stop"
+check fr "oui,merci" "Oui, merci" "a space after a comma"
+check de "hallo⏎danke" $'Hallo\nDanke' "a new line starts with a capital"
+# English's usual fixes, with German (where "im" is a word) typed in too.
+check en "im here " "I'm here " "im is I'm"
+check en "so i dont " "So I don't " "i and dont"
+keys set typing.numbers true >/dev/null
+check fr "pi 3.14" "Pi 3.14" "a full stop between digits takes no space"
+keys set typing.numbers false >/dev/null
 # One clearly French word switches to French.
-check en "chez " "chez " "chez typed on English"
+check en "chez " "Chez " "chez typed on English"
 now=$(keys status | python3 -c 'import json,sys; print(json.load(sys.stdin)["current"])')
 if [ "$now" = fr ]; then echo "ok   chez switches to French"; pass=$((pass+1)); else echo "FAIL chez switches to French: on $now"; fail=$((fail+1)); fi
 clear_field; keys use "$was" >/dev/null; a input keyevent 3

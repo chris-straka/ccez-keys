@@ -46,6 +46,24 @@ object Shots {
         }.getOrDefault(emptyList())
     }
 
+    /** The newest screenshot of the last day, and when it was taken (ms). */
+    fun newest(ctx: Context): Pair<Uri, Long>? {
+        if (!allowed(ctx)) return null
+        val since = System.currentTimeMillis() / 1000 - 24 * 3600
+        return runCatching {
+            ctx.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_ADDED),
+                "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Images.Media.DATE_ADDED} > ?",
+                arrayOf("%Screenshots%", since.toString()),
+                "${MediaStore.Images.Media.DATE_ADDED} DESC",
+            )?.use { c -> if (c.moveToFirst()) ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(0)) to c.getLong(1) * 1000 else null }
+        }.getOrNull()
+    }
+
+    /** The picture big enough to fill the keyboard. */
+    fun large(ctx: Context, uri: Uri): Bitmap? = runCatching { ctx.contentResolver.loadThumbnail(uri, Size(1440, 2560), null) }.getOrNull()
+
     fun thumb(ctx: Context, uri: Uri): Bitmap? = runCatching { ctx.contentResolver.loadThumbnail(uri, Size(240, 480), null) }.getOrNull()
 
     /** True when the app took it as an image; false: it's on the clipboard instead. */

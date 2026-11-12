@@ -4,6 +4,7 @@ import android.content.Context
 import android.view.ViewGroup
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.animation.AnimatedContent
@@ -138,6 +139,7 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
         }
         PopupLayer(ui)
         ui.card?.let { CardOverlay(it, ui, typist) }
+        ui.bigPicture?.let { BigPicture(it, ui) }
     }
     }
 }
@@ -194,6 +196,26 @@ private fun BarRow(ui: UiState, typist: Typist) {
         },
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val removing = ui.remove
+        if (removing != null && ui.panel == Panel.KEYS) {
+            // A held suggestion: Remove takes it out of the suggestions; a tap elsewhere keeps it.
+            Row(
+                Modifier.fillMaxSize().combinedClickable(onClick = { ui.remove = null }).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(removing, color = Colors.fg, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Row(
+                    Modifier.clip(RoundedCornerShape(14.dp)).background(Colors.chip).combinedClickable(onClick = { typist.removeWord(removing) })
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.trash, null, tint = Colors.muted, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Remove", color = Colors.fg, fontSize = 13.sp)
+                }
+            }
+            return@Row
+        }
         if (bar is Bar.Convert && ui.panel == Panel.KEYS) {
             Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 bar.words.forEachIndexed { i, c ->
@@ -225,26 +247,32 @@ private fun BarRow(ui: UiState, typist: Typist) {
             if (face != null) FaceCell(face, typist) else Cell(bar.right, false, bar.typed, typist, 1f)
             return@Row
         }
-        val clip = ui.clip
-        val showClip = clip != null && !ui.password && App.instance.flag("buttons.clipboard")
-        if (showClip && clip != null) {
-            Row(
-                Modifier.weight(1f, fill = false).padding(start = 8.dp, end = 6.dp).height(34.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
-                    .combinedClickable(onClick = { typist.paste(clip); ui.clip = null }, onLongClick = { ui.panel = Panel.CLIPS })
-                    .padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.clip, null, tint = Colors.muted, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(clip.replace('\n', ' '), color = Colors.fg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        } else if (!ui.password && App.instance.flag("buttons.clipboard")) {
+        if (!ui.password && App.instance.flag("buttons.clipboard")) {
             val on = ui.panel == Panel.CLIPS
             Box(
                 Modifier.padding(start = 8.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Colors.line else Color.Transparent)
                     .combinedClickable(onClick = { if (on) typist.showKeys() else ui.panel = Panel.CLIPS }),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.clip, "Clipboard", tint = if (on) Colors.fg else Colors.muted, modifier = Modifier.size(20.dp)) }
+            // Right of it: something just copied, until pasted; on an empty field, the latest copy
+            // (a word, a phrase, a picture or screenshot). Tap: in it goes. Hold: the clipboard.
+            val clip = ui.clip
+            val latest = if (ui.emptyField && ui.panel == Panel.KEYS) ui.latest else null
+            if (clip != null && (latest == null || latest is uk.ccez.keys.learn.Latest.Text)) {
+                TextChip(clip, onTap = { typist.paste(clip); ui.clip = null }, onHold = { ui.panel = Panel.CLIPS })
+            } else if (latest is uk.ccez.keys.learn.Latest.Text) {
+                TextChip(latest.text, onTap = { typist.paste(latest.text) }, onHold = { ui.panel = Panel.CLIPS })
+            } else if (latest is uk.ccez.keys.learn.Latest.Picture) {
+                val bmp = remember(latest.uri) { latest.thumb.asImageBitmap() }
+                androidx.compose.foundation.Image(
+                    bmp,
+                    "Picture",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.padding(start = 6.dp).height(38.dp).width(28.dp).clip(RoundedCornerShape(6.dp)).background(Colors.chip)
+                        .border(1.dp, Colors.line, RoundedCornerShape(6.dp))
+                        .combinedClickable(onClick = { typist.sendShot(latest.uri) }, onLongClick = { typist.holdBuzz(); ui.bigPicture = latest.uri }),
+                )
+            }
         }
         val face = ui.face
         if (face != null && ui.panel == Panel.KEYS) {
@@ -276,10 +304,40 @@ private fun BarRow(ui: UiState, typist: Typist) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
+private fun RowScope.TextChip(text: String, onTap: () -> Unit, onHold: () -> Unit) {
+    Text(
+        text.replace('\n', ' '),
+        color = Colors.fg,
+        fontSize = 13.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f, fill = false).padding(start = 6.dp, end = 6.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
+            .combinedClickable(onClick = onTap, onLongClick = onHold).padding(horizontal = 12.dp, vertical = 8.dp),
+    )
+}
+
+/** A picture held: large over the keyboard; a tap closes it. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.BigPicture(uri: android.net.Uri, ui: UiState) {
+    val ctx = LocalContext.current
+    var bmp by remember(uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(uri) {
+        bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { uk.ccez.keys.learn.Shots.large(ctx, uri)?.asImageBitmap() }
+        if (bmp == null) ui.bigPicture = null
+    }
+    Box(Modifier.matchParentSize().background(Color(0xF00B0B0C)).combinedClickable(onClick = { ui.bigPicture = null }), contentAlignment = Alignment.Center) {
+        bmp?.let { androidx.compose.foundation.Image(it, "Picture", contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(6.dp)) }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun RowScope.Cell(text: String?, mid: Boolean, typed: String?, typist: Typist, weight: Float) {
     Column(
         Modifier.weight(weight).fillMaxHeight().let { m ->
-            if (text == null) m else m.combinedClickable(onClick = { typist.pick(text, text == typed) })
+            // Hold: the word as typed saved to the suggestions, or another taken out.
+            if (text == null) m else m.combinedClickable(onClick = { typist.pick(text, text == typed) }, onLongClick = { typist.holdWord(text, text == typed) })
         },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -576,10 +634,13 @@ private fun ClipsPanel(ui: UiState, typist: Typist) {
                         modifier = Modifier.height(96.dp).width(54.dp).clip(RoundedCornerShape(8.dp))
                             .background(Colors.chip)
                             .let { m -> if (sent == uri) m.graphicsLayer { alpha = 0.5f } else m }
-                            .combinedClickable(onClick = {
-                                // Into the app as an image; where the field takes none, onto the clipboard to paste.
-                                if (typist.sendShot(uri)) typist.showKeys() else sent = uri
-                            }),
+                            .combinedClickable(
+                                onClick = {
+                                    // Into the app as an image; where the field takes none, onto the clipboard to paste.
+                                    if (typist.sendShot(uri)) typist.showKeys() else sent = uri
+                                },
+                                onLongClick = { typist.holdBuzz(); ui.bigPicture = uri },
+                            ),
                     )
                 }
             }

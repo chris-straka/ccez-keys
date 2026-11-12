@@ -129,6 +129,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun telexOn() = lang == "vi" && app.flag("typing.telex")
 
     private fun clearWord() {
+        resumed = null
+        resumedEnd = -1
         word.setLength(0)
         jamo.setLength(0)
         jamoBase = ""
@@ -152,11 +154,21 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     /** When the typist last did something here (a key, a pick): selection news soon after is ours. */
     private var actedAt = 0L
-    private fun acted() {
+    private fun acted(keepReview: Boolean = false) {
         actedAt = SystemClock.uptimeMillis()
+        ui.remove = null
+        if (keepReview) return
         // Typing: the word to review gives way to the translation strip.
         if (ui.review != null) ui.review = null
         reviewSeq++
+    }
+
+    /** Delete on an empty field leaves the word to review where it is. */
+    private fun deletingNothing() = ui.review != null && word.isEmpty() && conv.isEmpty() && romaji.isEmpty() && fieldEmpty()
+
+    /** The field emptied (delete): the word to review comes back. */
+    private fun reviewIfEmptied() {
+        if (ui.review == null && ui.ask == null && !noLearn && !numeric && !rawKeys && app.flag("learning.strip") && fieldEmpty()) review(null)
     }
 
     /** The field's connection, its text before the cursor remembered between edits (CachedInput). */
@@ -200,7 +212,19 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         ui.review = null
         reviewSeq++
         if (!noLearn && !numeric && !rawKeys && app.flag("learning.strip") && fieldEmpty()) review(null)
+        findLatest()
     }
+
+    /** The latest copy, for the bar on an empty field. */
+    fun findLatest() {
+        app.scope.launch {
+            val l = runCatching { uk.ccez.keys.learn.Clips.latest(service) }.getOrNull()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { ui.latest = l }
+        }
+    }
+
+    /** The word put back to edit after a delete (not learned again unless it changes). */
+    private var resumed: String? = null
 
     /** Nothing in the field, before or after the cursor. */
     private fun fieldEmpty(): Boolean {
@@ -267,6 +291,10 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         // The converter is several MB: loaded off the main thread before the first kana.
         if (converting()) lang.let { l -> app.scope.launch { uk.ccez.keys.learn.Dictionaries.ensure(l); engine.convert(l, "") } }
         val face = app.flag("buttons.face")
+        // Scripts without capitals (Thai, Korean, Hindi) put other letters on shift: no capitals by themselves.
+        cased = engine.layout(lang, Page.LETTERS).rows.any { r -> r.keys.any { k -> k.kind == KeyKind.CHAR && k.text.lowercase() != k.text.uppercase() } }
+        // Another language (`keys use`, a swipe): its capitals afresh.
+        if (lang != shiftLang) { shiftLang = lang; if (shift != Shift.LOCK) updateShift() }
         var layout = withoutFace(engine.layout(lang, page), !face)
         if (page == Page.LETTERS && app.flag("typing.numbers")) layout = withNumbers(layout)
         view.layout = layout
@@ -375,7 +403,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     override fun onRepeat(key: Key, heldMs: Long) {
-        acted()
+        acted(keepReview = deletingNothing())
         deleteWord()
         buzz(HapticFeedbackConstants.CLOCK_TICK)
     }
@@ -405,6 +433,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         }
         updateShift()
         updateBar()
+        reviewIfEmptied()
     }
 
     override fun onKey(key: Key) {
@@ -413,7 +442,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     private fun handleKey(key: Key) {
-        acted()
+        acted(keepReview = key.kind == KeyKind.BACKSPACE && deletingNothing())
         ui.tools = false
         swiped = null
         if (key.kind != KeyKind.BACKSPACE) romajiSwitch = null
@@ -476,6 +505,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         recent.clear()
         app.scope.launch { app.ensureWords(lang) }
         refresh()
+        updateShift()
         updateBar()
     }
 
@@ -487,6 +517,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         recent.clear()
         app.scope.launch { app.ensureWords(lang) }
         refresh()
+        updateShift()
         updateBar()
     }
 
@@ -547,6 +578,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             updateBar()
             return
         }
+        // "3." + "1": the space put in after the mark goes ("3.14").
+        if (autoSpace && word.isEmpty() && text.length == 1 && text[0].isDigit() &&
+            uk.ccez.keys.core.digitJoins(ic.getTextBeforeCursor(3, 0)?.toString().orEmpty())
+        ) {
+            ic.deleteSurroundingText(1, 0)
+            autoSpace = false
+        }
         if (autoSpaceSwap(text, ic)) return
         if (text.length <= 2 && text.all(::isWordChar) && !password && !numeric) {
             val t = if (shift != Shift.OFF) text.uppercase() else text
@@ -562,9 +600,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             return
         }
         endWord(correct = true)
-        ic.commitText(if (shift != Shift.OFF && text.length == 1) text.uppercase() else text, 1)
+        val t = if (shift != Shift.OFF && text.length == 1) text.uppercase() else text
+        // A space after . , ! ? and what closes ) ] } " (not in addresses, numbers, or scripts without spaces).
+        val spaced = text.length == 1 && !noCorrect && !numeric && !noSpaces() &&
+            uk.ccez.keys.core.spaceAfterMark(ic.getTextBeforeCursor(CachedInput.READ, 0)?.toString().orEmpty() + t)
+        ic.commitText(if (spaced) "$t " else t, 1)
         if (shift == Shift.ONCE) setShift(Shift.OFF)
-        if (text in ".!?") updateShift()
+        autoSpace = spaced
+        updateShift()
         updateBar()
     }
 
@@ -588,12 +631,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     private fun autoSpaceSwap(text: String, ic: InputConnection): Boolean {
         if (!autoSpace || word.isNotEmpty()) { autoSpace = false; return false }
         autoSpace = false
-        val swap = uk.ccez.keys.core.markAfterSpace(lang, text)
+        val before = ic.getTextBeforeCursor(CachedInput.READ, 0)?.toString().orEmpty()
+        val swap = uk.ccez.keys.core.markAfterSpace(lang, text, before)
         if (swap != null) {
-            if (ic.getTextBeforeCursor(1, 0)?.toString() == " ") {
+            if (before.endsWith(" ")) {
                 ic.deleteSurroundingText(1, 0)
                 ic.commitText(swap, 1)
-                if (text in ".!?") updateShift()
+                updateShift()
                 autoSpace = true
                 updateBar()
                 return true
@@ -608,6 +652,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (conv.isNotEmpty() || romaji.isNotEmpty()) { commitConv(); return null }
         if (word.isEmpty()) return null
         val ic = ic ?: return null
+        val resumedWord = resumed
         val (head, typed) = lastWordOf(word.toString())
         val prev = if (head.isNotEmpty()) lastWordOf(head).second else prevWord(word.length)
         val fixed = if (correct && !noCorrect) suggestFor(typed).correction?.let { head + it } else null
@@ -619,7 +664,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         // learned in the language it turned out to be ("chez" in French, never
         // in English, where it would stop counting as foreign).
         noticeLanguage(typed)
-        if (!noLearn) learn(lang, prev, lastWordOf(out).second, false)
+        if (!noLearn && out != resumedWord) learn(lang, prev, lastWordOf(out).second, false)
         return out
     }
 
@@ -663,15 +708,27 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /** The last suggestions asked for: a word's are asked while typing it and again as it ends. */
     private var lastSuggest: Triple<String, String, uk.ccez.keys.core.Suggestions>? = null
 
-    private fun suggestFor(typed: String): uk.ccez.keys.core.Suggestions =
-        lastSuggest?.takeIf { it.first == lang && it.second == typed }?.third
-            ?: engine.suggest(lang, typed).also { lastSuggest = Triple(lang, typed, it) }
+    /** Ordered with the text before in mind (the word before, the paragraph). */
+    private fun suggestFor(typed: String): uk.ccez.keys.core.Suggestions {
+        val before = ic?.getTextBeforeCursor(CachedInput.READ, 0)?.toString().orEmpty()
+        val key = "$lang\u0000$before"
+        return lastSuggest?.takeIf { it.first == key && it.second == typed }?.third
+            ?: engine.suggestIn(lang, typed, before).also { lastSuggest = Triple(key, typed, it) }
+    }
 
     /** What the core learns changes its suggestions: the last ones are dropped. */
     private fun learn(l: String, prev: String, w: String, strong: Boolean) {
         lastSuggest = null
-        engine.learn(l, prev, w, strong)
+        // A new word at a sentence's start (nothing before it on the line, or a
+        // mark) has the capital the start gave it, not its own: learned without.
+        val own = if (prev.isEmpty() && w.length > 1 && w[0].isUpperCase() && w.drop(1).none { it.isUpperCase() } && !engine.knowsWord(l, w)) {
+            w[0].lowercase() + w.substring(1)
+        } else w
+        engine.learn(l, prev, own, strong)
+        // On disk now and then too, not only when the keyboard closes (Android may end it first).
+        if (strong || ++learned % 25 == 0) app.scope.launch { engine.save() }
     }
+    private var learned = 0
 
     /** The last words typed in this field, for noticing their language. */
     private val recent = ArrayDeque<String>()
@@ -706,6 +763,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (word.isNotEmpty()) {
             endWord(correct = true)
             ic.commitText(" ", 1)
+        } else if (autoSpace && ic.getTextBeforeCursor(2, 0)?.toString()?.let { it.length == 2 && it[1] == ' ' && it[0] in AUTO_SPACED } == true) {
+            // The space after a mark is there already.
         } else {
             val before = ic.getTextBeforeCursor(2, 0)?.toString().orEmpty()
             if (app.flag("typing.double_space_period") && now - lastSpaceAt < 1000 && uk.ccez.keys.core.spaceMakesStop(before)) {
@@ -785,10 +844,20 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 it.setText(before)
                 val start = it.preceding(before.length).coerceAtLeast(0)
                 ic.deleteSurroundingText(before.length - start, 0)
+                // Back onto a word (its space deleted): it's being typed again, with its corrections offered.
+                if (before.substring(start) == " " && !noCorrect && !numeric && !converting()) {
+                    resumeWord(ic)
+                    if (word.isNotEmpty()) {
+                        resumed = word.toString()
+                        ic.setComposingText(word, 1)
+                        resumedEnd = selectionNow()?.first ?: -1
+                    }
+                }
             }
         }
         updateShift()
         updateBar()
+        reviewIfEmptied()
     }
 
     private fun enter() {
@@ -802,11 +871,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val multiLine = (info?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0
         if (!noAction && !multiLine && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             ic.performEditorAction(action)
+            updateShift()
         } else {
             cached?.forget()
             service.sendKeyChar('\n')
+            // The app takes the key in a moment: the new line is counted on.
+            updateShift(pending = "\n")
         }
-        updateShift()
         updateBar()
     }
 
@@ -844,6 +915,35 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         updateShift()
         updateBar()
     }
+
+    /**
+     * A suggestion held: the word as typed, when it's no word yet, is saved
+     * to the suggestions (a buzz and a toast); any other word offers its removal.
+     */
+    fun holdWord(text: String, isTyped: Boolean) {
+        if (noLearn || password) return
+        buzz(HapticFeedbackConstants.LONG_PRESS)
+        if (isTyped && !engine.knowsWord(lang, text)) {
+            learn(lang, prevWord(word.length), text, true)
+            toast("Saved")
+            updateBar()
+        } else {
+            ui.remove = text
+        }
+    }
+
+    /** The held suggestion out of the suggestions. */
+    fun removeWord(text: String) {
+        ui.remove = null
+        engine.removeWord(lang, text)
+        app.scope.launch { engine.save() }
+        lastSuggest = null
+        buzz(HapticFeedbackConstants.CONFIRM)
+        toast("Removed")
+        updateBar()
+    }
+
+    private fun toast(text: String) = runCatching { android.widget.Toast.makeText(service, text, android.widget.Toast.LENGTH_SHORT).show() }
 
     /** A screenshot from the clipboard panel: into the app as an image, or onto the clipboard. */
     fun sendShot(uri: android.net.Uri): Boolean {
@@ -892,6 +992,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     }
 
     fun showKeys() {
+        ui.bigPicture = null
         ui.panel = Panel.KEYS
         refresh()
     }
@@ -921,11 +1022,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             val left = if (s.correction != null || !s.typedKnown && mid != typed) typed else rest.getOrNull(0)
             val right = rest.firstOrNull { !it.equals(left, ignoreCase = true) && !it.equals(typed, ignoreCase = true) }
             ui.bar = Bar.Words(left, mid, right, s.correction != null, typed)
+            ui.emptyField = false
             return
         }
         val prev = prevWord(0)
         val next = if (prev.isNotEmpty() && !noLearn) engine.predict(lang, prev) else emptyList()
         ui.bar = if (next.isEmpty()) Bar.Buttons else Bar.Words(next.getOrNull(1), next[0], next.getOrNull(2), false, null)
+        ui.emptyField = next.isEmpty() && fieldEmpty()
     }
 
     // --- capitals and the selection ---
@@ -935,19 +1038,50 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         view.shift = s
     }
 
-    private fun updateShift() {
+    /** The language's letters have capitals. */
+    private var cased = true
+    private var shiftLang = ""
+
+    /** `pending`: text sent that the app may not have taken yet (a new line). */
+    private fun updateShift(pending: String = "") {
         if (shift == Shift.LOCK) return
         val info = editor ?: return
-        val auto = app.flag("typing.capitals") && word.isEmpty() && !password &&
-            (ic?.getCursorCapsMode(info.inputType) ?: 0) != 0
+        val auto = app.flag("typing.capitals") && cased && word.isEmpty() && !password && capsHere(info, pending)
         setShift(if (auto) Shift.ONCE else Shift.OFF)
     }
+
+    /**
+     * A capital next: where the field asks for one (each word, every letter),
+     * or where a sentence starts (the core's rule: the field's start, a new
+     * line, after a full stop and a space). Sentences are found where the field
+     * asks for them, and in any field for writing (several lines, a message);
+     * a web form, an address or a search box gets only what it asks for.
+     */
+    private fun capsHere(info: EditorInfo, pending: String): Boolean {
+        val t = info.inputType
+        if (t and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return false
+        val ic = ic ?: return false
+        val words = t and (InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or InputType.TYPE_TEXT_FLAG_CAP_WORDS)
+        if (words != 0 && pending.isEmpty() && ic.getCursorCapsMode(words) != 0) return true
+        val variation = t and InputType.TYPE_MASK_VARIATION
+        val writing = variation in WRITING && info.imeOptions and EditorInfo.IME_MASK_ACTION != EditorInfo.IME_ACTION_SEARCH &&
+            (t and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0 || variation != InputType.TYPE_TEXT_VARIATION_NORMAL)
+        if (t and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0 && !writing) return false
+        val before = ic.getTextBeforeCursor(CachedInput.READ, 0) ?: return false
+        return uk.ccez.keys.core.startsSentence(before.toString() + pending)
+    }
+
+    /** Where the word being typed ends in the app now (-1: none), when it can say. */
+    private var composingEnd = -1
+    /** Where a word taken up again ends (the cursor after it). */
+    private var resumedEnd = -1
 
     /** The app's selection now, when it can say (news of it arrives late, after the next keys). */
     private fun selectionNow(): Pair<Int, Int>? {
         val ic = ic ?: return null
+        composingEnd = -1
         if (Build.VERSION.SDK_INT >= 33) {
-            runCatching { ic.takeSnapshot() }.getOrNull()?.let { return it.selectionStart to it.selectionEnd }
+            runCatching { ic.takeSnapshot() }.getOrNull()?.let { composingEnd = it.compositionEnd; return it.selectionStart to it.selectionEnd }
         }
         val et = runCatching { ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest().apply { hintMaxChars = 0 }, 0) }.getOrNull() ?: return null
         return (et.startOffset + et.selectionStart) to (et.startOffset + et.selectionEnd)
@@ -963,6 +1097,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val composing = word.isNotEmpty() || conv.isNotEmpty() || romaji.isNotEmpty()
         if (composing) {
             if (candEnd != -1 && newStart == candEnd && newEnd == candEnd) return
+            // Late news of an edit before the word was taken up again: the app has it composing, the cursor at its end.
+            val end = if (composingEnd != -1) composingEnd else resumedEnd
+            if (ours && now != null && end != -1 && now.first == end && now.second == end) return
             // Without a way to check, a report just after a key is taken as ours.
             if (now == null && ours) return
             // The cursor moved away from the word: keep it as typed.
@@ -1071,6 +1208,15 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
             InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
         )
+        /** Fields for writing in: capitals start sentences there whether the field asks or not. */
+        private val WRITING = setOf(
+            InputType.TYPE_TEXT_VARIATION_NORMAL,
+            InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE,
+            InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE,
+            InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT,
+        )
+        /** Marks a space goes in after (text.rs, space_after_mark). */
+        private const val AUTO_SPACED = ".,!?)]}»”’\""
         private val ADDRESSES = setOf(
             InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
