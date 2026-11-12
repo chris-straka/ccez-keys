@@ -411,8 +411,8 @@ impl View {
 
     /// A screen word's answer as a toast with Undo: the answer in its
     /// colour, as Anki has them (Again red, Good green, Easy blue; Known
-    /// violet), then the word (owner, 2026-11-11: colours, no "back in").
-    pub fn toast_answer(&self, mtm: MainThreadMarker, answer: &str, word: &str, secs: f64) {
+    /// violet), alone (owner, 2026-11-11: colours, no "back in", no word).
+    pub fn toast_answer(&self, mtm: MainThreadMarker, answer: &str, secs: f64) {
         let (r, g, b) = match answer {
             "Again" => (0.96, 0.42, 0.40),
             "Good" => (0.42, 0.82, 0.48),
@@ -423,11 +423,7 @@ impl View {
         a.setFont(Some(&NSFont::boldSystemFontOfSize(13.0)));
         a.setTextColor(Some(&rgb(r, g, b)));
         a.sizeToFit();
-        let mut parts = vec![a];
-        if !word.is_empty() {
-            parts.push(label(mtm, word, 13.0, false));
-        }
-        self.toast_with(mtm, parts, Some(secs));
+        self.toast_with(mtm, vec![a], Some(secs));
     }
 
     fn toast_for(&self, mtm: MainThreadMarker, text: &str, undo: Option<f64>) {

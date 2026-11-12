@@ -627,7 +627,7 @@ mod app {
                     copy(&shown);
                 }
                 // Every answer shows, in its colour, with Undo (owner, 2026-11-11).
-                app.view.toast_answer(mtm, &answer, &shown, crate::float::UNDO_FOR.as_secs_f64());
+                app.view.toast_answer(mtm, &answer, crate::float::UNDO_FOR.as_secs_f64());
                 if let Some((lang, word)) = known {
                     // Known: off the learning list on every device (ccez-words).
                     app.engine.set_word_status(lang, word, ccez_keys_core::WordStatus::Known);
