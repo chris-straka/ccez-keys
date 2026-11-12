@@ -23,9 +23,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub use layout::{Key, KeyKind, Layout, Page, Row};
-pub use convert::Conversion;
 pub use ai::{AnswerSink, ChatMessage, Fix, FixKind, FixPart};
+pub use convert::Conversion;
+pub use layout::{Key, KeyKind, Layout, Page, Row};
 pub use learn::{Card, Ruby, StripWord, WordStatus};
 pub use review::Grade;
 pub use typing::Suggestions;
@@ -96,6 +96,79 @@ pub struct Romaji {
 }
 
 impl Engine {
+    /// A saved word as a learner should see it: (shown, meaning, tags), the
+    /// meaning empty when the dictionary can't place it. Saved forms are
+    /// mended first: a German noun saved in lower case ("urteil") is the noun
+    /// ("das Urteil"), not the verb form the lower case also spells; an
+    /// elided article or "de" goes ("l'ardoise" → "une ardoise",
+    /// "d'adoucir" → "adoucir"); a word cut off when saved ("rechtskräft")
+    /// is the whole word when one common ending makes one; a phrase
+    /// ("découler de") takes its first word's meaning. A noun in its own
+    /// form gets its article ("le cap", "das Wasser"); a verb never does.
+    pub fn word_face(&self, lang: &str, word: &str) -> (String, String, Vec<String>) {
+        let card = |w: &str| self.learn.card(lang, w, "");
+        let meanings = |w: &str| card(w).map(|c| c.meanings).unwrap_or_default();
+        let base = lang.split(['-', '_']).next().unwrap_or(lang);
+        let mut w = word.trim().to_string();
+        if matches!(base, "fr" | "it") {
+            for lead in ["l'", "d'", "qu'", "j'", "m'", "n'", "t'", "c'", "l’", "d’", "qu’", "j’", "m’", "n’", "t’", "c’"] {
+                if let Some(rest) = w.strip_prefix(lead)
+                    && !rest.is_empty()
+                    && !meanings(rest).is_empty()
+                {
+                    w = rest.to_string();
+                    break;
+                }
+            }
+        }
+        if base == "de" && w.chars().next().is_some_and(char::is_lowercase) {
+            let mut cs = w.chars();
+            let cap: String = cs.next().map(|c| c.to_uppercase().chain(cs).collect()).unwrap_or_default();
+            let noun = card(&cap).filter(|c| !c.article.is_empty() && c.pos.iter().any(|p| p == "noun") && (c.lemma.is_empty() || c.lemma == cap));
+            let low = card(&w);
+            // The lower case is a word of its own ("fressen") unless it's
+            // only a form of another ("urteil" of urteilen) or the
+            // dictionary already took it for the noun ("spur" → Spur).
+            let own = low.as_ref().is_some_and(|c| (c.lemma.is_empty() || c.lemma == w) && c.word == w && !c.pos.iter().all(|p| p == "noun"));
+            if noun.is_some() && !own {
+                w = cap;
+            }
+        }
+        // The dictionary's own capitals ("Eau" saved from the start of a
+        // sentence is "eau"; "spur" is "Spur").
+        if let Some(c) = card(&w)
+            && c.word != w
+            && c.word.to_lowercase() == w.to_lowercase()
+        {
+            w = c.word;
+        }
+        if meanings(&w).is_empty() && w.chars().count() >= 6 && !w.contains(' ') {
+            const ENDINGS: [&str; 8] = ["ig", "e", "en", "er", "lich", "ung", "es", "s"];
+            if let Some(whole) = ENDINGS.iter().map(|e| format!("{w}{e}")).find(|x| !meanings(x).is_empty()) {
+                w = whole;
+            }
+        }
+        if meanings(&w).is_empty()
+            && let Some((head, _)) = w.split_once(' ')
+            && !meanings(head).is_empty()
+        {
+            let (_, meaning, tags) = gloss::short_gloss(head, &meanings(head), meanings);
+            return (w, meaning, tags);
+        }
+        let (shown, meaning, tags) = gloss::short_gloss(&w, &meanings(&w), meanings);
+        if shown != w || meaning.is_empty() {
+            return (shown, meaning, tags);
+        }
+        let head = match card(&w) {
+            Some(c) if !c.article.is_empty() && c.pos.first().is_some_and(|p| p == "noun") && (c.lemma.is_empty() || c.lemma.eq_ignore_ascii_case(&w)) => {
+                let shown = if base == "de" { c.word.clone() } else { w.clone() };
+                if c.article.ends_with('\'') || c.article.ends_with('’') { format!("{}{shown}", c.article) } else { format!("{} {shown}", c.article) }
+            }
+            _ => w,
+        };
+        (head, meaning, tags)
+    }
+
     /// The screen words' schedule, for Rust callers (the Mac app): the one
     /// copy, shared with its sync, so neither overwrites the other's answers.
     pub fn with_review<T>(&self, f: impl FnOnce(&mut review::Review) -> T) -> T {
@@ -152,9 +225,7 @@ impl Engine {
             log: log::Log::new(&dir),
             learn: learn::Learn::new(&dir),
             review: Mutex::new(review::Review::load(&dir)),
-            screen_seed: std::sync::atomic::AtomicU64::new(
-                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() % 997).unwrap_or(0),
-            ),
+            screen_seed: std::sync::atomic::AtomicU64::new(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() % 997).unwrap_or(0)),
             converters: Mutex::new(HashMap::new()),
             loading: Mutex::new(std::collections::HashSet::new()),
             layouts: layout::Layouts::load(),
@@ -263,12 +334,7 @@ impl Engine {
             if w.chars().count() < 3 || typing::is_word(here, w) {
                 return None;
             }
-            let found: Vec<String> = self
-                .typing_languages_of(&s.settings)
-                .into_iter()
-                .filter(|l| *l != current)
-                .filter(|l| s.langs.get(l).is_some_and(|x| typing::very_common(x, w)))
-                .collect();
+            let found: Vec<String> = self.typing_languages_of(&s.settings).into_iter().filter(|l| *l != current).filter(|l| s.langs.get(l).is_some_and(|x| typing::very_common(x, w))).collect();
             // Only when one language claims it.
             return if found.len() == 1 { found.into_iter().next() } else { None };
         }
@@ -348,7 +414,11 @@ impl Engine {
         let Some(mut l) = s.langs.remove(&lang) else {
             let mut user: typing::UserWords = fs::read_to_string(self.user_path(&lang)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
             let had = typing::forget(&mut user, &word);
-            if had { if let Ok(t) = serde_json::to_string(&user) { write_safely(&self.user_path(&lang), t); } }
+            if had {
+                if let Ok(t) = serde_json::to_string(&user) {
+                    write_safely(&self.user_path(&lang), t);
+                }
+            }
             return had;
         };
         let had = typing::forget(&mut l.user, &word);
@@ -490,12 +560,7 @@ impl Engine {
             return Vec::new();
         }
         let keep: Vec<&String> = if langs_limit == 0 { langs.iter().collect() } else { langs.iter().take(langs_limit).collect() };
-        let words: Vec<(String, String)> = self
-            .learning_words()
-            .into_iter()
-            .filter(|w| keep.iter().any(|l| **l == w.lang))
-            .map(|w| (w.lang, w.word))
-            .collect();
+        let words: Vec<(String, String)> = self.learning_words().into_iter().filter(|w| keep.iter().any(|l| **l == w.lang)).map(|w| (w.lang, w.word)).collect();
         let up: Vec<(String, String)> = up.into_iter().map(|w| (w.lang, w.word)).collect();
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let seed = self.screen_seed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize;
@@ -506,8 +571,7 @@ impl Engine {
         picked
             .into_iter()
             .map(|(lang, word)| {
-                let meanings = |w: &str| self.learn.card(&lang, w, "").map(|c| c.meanings).unwrap_or_default();
-                let (shown, meaning, tags) = gloss::short_gloss(&word, &meanings(&word), meanings);
+                let (shown, meaning, tags) = self.word_face(&lang, &word);
                 ScreenWord { lang, word, shown, meaning, tags }
             })
             .collect()
@@ -558,11 +622,7 @@ impl Engine {
     /// Words for kana (Japanese) or pinyin letters (Chinese).
     pub fn convert(&self, lang: String, input: String) -> Vec<Conversion> {
         // The kana as typed, while there's no converter (yet).
-        let plain = || if lang == "ja" && !input.is_empty() {
-            vec![Conversion { text: input.clone(), reading: String::new(), consumed: input.chars().count() as u32 }]
-        } else {
-            vec![]
-        };
+        let plain = || if lang == "ja" && !input.is_empty() { vec![Conversion { text: input.clone(), reading: String::new(), consumed: input.chars().count() as u32 }] } else { vec![] };
         {
             let c = self.converters.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(i) = c.get(&lang) {
@@ -594,10 +654,7 @@ impl Engine {
         let explain = self.lock().settings.get("languages.default").and_then(|v| v.as_str()).unwrap_or("en").to_string();
         let messages = ai::correction_messages(&lang, &text, &explain);
         let started = std::time::Instant::now();
-        let answer = self
-            .learn
-            .block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &messages, p.thinking.as_deref(), |_| {}))
-            .map_err(|e| KeysError::Bad(e.to_string()))?;
+        let answer = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &messages, p.thinking.as_deref(), |_| {})).map_err(|e| KeysError::Bad(e.to_string()))?;
         let fix = ai::to_fix(&text, &answer);
         self.log.write("info", "correction", &serde_json::json!({"lang": lang, "changed": fix.is_some(), "ms": started.elapsed().as_millis() as u64}).to_string());
         Ok(fix)
@@ -614,10 +671,7 @@ impl Engine {
             name(&to),
             if polite { "politely (vous, Sie, usted, です/ます)" } else { "casually, as to a friend (tu, du, tú, plain form)" }
         );
-        let m = vec![
-            ccez_lang_core::ai::Message { role: "system".into(), content: system },
-            ccez_lang_core::ai::Message { role: "user".into(), content: text },
-        ];
+        let m = vec![ccez_lang_core::ai::Message { role: "system".into(), content: system }, ccez_lang_core::ai::Message { role: "user".into(), content: text }];
         let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |_| {}));
         r.map(|t| t.trim().trim_matches('"').to_string()).map_err(|e| KeysError::Bad(e.to_string()))
     }

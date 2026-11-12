@@ -47,7 +47,7 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
     let Some(m) = everyday_sense(&senses) else {
         return (word.to_string(), String::new(), Vec::new());
     };
-    let first = m.split(';').next().unwrap_or("").trim().to_string();
+    let first = cut_explanation(&drop_long_bracket(first_part(&m).trim()));
     // "to sap (to subvert by digging)": the explanation in brackets at the
     // end goes; the short meaning is what comes before it.
     let first = drop_trailing_note(&first);
@@ -59,7 +59,9 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
         let i = first.find(open)?;
         let rest = &first[i + open.len()..];
         let j = rest.find([']', ')'])?;
-        Some((i, i + open.len() + j + 1, rest[..j].trim().to_string()))
+        // "[with de ‘with/from’]": the word, not its gloss.
+        let w = rest[..j].split(['‘', '\'', '"', '(']).next().unwrap_or("").trim();
+        Some((i, i + open.len() + j + 1, w.to_string()))
     });
     match with {
         Some((a, b, w)) if !w.is_empty() && w.split_whitespace().count() <= 2 => {
@@ -70,32 +72,15 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
     }
 }
 
-/// Of a word's first few senses, the everyday one: the first that isn't
-/// marked rare, old or of a trade (archaic, nautical, military…) and doesn't
-/// need a bracketed explanation (saper: "to sap, do sapping work on (to
-/// subvert by digging)" gives way to "to erode, wear down, undermine";
-/// owner, 2026-11-11). The first sense when none is plainer.
+/// Of a word's first few senses, the everyday one. Not one marked rare,
+/// old or of a trade (archaic, nautical…), and a specialist's sense
+/// ("(geography) cape") gives way to a plain or figurative one ("goal,
+/// direction, course"): dictionaries order senses by history, not use.
+/// The first of those (a sense explained in brackets is still the one:
+/// lesen is "to read"); the first sense when none is plainer.
 fn everyday_sense(senses: &[String]) -> Option<String> {
     const NICHE: [&str; 16] =
         ["archaic", "obsolete", "dated", "rare", "historical", "nautical", "military", "law", "legal", "heraldry", "dialectal", "regional", "slang", "chiefly in compounds", "literary", "euphemistic"];
-    let plain = |m: &String| {
-        let mut labels = String::new();
-        let mut rest = m.trim();
-        while let Some((inner, after)) = rest.strip_prefix('(').and_then(|r| r.split_once(')')) {
-            labels.push_str(&inner.to_lowercase());
-            labels.push(',');
-            rest = after.trim_start();
-        }
-        let niche = labels.split(',').any(|l| NICHE.contains(&l.trim()));
-        // "to sap (to subvert by digging)": a gloss that needs explaining; a
-        // short note ("water (H₂O)") is no reason to pass a sense over.
-        let note = rest.trim_end().strip_suffix(')').and_then(|r| r.rsplit_once(" (")).map(|(_, n)| n);
-        let explained = note.is_some_and(|n| n.split_whitespace().count() >= 3);
-        !niche && !explained
-    };
-    // A specialist's sense ("(geography) cape") gives way to a plain or
-    // figurative one a little further down ("goal, direction, course": the
-    // "cap" of the news); dictionaries order senses by history, not use.
     const SPECIALIST: [&str; 22] = [
         "geography",
         "nautical",
@@ -120,16 +105,90 @@ fn everyday_sense(senses: &[String]) -> Option<String> {
         "mineralogy",
         "ichthyology",
     ];
-    let specialist = |m: &String| {
+    let labels = |m: &String| {
         let mut rest = m.trim();
-        let mut labels = Vec::new();
+        let mut out = Vec::new();
         while let Some((inner, after)) = rest.strip_prefix('(').and_then(|r| r.split_once(')')) {
-            labels.extend(inner.split(',').map(|l| l.trim().to_lowercase()));
+            out.extend(inner.split(',').map(|l| l.trim().to_lowercase()));
             rest = after.trim_start();
         }
-        labels.iter().any(|l| SPECIALIST.contains(&l.as_str()))
+        out
     };
-    senses.iter().take(4).find(|m| plain(m) && !specialist(m)).or_else(|| senses.iter().take(3).find(|m| plain(m))).or_else(|| senses.first()).cloned()
+    let plain = |m: &&String| !labels(m).iter().any(|l| NICHE.contains(&l.as_str()));
+    let specialist = |m: &&String| labels(m).iter().any(|l| SPECIALIST.contains(&l.as_str()));
+    // "of sound", "figurative senses": a heading over senses, not a meaning.
+    let heading = |m: &&String| {
+        let t = untagged(m).trim();
+        (t.starts_with("of ") && t.split_whitespace().count() <= 3) || t.ends_with(" senses")
+    };
+    let senses: Vec<&String> = senses.iter().filter(|m| !heading(m)).collect();
+    if senses.is_empty() {
+        return None;
+    }
+    let mut picks: Vec<&String> = senses.iter().copied().take(4).filter(plain).filter(|m| !specialist(m)).collect();
+    if picks.is_empty() {
+        picks = senses.iter().copied().take(3).filter(plain).collect();
+    }
+    picks.first().or(senses.first()).map(|m| (*m).clone())
+}
+
+/// A long meaning without the explanation after its word ("water, a
+/// liquid that is transparent, …" → "water"; "April, the fourth month…" →
+/// "April"); short ones as they are ("an, a").
+fn cut_explanation(m: &str) -> String {
+    if m.split_whitespace().count() <= 5 {
+        return m.to_string();
+    }
+    for lead in [", a ", ", an ", ", the "] {
+        if let Some(i) = m.find(lead)
+            && i > 0
+        {
+            return m[..i].to_string();
+        }
+    }
+    m.to_string()
+}
+
+/// A meaning up to its first ';' outside brackets ("trace (rest of …;
+/// (by extension) any small amount); …" keeps its bracket whole).
+fn first_part(m: &str) -> &str {
+    let mut depth = 0i32;
+    for (i, c) in m.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ';' if depth <= 0 => return &m[..i],
+            _ => {}
+        }
+    }
+    m
+}
+
+/// A long note in square brackets at the end goes ("to investigate [(optional)
+/// with gegen (+ accusative) ‘someone’ …]"); a short "[with à]" stays for
+/// the word it goes with.
+fn drop_long_bracket(m: &str) -> String {
+    let t = m.trim_end();
+    if !t.ends_with(']') {
+        return t.to_string();
+    }
+    let mut depth = 0i32;
+    for (i, ch) in t.char_indices().rev() {
+        match ch {
+            ']' => depth += 1,
+            '[' => {
+                depth -= 1;
+                if depth == 0 {
+                    let inner = &t[i + 1..t.len() - 1];
+                    let short_with = inner.starts_with("with ") && inner.split_whitespace().count() <= 3;
+                    let before = t[..i].trim_end();
+                    return if short_with || before.is_empty() { t.to_string() } else { before.to_string() };
+                }
+            }
+            _ => {}
+        }
+    }
+    t.to_string()
 }
 
 /// A meaning without a bracketed note at its end ("to sap (to subvert by
@@ -226,8 +285,8 @@ mod everyday_tests {
         let forms = vec!["inflection of saper: first-person plural present indicative".to_string()];
         let base = |w: &str| if w == "saper" { saper.clone() } else { vec![] };
         let (shown, meaning, tags) = short_gloss("sapons", &forms, base);
-        assert_eq!((shown.as_str(), meaning.as_str()), ("sapons", "to erode, wear down, undermine"));
-        assert_eq!(tags, ["tr", "fig"]);
+        assert_eq!((shown.as_str(), meaning.as_str()), ("sapons", "to sap, do sapping work on"));
+        assert_eq!(tags, ["tr"]);
         assert_eq!(drop_trailing_note("to sap (to subvert by digging (slowly))"), "to sap");
         let none = |_: &str| vec![];
         assert_eq!(short_gloss("cap", &["(geography) cape".into(), "(archaic) head".into()], none).1, "cape");
@@ -236,5 +295,22 @@ mod everyday_tests {
         assert_eq!(short_gloss("retenir", &["(transitive) to hold back, rein in".into()], none).1, "to hold back, rein in");
         let wasser = ["water (H₂O)".into(), "(chiefly in compounds) alcoholic beverage, similar to brandy".into()];
         assert_eq!(short_gloss("Wasser", &wasser, none).1, "water");
+        let lesen = [
+            "(transitive or intransitive) to read (to look at and understand symbols, words, or data)".into(),
+            "(reflexive) to read (to give off a certain impression while being read; of a text)".into(),
+            "(transitive) to select and gather or harvest (grapes, etc.)".into(),
+        ];
+        assert_eq!(short_gloss("lesen", &lesen, none).1, "to read");
+        let loeschen = ["(transitive) to quench (fire, thirst, or lime)".into(), "(transitive) to delete, to erase (remembrance, memory, data)".into()];
+        assert_eq!(short_gloss("löschen", &loeschen, none).1, "to quench");
+        let spur = ["trace (rest of something that indicates its former presence; (by extension) any small amount)".into(), "trail, track, spoor".into()];
+        assert_eq!(short_gloss("Spur", &spur, none).1, "trace");
+        let ermitteln = ["(intransitive) to investigate (by the police) [(optional) with gegen (+ accusative) ‘someone’ and wegen (+ genitive) ‘for something’]".into()];
+        assert_eq!(short_gloss("ermitteln", &ermitteln, none).1, "to investigate");
+        assert_eq!(short_gloss("parvenir", &["(intransitive) to reach [with à]".into()], none).0, "parvenir à");
+        assert_eq!(short_gloss("défaillir", &["to faint, feel faint [with de ‘with/from’]".into()], none), ("défaillir de".into(), "to faint, feel faint".into(), vec![]));
+        assert_eq!(short_gloss("eau", &["water, a liquid that is transparent, colorless, odorless, and tasteless in its pure form".into()], none).1, "water");
+        assert_eq!(short_gloss("un", &["an, a".into()], none).1, "an, a");
+        assert_eq!(short_gloss("répercuter", &["of sound".into(), "of light".into(), "figurative senses".into()], none).1, "");
     }
 }
