@@ -3,7 +3,7 @@
 //! Nothing here is logged: typed text never leaves this module except as
 //! suggestions back to the keyboard.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -23,27 +23,90 @@ pub struct UserWords {
     pub words: HashMap<String, u32>,
     /// Folded previous word → next word → times.
     pub next: HashMap<String, HashMap<String, u32>>,
+    /// Words of the lists the owner typed (as the lists spell them), with
+    /// how often: the ones used most are offered sooner.
+    #[serde(default)]
+    pub used: HashMap<String, u32>,
+    /// Words taken out of the suggestions (lower case): never offered or
+    /// put in again, until typed and held to save them.
+    #[serde(default)]
+    pub removed: BTreeSet<String>,
 }
+
+/// Words kept in `used`; past `USED_MAX`, the least used go down to this.
+const USED_KEEP: usize = 3000;
+const USED_MAX: usize = 4000;
 
 pub struct Lang {
     pub lex: Lexicon,
     pub user: UserWords,
     /// Folded previous word → the words likely next, commonest first (data/next).
     pub next: HashMap<String, Vec<String>>,
+    /// Words always put right, whatever the other languages say (lower case →
+    /// right): "im" → I'm in English, though "im" is German.
+    pub fixes: HashMap<String, String>,
 }
 
 impl Lang {
     pub fn new(lex: Lexicon, user: UserWords) -> Self {
-        let mut lang = Lang { lex, user, next: HashMap::new() };
-        let trusted: Vec<(String, u32)> = lang.user.words.iter().filter(|(_, n)| **n >= ACCEPT).map(|(w, n)| (w.clone(), *n)).collect();
+        let mut lang = Lang { lex, user, next: HashMap::new(), fixes: HashMap::new() };
+        let trusted: Vec<(String, u32)> = lang.user.words.iter().chain(&lang.user.used).filter(|(_, n)| **n >= ACCEPT).map(|(w, n)| (w.clone(), *n)).collect();
         for (w, n) in trusted {
             lang.lex.insert(&w, user_logf(n));
         }
         lang
     }
 
+    /// A word here, as written (case aside), unless taken out of the suggestions.
     pub fn knows(&self, word: &str) -> bool {
-        self.lex.knows(word)
+        self.lex.knows(word) && !self.removed(word)
+    }
+
+    fn removed(&self, word: &str) -> bool {
+        !self.user.removed.is_empty() && self.user.removed.contains(&word.to_lowercase())
+    }
+}
+
+/// The fixes every keyboard makes in English: the apostrophe of a
+/// contraction, and I in capitals. Only words that are nothing else
+/// ("ill", "were", "its" and "lets" are words).
+pub fn fixes(lang: &str) -> HashMap<String, String> {
+    const EN: &[(&str, &str)] = &[
+        ("i", "I"), ("im", "I'm"), ("i'm", "I'm"), ("ive", "I've"), ("i've", "I've"), ("i'd", "I'd"), ("i'll", "I'll"),
+        ("dont", "don't"), ("doesnt", "doesn't"), ("didnt", "didn't"), ("cant", "can't"), ("wont", "won't"), ("isnt", "isn't"),
+        ("arent", "aren't"), ("wasnt", "wasn't"), ("werent", "weren't"), ("hasnt", "hasn't"), ("havent", "haven't"),
+        ("hadnt", "hadn't"), ("couldnt", "couldn't"), ("shouldnt", "shouldn't"), ("wouldnt", "wouldn't"), ("mustnt", "mustn't"),
+        ("neednt", "needn't"), ("aint", "ain't"), ("youre", "you're"), ("youve", "you've"), ("youll", "you'll"),
+        ("theyre", "they're"), ("theyve", "they've"), ("theyll", "they'll"), ("weve", "we've"), ("thats", "that's"),
+        ("whats", "what's"), ("theres", "there's"), ("heres", "here's"), ("whos", "who's"), ("shes", "she's"), ("hes", "he's"),
+        ("itll", "it'll"), ("thatll", "that'll"), ("alot", "a lot"),
+    ];
+    match lang {
+        "en" => EN.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(),
+        _ => HashMap::new(),
+    }
+}
+
+/// What the text before the word says about it: the word just before,
+/// and the words of the paragraph so far.
+#[derive(Default)]
+pub struct Context {
+    pub prev: String,
+    /// Lower case.
+    pub near: HashSet<String>,
+}
+
+impl Context {
+    /// `before`: the text before the cursor, the word being typed
+    /// (`typed`) at its end.
+    pub fn of(before: &str, typed: &str) -> Self {
+        let chars: Vec<char> = before.chars().collect();
+        let keep = chars.len().saturating_sub(typed.chars().count());
+        let head: String = chars[..keep].iter().collect();
+        let prev = crate::text::word_before(head.clone(), 0);
+        let para = head.rsplit(['\n', '\r', '\u{2029}']).next().unwrap_or("");
+        let near = para.split(|c: char| !crate::text::is_word_char(c)).filter(|w| w.chars().count() >= 3).map(str::to_lowercase).collect();
+        Context { prev, near }
     }
 }
 
@@ -72,6 +135,63 @@ fn leave_alone(typed: &str) -> bool {
 /// `others` are the other languages typed in: a word known in any of
 /// them is never corrected.
 pub fn suggest(lang: &Lang, others: &[&Lang], typed: &str, keys: &Neighbours, autocorrect: bool) -> Suggestions {
+    suggest_in(lang, others, typed, &Context::default(), keys, autocorrect)
+}
+
+/// A word the context makes likelier counts as this much commoner (e^x):
+/// typed after the word before by the owner, usual after it, or already
+/// in the paragraph. Only the order changes: corrections stay on the
+/// spelling alone.
+const AFTER_MINE: f32 = 2.0;
+const AFTER_USUAL: f32 = 1.2;
+const IN_PARAGRAPH: f32 = 1.0;
+const CONTEXT_MAX: f32 = 2.5;
+/// The order shown, tuned on the benchmark's `shown` and `half`.
+const SHOW_EDIT: f32 = 4.5;
+const SHOW_FIRST: f32 = 2.5;
+const SHOW_COMPLETION: f32 = 0.8;
+
+fn context_bonus(lang: &Lang, ctx: &Context, word: &str) -> f32 {
+    let lower = word.to_lowercase();
+    let mut b: f32 = 0.0;
+    if !ctx.prev.is_empty() {
+        let key = fold(&ctx.prev);
+        if lang.user.next.get(&key).is_some_and(|n| n.keys().any(|w| w.to_lowercase() == lower)) {
+            b += AFTER_MINE;
+        } else if lang.next.get(&key).is_some_and(|n| n.iter().any(|w| w.to_lowercase() == lower)) {
+            b += AFTER_USUAL;
+        }
+    }
+    if ctx.near.contains(&lower) {
+        b += IN_PARAGRAPH;
+    }
+    b.min(CONTEXT_MAX)
+}
+
+/// The words the context offers that go on from `typed` ("Kat" after
+/// "schwarze": Kater, typed there before), as the lists spell them.
+fn context_words<'a>(lang: &'a Lang, ctx: &Context, typed: &str) -> Vec<&'a crate::words::Entry> {
+    let t = fold(typed);
+    let mut out: Vec<&crate::words::Entry> = Vec::new();
+    let key = fold(&ctx.prev);
+    let after = lang.user.next.get(&key).into_iter().flat_map(|n| n.keys()).chain(lang.next.get(&key).into_iter().flatten());
+    for w in after.chain(ctx.near.iter()) {
+        let f = fold(w);
+        if f.len() <= t.len() || !f.starts_with(&t) {
+            continue;
+        }
+        let lower = w.to_lowercase();
+        if let Some(e) = lang.lex.same_folded(w).find(|e| e.word.to_lowercase() == lower)
+            && !out.iter().any(|x| x.word == e.word)
+        {
+            out.push(e);
+        }
+    }
+    out
+}
+
+/// Suggestions for `typed`, ordered with what came before it in mind.
+pub fn suggest_in(lang: &Lang, others: &[&Lang], typed: &str, ctx: &Context, keys: &Neighbours, autocorrect: bool) -> Suggestions {
     let n = typed.chars().count();
     let max = match n {
         0 => return Suggestions { words: vec![], correction: None, typed_known: false },
@@ -94,19 +214,46 @@ pub fn suggest(lang: &Lang, others: &[&Lang], typed: &str, keys: &Neighbours, au
             let score = e.logf - EDIT_WEIGHT * c.cost - FAR_WEIGHT * (c.cost - 1.0).max(0.0) - if c.completion { COMPLETION_PENALTY } else { 0.0 };
             Scored { score, logf: e.logf, cost: c.cost, completion: c.completion, word: &e.word }
         })
+        .filter(|c| !lang.removed(c.word))
         .collect();
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    let mut words: Vec<String> = Vec::new();
-    for c in &scored {
-        let w = with_case(typed, c.word);
-        if !words.iter().any(|x| x.to_lowercase() == w.to_lowercase()) {
-            words.push(w);
+    // The order shown: slips count more than for corrections, and more
+    // again in the first letter, so a word being typed meets its own
+    // endings before a common word a slip or two away ("rete": retenir,
+    // not tête).
+    let first = fold(typed).chars().next();
+    let mut ranked: Vec<(f32, &str)> = scored
+        .iter()
+        .map(|c| {
+            let differs = fold(c.word).chars().next() != first;
+            let shown = c.logf - SHOW_EDIT * c.cost - FAR_WEIGHT * (c.cost - 1.0).max(0.0) - if c.completion { SHOW_COMPLETION } else { 0.0 } - if differs { SHOW_FIRST } else { 0.0 };
+            (shown + context_bonus(lang, ctx, c.word), c.word)
+        })
+        .collect();
+    for e in context_words(lang, ctx, typed) {
+        if !lang.removed(&e.word) && !ranked.iter().any(|(_, w)| *w == &*e.word) {
+            ranked.push((e.logf - SHOW_COMPLETION + context_bonus(lang, ctx, &e.word), &e.word));
         }
+    }
+    ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let fix = lang.fixes.get(&typed.to_lowercase()).map(|f| with_case(typed, f));
+    let mut words: Vec<String> = fix.iter().cloned().collect();
+    for (_, word) in &ranked {
         if words.len() == 4 {
             break;
         }
+        let w = with_case(typed, word);
+        if !words.iter().any(|x| x.to_lowercase() == w.to_lowercase()) {
+            words.push(w);
+        }
     }
-    let correction = if autocorrect && !leave_alone(typed) { correct(typed, n, own, other, &scored) } else { None };
+    let correction = if !autocorrect || leave_alone(typed) {
+        None
+    } else if let Some(f) = fix {
+        Some(f).filter(|f| f != typed)
+    } else {
+        correct(typed, n, own, other, &scored)
+    };
     Suggestions { words, correction, typed_known }
 }
 
@@ -146,6 +293,9 @@ pub fn is_word(lang: &Lang, w: &str) -> bool {
 
 /// How common the typed word is here as written (case aside), if it's a word.
 fn own_logf(lang: &Lang, typed: &str) -> Option<f32> {
+    if lang.removed(typed) {
+        return None;
+    }
     let lower = typed.to_lowercase();
     lang.lex.same_folded(typed).filter(|e| e.word.to_lowercase() == lower).map(|e| e.logf).reduce(f32::max)
 }
@@ -234,18 +384,56 @@ pub fn forget(user: &mut UserWords, word: &str) -> bool {
     had
 }
 
+/// Takes `word` out of the suggestions (a word saved by mistake,
+/// "ccezkeys" for "ccez-keys"): forgotten if typing taught it, and never
+/// offered again, until it's typed and held to save it.
+pub fn remove(lang: &mut Lang, word: &str) {
+    forget(&mut lang.user, word);
+    let lower = word.to_lowercase();
+    lang.user.used.retain(|w, _| w.to_lowercase() != lower);
+    lang.user.removed.insert(lower);
+}
+
 /// A word the owner kept. `strong` when they undid a correction to keep
-/// it: trusted at once.
+/// it, or held it to save it: trusted at once (and back in the
+/// suggestions if it was taken out).
 pub fn learn(lang: &mut Lang, prev: &str, word: &str, strong: bool) {
     if !word.chars().any(|c| c.is_alphabetic()) || word.chars().count() > 40 {
         return;
     }
-    if !lang.knows(word) || lang.user.words.contains_key(word) {
+    let lower = word.to_lowercase();
+    if lang.user.removed.contains(&lower) {
+        if !strong {
+            return;
+        }
+        lang.user.removed.remove(&lower);
+    }
+    if !lang.lex.knows(word) || lang.user.words.contains_key(word) {
         let n = lang.user.words.entry(word.to_string()).or_insert(0);
         *n = if strong { (*n).max(ACCEPT) } else { *n + 1 };
         let n = *n;
         if n >= ACCEPT {
             lang.lex.insert(word, user_logf(n));
+        }
+    } else {
+        // A word of the lists, in their spelling ("bonjour" for "Bonjour"
+        // at a sentence's start): used often, it's offered sooner.
+        let spelled = {
+            let mut same = lang.lex.same_folded(word).filter(|e| e.word.to_lowercase() == lower).map(|e| e.word.to_string()).peekable();
+            let first = same.peek().cloned();
+            same.find(|w| w == word).or(first).unwrap_or_else(|| word.to_string())
+        };
+        let n = lang.user.used.entry(spelled.clone()).or_insert(0);
+        *n += 1;
+        let n = *n;
+        if n >= ACCEPT {
+            lang.lex.insert(&spelled, user_logf(n));
+        }
+        if lang.user.used.len() > USED_MAX {
+            let mut v: Vec<(String, u32)> = lang.user.used.drain().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            v.truncate(USED_KEEP);
+            lang.user.used.extend(v);
         }
     }
     let prev = fold(prev);
@@ -277,7 +465,7 @@ pub fn predict(lang: &Lang, prev: &str) -> Vec<String> {
     }
     out.extend(once.into_iter().map(|(w, _)| w.clone()));
     let mut seen = std::collections::HashSet::new();
-    out.retain(|w| seen.insert(w.to_lowercase()));
+    out.retain(|w| !lang.removed(w) && seen.insert(w.to_lowercase()));
     out.truncate(3);
     out
 }

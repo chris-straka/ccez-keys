@@ -118,11 +118,13 @@ fn typo(w: &str, near: &HashMap<char, Vec<char>>, rng: &mut Rng) -> Option<(Stri
 #[test]
 #[ignore]
 fn autocorrect_bench() {
-    let e = engine(LANGS);
-    println!("\nlang  fixed  left  wrong  broke   (typos: {SAMPLE} per language; broke: of {SAMPLE} right words)");
+    let only = std::env::var("BENCH_LANGS").ok();
+    let langs: Vec<&str> = match &only { Some(l) => l.split(',').collect(), None => LANGS.to_vec() };
+    let e = engine(&langs);
+    println!("\nlang  fixed  left  wrong  broke  shown  half   (typos: {SAMPLE} per language; broke: of {SAMPLE} right words; shown: the meant word among the two the bar offers for a typo; half: for its first half typed)");
     let mut by_kind: HashMap<&str, (u32, u32)> = HashMap::new();
     let mut fails: Vec<String> = Vec::new();
-    for &lang in LANGS {
+    for &lang in &langs {
         let mut kept = 0;
         let mut fails_here = |line: String| { if kept < 30 || line.contains(" broke ") { kept += 1; fails.push(line); } };
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../data/words/");
@@ -137,7 +139,9 @@ fn autocorrect_bench() {
             .collect();
         let near = neighbours(&e, lang);
         let mut rng = Rng(0x9E3779B97F4A7C15 ^ lang.bytes().fold(0u64, |a, b| a * 31 + b as u64));
-        let (mut fixed, mut left, mut wrong, mut broke) = (0, 0, 0, 0);
+        let (mut fixed, mut left, mut wrong, mut broke, mut shown, mut half) = (0, 0, 0, 0, 0, 0);
+        // The bar's two cells besides the word as typed.
+        let offered = |typed: &str, w: &str| e.suggest(lang.into(), typed.into()).words.iter().filter(|x| x.to_lowercase() != typed.to_lowercase()).take(2).any(|x| x.to_lowercase() == w.to_lowercase());
         let mut tried = 0;
         while tried < SAMPLE {
             // As often as people write it (Zipf: rank r about 1/r of the time).
@@ -148,6 +152,7 @@ fn autocorrect_bench() {
             if e.suggest(lang.into(), t.clone()).typed_known { continue; }
             tried += 1;
             let got = e.suggest(lang.into(), t.clone()).correction;
+            if offered(&t, w) { shown += 1; }
             let k = by_kind.entry(kind).or_default();
             k.1 += 1;
             match got {
@@ -155,6 +160,16 @@ fn autocorrect_bench() {
                 None => { left += 1; fails_here(format!("{lang} left  {kind:9} {t} (meant {w})")); }
                 Some(g) => { wrong += 1; fails_here(format!("{lang} wrong {kind:9} {t} → {g} (meant {w})")); }
             }
+        }
+        let mut halves = 0;
+        while halves < SAMPLE {
+            let r = ((words.len() as f64).ln() * (rng.below(1_000_000) as f64 / 1e6)).exp() as usize - 1;
+            let w = &words[r.min(words.len() - 1)];
+            let n = w.chars().count();
+            if n < 6 { continue; }
+            halves += 1;
+            let t: String = w.chars().take(n.div_ceil(2)).collect();
+            if offered(&t, w) { half += 1; } else { fails_here(format!("{lang} half  {t} (meant {w})")); }
         }
         for _ in 0..SAMPLE {
             let w = &words[rng.below(words.len())];
@@ -164,7 +179,7 @@ fn autocorrect_bench() {
             }
         }
         let p = |x: u32| 100.0 * x as f32 / SAMPLE as f32;
-        println!("{lang:4} {:5.1}% {:5.1}% {:5.1}% {:5.1}%", p(fixed), p(left), p(wrong), p(broke));
+        println!("{lang:4} {:5.1}% {:5.1}% {:5.1}% {:5.1}% {:5.1}% {:5.1}%", p(fixed), p(left), p(wrong), p(broke), p(shown), p(half));
     }
     println!("\nby kind:");
     for (k, (ok, n)) in &by_kind {

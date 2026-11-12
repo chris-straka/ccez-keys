@@ -111,7 +111,10 @@ impl Loose {
             n = next;
             self.nodes[n].best = self.nodes[n].best.max(logf);
         }
-        self.nodes[n].ends.push(id);
+        // A word made commoner again (the owner typing it) is there once.
+        if !self.nodes[n].ends.contains(&id) {
+            self.nodes[n].ends.push(id);
+        }
     }
 }
 

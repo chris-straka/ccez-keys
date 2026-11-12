@@ -272,3 +272,72 @@ fn one_foreign_word_switches() {
         assert_eq!(d(w), None, "{w}");
     }
 }
+
+#[test]
+fn english_contractions_whatever_else_is_loaded() {
+    // "im" is German too: on English it's still I'm.
+    let e = engine(&["en", "de", "it"]);
+    e.set_setting("languages.learning".into(), r#"["de","it"]"#.into()).unwrap();
+    assert_eq!(fix(&e, "en", "im").as_deref(), Some("I'm"));
+    assert_eq!(fix(&e, "en", "Im").as_deref(), Some("I'm"));
+    assert_eq!(fix(&e, "en", "weve").as_deref(), Some("we've"));
+    assert_eq!(fix(&e, "en", "i").as_deref(), Some("I"));
+    assert_eq!(fix(&e, "en", "dont").as_deref(), Some("don't"));
+    assert_eq!(e.suggest("en".into(), "im".into()).words.first().map(String::as_str), Some("I'm"));
+    // Words in their own right stay.
+    for w in ["ill", "were", "its", "lets", "well"] {
+        assert_eq!(fix(&e, "en", w), None, "{w}");
+    }
+    // Typed in German, "im" is German.
+    assert_eq!(fix(&e, "de", "im"), None);
+}
+
+#[test]
+fn a_word_taken_out_of_the_suggestions() {
+    let e = engine(&["fr"]);
+    let offered = |t: &str| e.suggest("fr".into(), t.into()).words;
+    e.learn("fr".into(), "".into(), "ccezkeys".into(), false);
+    e.learn("fr".into(), "".into(), "ccezkeys".into(), false);
+    assert!(offered("ccezk").contains(&"ccezkeys".to_string()));
+    e.remove_word("fr".into(), "ccezkeys".into());
+    assert!(!offered("ccezk").contains(&"ccezkeys".to_string()));
+    assert!(!e.knows_word("fr".into(), "ccezkeys".into()));
+    // Typing it again doesn't bring it back; holding it to save it does.
+    e.learn("fr".into(), "".into(), "ccezkeys".into(), false);
+    assert!(!offered("ccezk").contains(&"ccezkeys".to_string()));
+    e.learn("fr".into(), "".into(), "ccezkeys".into(), true);
+    assert!(offered("ccezk").contains(&"ccezkeys".to_string()));
+    // A word of the lists goes too.
+    assert!(offered("bonj").contains(&"bonjour".to_string()));
+    e.remove_word("fr".into(), "bonjour".into());
+    assert!(!offered("bonj").contains(&"bonjour".to_string()));
+    assert_eq!(fix(&e, "fr", "bonjoru").as_deref().filter(|w| *w == "bonjour"), None);
+}
+
+#[test]
+fn words_typed_often_come_sooner() {
+    let e = engine(&["fr"]);
+    let offered = |t: &str| e.suggest("fr".into(), t.into()).words;
+    // A word of the list, rare there.
+    assert!(e.knows_word("fr".into(), "prennes".into()));
+    assert!(!offered("pren").contains(&"prennes".to_string()), "{:?}", offered("pren"));
+    for _ in 0..6 {
+        e.learn("fr".into(), "tu".into(), "prennes".into(), false);
+    }
+    assert!(offered("pren").contains(&"prennes".to_string()), "{:?}", offered("pren"));
+    // Saved with the rest of the owner's words.
+    e.save();
+}
+
+#[test]
+fn the_text_before_orders_suggestions() {
+    let e = engine(&["de"]);
+    let first = |before: &str, typed: &str| e.suggest_in("de".into(), typed.into(), format!("{before}{typed}")).words.first().cloned();
+    let alone = e.suggest("de".into(), "Kat".into()).words;
+    assert_ne!(alone.first().map(String::as_str), Some("Katzen"), "{alone:?}");
+    // A word already in the paragraph.
+    assert_eq!(first("Die Katzen schlafen. Meine ", "Kat").as_deref(), Some("Katzen"));
+    // What the owner typed after the word before.
+    e.learn("de".into(), "schwarze".into(), "Kater".into(), false);
+    assert_eq!(first("Eine schwarze ", "Kat").as_deref(), Some("Kater"));
+}

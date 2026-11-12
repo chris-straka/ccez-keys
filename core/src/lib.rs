@@ -252,8 +252,10 @@ impl Engine {
         let user: typing::UserWords = fs::read_to_string(self.user_path(&lang)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let n = lex.len() as u32;
         let keys = self.layouts.neighbours(&lang);
+        let mut l = typing::Lang::new(lex, user);
+        l.fixes = typing::fixes(&lang);
         let mut s = self.lock();
-        s.langs.insert(lang.clone(), typing::Lang::new(lex, user));
+        s.langs.insert(lang.clone(), l);
         s.keys.insert(lang, keys);
         n
     }
@@ -306,6 +308,14 @@ impl Engine {
 
     /// Suggestions for the word being typed, in `lang`.
     pub fn suggest(&self, lang: String, typed: String) -> Suggestions {
+        self.suggest_in(lang, typed, String::new())
+    }
+
+    /// Suggestions for the word being typed, ordered with the text before
+    /// it in mind (`before`: up to the cursor, the word at its end): the
+    /// word before, and the paragraph's words.
+    pub fn suggest_in(&self, lang: String, typed: String, before: String) -> Suggestions {
+        let ctx = typing::Context::of(&before, &typed);
         let s = self.lock();
         let others_langs = self.typing_languages_of(&s.settings);
         // Thai is written without spaces between words: suggestions, no corrections.
@@ -316,7 +326,21 @@ impl Engine {
         let others: Vec<&typing::Lang> = others_langs.iter().filter(|o| **o != lang).filter_map(|o| s.langs.get(o)).collect();
         let empty = words::Neighbours::default();
         let keys = s.keys.get(&lang).unwrap_or(&empty);
-        typing::suggest(l, &others, &typed, keys, auto)
+        typing::suggest_in(l, &others, &typed, &ctx, keys, auto)
+    }
+
+    /// Whether `word` is a word of `lang` as written (the lists or the
+    /// owner's own), and not taken out of the suggestions.
+    pub fn knows_word(&self, lang: String, word: String) -> bool {
+        self.lock().langs.get(&lang).is_some_and(|l| l.knows(&word))
+    }
+
+    /// Takes `word` out of `lang`'s suggestions (and what typing taught of it).
+    pub fn remove_word(&self, lang: String, word: String) {
+        let mut s = self.lock();
+        if let Some(l) = s.langs.get_mut(&lang) {
+            typing::remove(l, &word);
+        }
     }
 
     /// The language the last words were written in, when it isn't
