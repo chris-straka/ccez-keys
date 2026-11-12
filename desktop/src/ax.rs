@@ -34,6 +34,7 @@ unsafe extern "C" {
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     static kCFBooleanTrue: Ref;
+    static kCFBooleanFalse: Ref;
 }
 
 #[link(name = "Carbon", kind = "framework")]
@@ -42,13 +43,19 @@ unsafe extern "C" {
     fn IsSecureEventInputEnabled() -> bool;
 }
 
-/// Electron and Chrome apps (Claude, Slack, Discord, VS Code…) share their
-/// text fields only once an assistive app asks: this asks, once per app.
+/// Electron and Chrome apps (Claude, Slack, Discord, VS Code, Brave…) share
+/// their text fields only once an assistive app asks: this asks, once per
+/// app, with AXManualAccessibility, the switch Chromium keeps for that.
+/// Never AXEnhancedUserInterface: it treats us as a screen reader, and
+/// Chromium pages then redrew with after-images and flicker (ccez-keeps and
+/// ccez-llm, owner 2026-11-10). Turned back off where an older build set it.
 pub fn wake(pid: i32) {
     let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
-    for name in ["AXManualAccessibility", "AXEnhancedUserInterface"] {
-        let n = s(name);
-        unsafe { AXUIElementSetAttributeValue(app.0, Retained::as_ptr(&n) as Ref, kCFBooleanTrue) };
+    let manual = s("AXManualAccessibility");
+    let enhanced = s("AXEnhancedUserInterface");
+    unsafe {
+        AXUIElementSetAttributeValue(app.0, Retained::as_ptr(&manual) as Ref, kCFBooleanTrue);
+        AXUIElementSetAttributeValue(app.0, Retained::as_ptr(&enhanced) as Ref, kCFBooleanFalse);
     }
 }
 
