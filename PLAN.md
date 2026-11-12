@@ -13,10 +13,6 @@ this note if it's ever wanted back.
 
 Work these off and delete each when it ships.
 
-- ⌥⏎ swap in ChatGPT and Claude (built 2026-11-11, owner chose "a key"):
-  not yet tried in those apps by hand (the owner was typing there). Check
-  it replaces the box in both (Claude's box is a web editor: it may fall
-  back to typing over a selection).
 - Checked 2026-11-11: the preview's languages can't translate in parallel.
   Apple's translator does one at a time whatever asks: six languages took
   1.9 s sent at once to one helper, 1.9 s one by one, 3.6 s from six
