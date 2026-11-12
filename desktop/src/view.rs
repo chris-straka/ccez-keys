@@ -535,14 +535,6 @@ impl View {
         self.shown.get()
     }
 
-    /// The pointer is over the preview or its card (while they're up).
-    pub fn under_mouse(&self, mtm: MainThreadMarker) -> bool {
-        let _ = mtm;
-        let at = objc2_app_kit::NSEvent::mouseLocation();
-        let inside = |f: NSRect| at.x >= f.origin.x && at.x <= f.origin.x + f.size.width && at.y >= f.origin.y && at.y <= f.origin.y + f.size.height;
-        (self.shown.get() && inside(self.panel.frame())) || (self.card_open.get() && inside(self.card.frame()))
-    }
-
     /// Takes the preview down, and its card with it.
     pub fn hide(&self) {
         if self.card_open.get() {

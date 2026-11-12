@@ -169,7 +169,7 @@ mod app {
         let answer = app.worker.out.lock().unwrap().take();
         let langs = app.langs.clone();
         let shown = app.prefs.borrow().shown;
-        let inputs = crate::preview::Inputs { now: Instant::now(), off, field, held: option_held(), under_mouse: app.view.under_mouse(mtm), shown, langs: &langs };
+        let inputs = crate::preview::Inputs { now: Instant::now(), off, field, held: option_held(), shown, langs: &langs };
         let out = app.preview.borrow_mut().tick(inputs, answer, &|s| render(app, s));
         if out.close_card {
             app.view.close_card();
