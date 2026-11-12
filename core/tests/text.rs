@@ -1,6 +1,6 @@
 //! The text-only typing rules (core/src/text.rs).
 
-use ccez_keys_core::text::{form_tag, looks_secret, delete_span, mark_after_space, sentence_of, space_makes_stop, word_before};
+use ccez_keys_core::text::{delete_span, digit_joins, form_tag, looks_secret, mark_after_space, sentence_of, space_after_mark, space_makes_stop, starts_sentence, word_before};
 
 #[test]
 fn the_sentence_typed() {
@@ -52,10 +52,45 @@ fn two_spaces() {
 
 #[test]
 fn marks_after_a_spaced_word() {
-    assert_eq!(mark_after_space("fr".into(), "!".into()).as_deref(), Some("\u{a0}! "));
-    assert_eq!(mark_after_space("fr".into(), ".".into()).as_deref(), Some(". "));
-    assert_eq!(mark_after_space("en".into(), "?".into()).as_deref(), Some("? "));
-    assert_eq!(mark_after_space("en".into(), "a".into()), None);
+    let m = |l: &str, mark: &str, before: &str| mark_after_space(l.into(), mark.into(), before.into());
+    assert_eq!(m("fr", "!", "Salut ").as_deref(), Some("\u{a0}! "));
+    assert_eq!(m("fr", ".", "Salut ").as_deref(), Some(". "));
+    assert_eq!(m("de", "?", "Wirklich ").as_deref(), Some("? "));
+    assert_eq!(m("de", "a", "Wirklich ").as_deref(), None);
+    assert_eq!(m("fr", ")", "(oui ").as_deref(), Some(") "));
+    // A quote closes one that's open; else it opens one, after the space.
+    assert_eq!(m("fr", "\"", "Il a dit \"oui ").as_deref(), Some("\" "));
+    assert_eq!(m("fr", "\"", "Il a dit ").as_deref(), None);
+    assert_eq!(m("fr", "'", "Il a dit 'oui. ").as_deref(), Some("' "));
+    assert_eq!(m("fr", "'", "Il a dit ").as_deref(), None);
+}
+
+#[test]
+fn a_space_after_marks() {
+    for t in ["Oui.", "Oui,", "Quoi?", "Ça va ?", "Non!", "(oui)", "[1]", "{a}", "« oui »", "Il a dit \"oui\""] {
+        assert!(space_after_mark(t.into()), "{t}");
+    }
+    for t in [".", " .", "Il a dit \"", "a-", "Oui:", "Oui;", ""] {
+        assert!(!space_after_mark(t.into()), "{t}");
+    }
+}
+
+#[test]
+fn digits_join_after_a_mark() {
+    assert!(digit_joins("3. ".into()));
+    assert!(digit_joins("1, ".into()));
+    assert!(!digit_joins("Oui. ".into()));
+    assert!(!digit_joins("3.".into()));
+}
+
+#[test]
+fn sentence_starts() {
+    for t in ["", "Bonjour.\n", "Bonjour\n", "Bonjour. ", "Wirklich?! ", "« Non ! » ", "Hola. ¿", "Oui… ", "(Oui.) ", "Ça va ? ", "Erste Zeile\n  "] {
+        assert!(starts_sentence(t.into()), "{t:?}");
+    }
+    for t in ["Bonjour", "Bonjour ", "Bonjour.", "z.B. ", "Ich, ", "Il a dit « ", "3:"] {
+        assert!(!starts_sentence(t.into()), "{t:?}");
+    }
 }
 
 #[test]

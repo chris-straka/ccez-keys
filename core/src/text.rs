@@ -78,17 +78,107 @@ pub fn space_makes_stop(before: String) -> bool {
     matches!((it.next(), it.next()), (Some(' '), Some(c)) if c.is_alphanumeric())
 }
 
-/// A mark typed just after a word the keyboard spaced goes before that
-/// space: what replaces the space, or None to type the mark as usual.
-/// French puts a no-break space before ! ? ; : ("Salut" + "!" → "Salut ! ",
-/// the mark never wrapped onto a line of its own).
+/// A mark typed just after a space the keyboard put in (after a word
+/// picked, or a mark) goes before that space: what replaces the space, or
+/// None to type the mark as usual. French puts a no-break space before
+/// ! ? ; : ("Salut" + "!" → "Salut ! ", the mark never wrapped onto a line
+/// of its own). A quote goes before it only when it closes one: `"` when
+/// one is open in the paragraph, `'` after a mark ("Oui." + "'").
+/// `before`: the text before the cursor, that space at its end.
 #[uniffi::export]
-pub fn mark_after_space(lang: String, mark: String) -> Option<String> {
-    if mark.chars().count() != 1 || !".,!?;:)".contains(mark.as_str()) {
+pub fn mark_after_space(lang: String, mark: String, before: String) -> Option<String> {
+    if mark.chars().count() != 1 {
         return None;
     }
-    let french = lang == "fr" && "!?;:".contains(mark.as_str());
+    let m = mark.chars().next()?;
+    let closes = match m {
+        '.' | ',' | '!' | '?' | ';' | ':' | ')' | ']' | '}' | '»' | '”' | '’' => true,
+        '"' => paragraph(&before).matches('"').count() % 2 == 1,
+        '\'' => before.trim_end().chars().last().is_some_and(|c| ".,!?…".contains(c)),
+        _ => false,
+    };
+    if !closes {
+        return None;
+    }
+    let french = lang == "fr" && "!?;:".contains(m);
     Some(format!("{}{} ", if french { "\u{a0}" } else { "" }, mark))
+}
+
+/// The line the cursor is on.
+fn paragraph(before: &str) -> &str {
+    before.rsplit(['\n', '\r', '\u{2028}', '\u{2029}']).next().unwrap_or("")
+}
+
+/// Whether a space goes in after the mark just typed (the end of
+/// `before`): after . , ! ? and closing ) ] } » ” ’. A full stop or comma
+/// only straight after text (".5" stays); ! and ? after a space too ("Ça
+/// va ?"). A `"` when it closes a quote open in the paragraph.
+#[uniffi::export]
+pub fn space_after_mark(before: String) -> bool {
+    let mut it = before.chars().rev();
+    let (Some(m), Some(prev)) = (it.next(), it.next()) else { return false };
+    let after_text = !prev.is_whitespace();
+    match m {
+        '.' | ',' => after_text,
+        '!' | '?' | ')' | ']' | '}' | '»' | '”' | '’' => true,
+        '"' => after_text && paragraph(&before).matches('"').count() % 2 == 0,
+        _ => false,
+    }
+}
+
+/// A digit typed after the space put in after "3." or "1,": the space
+/// goes ("3.14", "1,5").
+#[uniffi::export]
+pub fn digit_joins(before: String) -> bool {
+    let cs: Vec<char> = before.chars().rev().take(3).collect();
+    matches!(cs.as_slice(), [' ', '.' | ',' | ':', d] if d.is_ascii_digit())
+}
+
+/// Marks that may open a sentence, before its first letter ("¿", "« ").
+const OPENING: &[char] = &['¿', '¡', '(', '[', '{', '«', '"', '\'', '“', '‘', '„', '‚', '-', '—', '–'];
+/// Marks that may close one, after its end mark ("Non !» ", "(Oui.) ").
+const CLOSING: &[char] = &[')', ']', '}', '»', '"', '\'', '”', '’'];
+
+/// Whether the next letter starts a sentence, so takes a capital: at the
+/// start of the text or of a line, or after a sentence's end and a space
+/// ("Oui. ", "Vraiment ?! ", "« Non ! » ", "Hola. ¿"). Not straight after
+/// a mark (no space yet), nor after an abbreviation's dots ("z.B. ").
+#[uniffi::export]
+pub fn starts_sentence(before: String) -> bool {
+    let cs: Vec<char> = before.chars().collect();
+    let mut i = cs.len();
+    while i > 0 && OPENING.contains(&cs[i - 1]) {
+        i -= 1;
+    }
+    let opened = i;
+    while i > 0 && matches!(cs[i - 1], ' ' | '\t' | '\u{a0}' | '\u{202f}') {
+        i -= 1;
+    }
+    if i == 0 || matches!(cs[i - 1], '\n' | '\r' | '\u{2028}' | '\u{2029}') {
+        return true;
+    }
+    if i == opened {
+        return false;
+    }
+    // Closing marks, and the spaces French puts inside them ("Non ! » ").
+    while i > 0 && (CLOSING.contains(&cs[i - 1]) || matches!(cs[i - 1], ' ' | '\u{a0}' | '\u{202f}')) {
+        i -= 1;
+    }
+    let Some(&end) = i.checked_sub(1).map(|k| &cs[k]) else { return false };
+    if !matches!(end, '.' | '!' | '?' | '…') {
+        return false;
+    }
+    if end == '.' {
+        // "z.B.", "e.g.": a dot earlier in the same word.
+        let mut k = i - 1;
+        while k > 0 && cs[k - 1].is_alphabetic() {
+            k -= 1;
+        }
+        if k > 0 && k < i - 1 && cs[k - 1] == '.' {
+            return false;
+        }
+    }
+    true
 }
 
 /// Text that looks like a password, an API key or a token: never shown,
