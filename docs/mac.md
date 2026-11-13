@@ -95,8 +95,8 @@ Each word is in its language's colour (owner, 2026-11-13: Chinese and
 Japanese looked alike; colour, not flags): French blue, German gold,
 Spanish orange, Chinese red, Japanese violet, Korean teal (float.rs
 lang_color). Hovered, a Chinese or Japanese word shows what each
-character is built from under its meaning, a part a line, no
-glosses, the radical underlined
+character is built from under its meaning, a line per character with
+its parts named in a word or two, the radical underlined
 (data/han.tsv, about 2,000 common characters). The typing preview is centred on the
 field typed in (it followed a cursor Claude doesn't give, guessed off the
 end of a wrapped line, to the screen's right edge); a document's preview
@@ -139,3 +139,8 @@ panel, egui on Linux and Windows. What it does and when is shared code
 - Not yet on Linux and Windows: updates by themselves, the cursor's own
   position on Windows (the field's frame is used), Arabic shaping (egui
   draws letters unjoined), the card's meaning-here (Apple's model only).
+
+Words are spoken in the app by one AVSpeechSynthesizer kept for its
+life (speak.rs): a voice loads once, about 150 ms, then a word starts in
+about 5 ms (a `say` per click took about 0.9 s). `--say-time lang word…`
+times it at volume 0.

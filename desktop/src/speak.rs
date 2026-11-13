@@ -1,28 +1,32 @@
 //! Reading a line or a word aloud with the Mac's own voices: the best one
 //! installed for the language (Premium, then Enhanced, then any), one at a
 //! time (a new one stops the last).
+//!
+//! Spoken in the app by one AVSpeechSynthesizer kept for its life, so a voice
+//! loads once: a `say` process per click loaded it every time, nearly a
+//! second before a word was heard (owner, 2026-11-13: "takes a while for the
+//! TTS to kick in").
 
-use std::process::{Child, Command};
-use std::sync::{Mutex, OnceLock};
+use objc2::rc::Retained;
+use objc2_avf_audio::{AVSpeechBoundary, AVSpeechSynthesisVoice, AVSpeechSynthesizer, AVSpeechUtterance};
+use objc2_foundation::NSString;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
-/// `say -v ?` once: (name, locale) for each voice.
-fn voices() -> &'static Vec<(String, String)> {
-    static V: OnceLock<Vec<(String, String)>> = OnceLock::new();
-    V.get_or_init(|| {
-        let out = Command::new("say").args(["-v", "?"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-        out.lines().filter_map(parse).collect()
-    })
-}
+/// (identifier, locale as fr_FR, quality 1 default / 2 enhanced / 3 premium).
+type Voice = (String, String, isize);
 
-/// "Audrey (Premium)    fr_FR    # Bonjour…" → ("Audrey (Premium)", "fr_FR").
-fn parse(line: &str) -> Option<(String, String)> {
-    let head = line.split('#').next()?.trim_end();
-    let (name, locale) = head.rsplit_once(char::is_whitespace)?;
-    Some((name.trim().to_string(), locale.to_string()))
+fn installed() -> Vec<Voice> {
+    unsafe {
+        AVSpeechSynthesisVoice::speechVoices()
+            .iter()
+            .map(|v| (v.identifier().to_string(), v.language().to_string().replace('-', "_"), v.quality().0))
+            .collect()
+    }
 }
 
 /// The voice for a language code (fr, zh, zh-Hans, pt-BR…).
-pub fn voice_for(lang: &str, voices: &[(String, String)]) -> Option<String> {
+pub fn voice_for(lang: &str, voices: &[Voice]) -> Option<String> {
     let lang = lang.replace('-', "_");
     let base = lang.split('_').next().unwrap_or(&lang).to_lowercase();
     // Chinese: Mandarin (China) before Cantonese (Hong Kong).
@@ -32,52 +36,100 @@ pub fn voice_for(lang: &str, voices: &[(String, String)]) -> Option<String> {
         _ if lang.contains('_') => Some(lang.as_str()),
         _ => None,
     };
-    let rank = |(name, locale): &(String, String)| {
-        let quality = if name.contains("(Premium)") { 0 } else if name.contains("(Enhanced)") { 1 } else { 2 };
+    let rank = |(_, locale, quality): &Voice| {
         let place = if region.is_some_and(|r| r.eq_ignore_ascii_case(locale)) { 0 } else { 1 };
-        (place, quality)
+        (place, -quality)
     };
     voices
         .iter()
-        .filter(|(_, l)| l.split('_').next().is_some_and(|b| b.eq_ignore_ascii_case(&base)))
+        .filter(|(_, l, _)| l.split('_').next().is_some_and(|b| b.eq_ignore_ascii_case(&base)))
         .min_by_key(|v| rank(v))
-        .map(|(n, _)| n.clone())
+        .map(|(id, _, _)| id.clone())
 }
 
-static LAST: Mutex<Option<Child>> = Mutex::new(None);
+struct Speaker {
+    synth: Retained<AVSpeechSynthesizer>,
+    voices: Vec<Voice>,
+    /// Voice per language, looked up once.
+    chosen: HashMap<String, Option<Retained<AVSpeechSynthesisVoice>>>,
+}
+
+thread_local! {
+    static SPEAKER: RefCell<Option<Speaker>> = const { RefCell::new(None) };
+}
+
+fn with_speaker<R>(f: impl FnOnce(&mut Speaker) -> R) -> R {
+    SPEAKER.with(|s| {
+        let mut s = s.borrow_mut();
+        let sp = s.get_or_insert_with(|| Speaker { synth: unsafe { AVSpeechSynthesizer::new() }, voices: installed(), chosen: HashMap::new() });
+        f(sp)
+    })
+}
+
+fn utterance(sp: &mut Speaker, lang: &str, text: &str) -> Retained<AVSpeechUtterance> {
+    let voices = &sp.voices;
+    let voice = sp
+        .chosen
+        .entry(lang.to_string())
+        .or_insert_with(|| voice_for(lang, voices).and_then(|id| unsafe { AVSpeechSynthesisVoice::voiceWithIdentifier(&NSString::from_str(&id)) }))
+        .clone();
+    unsafe {
+        let u = AVSpeechUtterance::speechUtteranceWithString(&NSString::from_str(text));
+        u.setVoice(voice.as_deref());
+        u
+    }
+}
 
 /// Says `text` in `lang`, stopping whatever was being said.
 pub fn say(lang: &str, text: &str) {
-    let mut last = LAST.lock().unwrap();
-    if let Some(mut c) = last.take() {
-        let _ = c.kill();
-        let _ = c.wait();
+    say_at(lang, text, 1.0);
+}
+
+fn say_at(lang: &str, text: &str, volume: f32) {
+    with_speaker(|sp| {
+        let u = utterance(sp, lang, text);
+        unsafe {
+            u.setVolume(volume);
+            sp.synth.stopSpeakingAtBoundary(AVSpeechBoundary::Immediate);
+            sp.synth.speakUtterance(&u);
+        }
+    });
+}
+
+/// For checks: how long a word takes to start, spoken at volume 0
+/// (tests never play sound on the Mac). Spins the run loop meanwhile.
+pub fn time_to_start(lang: &str, text: &str) -> std::time::Duration {
+    let t = std::time::Instant::now();
+    say_at(lang, text, 0.0);
+    let speaking = || with_speaker(|sp| unsafe { sp.synth.isSpeaking() });
+    while !speaking() && t.elapsed().as_secs() < 5 {
+        objc2_foundation::NSRunLoop::currentRunLoop().runUntilDate(&objc2_foundation::NSDate::dateWithTimeIntervalSinceNow(0.005));
     }
-    let mut cmd = Command::new("say");
-    if let Some(v) = voice_for(lang, voices()) {
-        cmd.args(["-v", &v]);
+    let took = t.elapsed();
+    while speaking() && t.elapsed().as_secs() < 10 {
+        objc2_foundation::NSRunLoop::currentRunLoop().runUntilDate(&objc2_foundation::NSDate::dateWithTimeIntervalSinceNow(0.01));
     }
-    *last = cmd.arg("--").arg(text).spawn().ok();
+    took
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn list() -> Vec<(String, String)> {
-        ["Thomas              fr_FR    # Bonjour", "Audrey (Premium)    fr_FR    # Bonjour", "Amélie (Enhanced)   fr_CA    # Bonjour", "Fung (Premium)      zh_HK    # 你好", "Tingting            zh_CN    # 你好", "Han (Premium)       zh_CN    # 你好", "Kyoko (Enhanced)    ja_JP    # こんにちは"]
+    fn list() -> Vec<Voice> {
+        [("thomas", "fr_FR", 1), ("audrey", "fr_FR", 3), ("amelie", "fr_CA", 2), ("fung", "zh_HK", 3), ("tingting", "zh_CN", 1), ("han", "zh_CN", 3), ("kyoko", "ja_JP", 2)]
             .iter()
-            .filter_map(|l| parse(l))
+            .map(|(a, b, c)| (a.to_string(), b.to_string(), *c))
             .collect()
     }
 
     #[test]
     fn the_best_voice_for_each_language() {
         let v = list();
-        assert_eq!(voice_for("fr", &v).as_deref(), Some("Audrey (Premium)"));
-        assert_eq!(voice_for("fr-CA", &v).as_deref(), Some("Amélie (Enhanced)"));
-        assert_eq!(voice_for("zh", &v).as_deref(), Some("Han (Premium)"));
-        assert_eq!(voice_for("ja", &v).as_deref(), Some("Kyoko (Enhanced)"));
+        assert_eq!(voice_for("fr", &v).as_deref(), Some("audrey"));
+        assert_eq!(voice_for("fr-CA", &v).as_deref(), Some("amelie"));
+        assert_eq!(voice_for("zh", &v).as_deref(), Some("han"));
+        assert_eq!(voice_for("ja", &v).as_deref(), Some("kyoko"));
         assert_eq!(voice_for("ko", &v), None);
     }
 }

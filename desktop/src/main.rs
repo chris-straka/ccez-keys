@@ -497,6 +497,18 @@ mod app {
             println!("drawn: {}", crate::float::picture(mtm, &engine, &arg(1), &arg(2), open, std::path::Path::new(&arg(3))));
             return;
         }
+        // `--say-time lang word…`: how long each word takes to start being
+        // said, at volume 0; with `--warm`, after a first word has loaded the voice.
+        if let Some(i) = args.iter().position(|a| a == "--say-time") {
+            let lang = args.get(i + 1).cloned().unwrap_or_default();
+            if args.iter().any(|a| a == "--warm") {
+                println!("loading the voice: {} ms", crate::speak::time_to_start(&lang, "a").as_millis());
+            }
+            for w in args.iter().skip(i + 2).filter(|a| !a.starts_with("--")) {
+                println!("{w}: {} ms", crate::speak::time_to_start(&lang, w).as_millis());
+            }
+            return;
+        }
         // `--meaning lang word`: what a screen word shows (word, meaning, tags).
         if let Some(i) = args.iter().position(|a| a == "--meaning") {
             let engine = ccez_keys_core::Engine::new(dirs().to_string_lossy().into_owned());

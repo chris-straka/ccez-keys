@@ -966,8 +966,39 @@ fn a_characters_parts_come_with_its_radical() {
     assert!(han_parts("gênant").is_empty());
 }
 
-/// The meaning, then each character with its parts a line each (the
-/// radical underlined), smaller and dimmer, wrapped within `max`.
+/// A part's name to remember it by (owner, 2026-11-13): a word or two, the
+/// usual name for a radical's squeezed form, never the data's longer notes.
+fn part_name(part: &str, gloss: &str) -> Option<String> {
+    const FORMS: &[(&str, &str)] = &[
+        ("讠", "speech"), ("訁", "speech"), ("氵", "water"), ("扌", "hand"), ("忄", "heart"), ("亻", "person"),
+        ("辶", "walk"), ("艹", "grass"), ("钅", "metal"), ("釒", "metal"), ("纟", "silk"), ("糹", "silk"),
+        ("饣", "food"), ("飠", "food"), ("礻", "spirit"), ("衤", "clothes"), ("阝", "mound"), ("刂", "knife"),
+        ("灬", "fire"), ("犭", "dog"), ("冫", "ice"), ("宀", "roof"), ("疒", "sickness"), ("囗", "enclosure"),
+        ("彳", "step"), ("攵", "strike"), ("罒", "net"), ("冖", "cover"), ("亠", "lid"), ("廴", "stride"),
+        ("勹", "wrap"), ("广", "shelter"), ("爫", "claw"), ("耂", "old"), ("覀", "west"), ("隹", "bird"),
+        ("禾", "grain"), ("丷", "eight"), ("⺈", "knife"), ("𠂉", "person"), ("⺮", "bamboo"), ("⺌", "small"),
+    ];
+    if let Some((_, n)) = FORMS.iter().find(|(f, _)| *f == part) {
+        return Some(n.to_string());
+    }
+    let g = gloss.replace('_', " ");
+    let g = g.split([',', ';', '(']).next().unwrap_or("").trim();
+    let plain = !g.is_empty() && g.split_whitespace().count() <= 2 && !g.contains(['“', '"']) && !g.contains("component");
+    plain.then(|| g.to_string())
+}
+
+#[test]
+fn a_part_is_named_in_a_word_or_two() {
+    assert_eq!(part_name("讠", "").as_deref(), Some("speech"));
+    assert_eq!(part_name("台", "platform").as_deref(), Some("platform"));
+    assert_eq!(part_name("去", "go_away").as_deref(), Some("go away"));
+    assert_eq!(part_name("尞", "fuel_used_for_sacrifices"), None);
+    assert_eq!(part_name("丷", "“ears-out”_component_used_in_some"), Some("eight".to_string()));
+}
+
+/// The meaning, then a line per character with its parts and their names
+/// ("治  氵 water   台 platform", the radical underlined), smaller and
+/// dimmer, wrapped within `max`.
 fn wrapped_with_parts(mtm: MainThreadMarker, meaning: &str, parts: &[(char, Vec<(String, String, bool)>)], size: f64, max: f64) -> Retained<NSTextField> {
     use objc2_foundation::{NSDictionary, NSMutableAttributedString, NSNumber, NSRange};
     let l = wrapped(mtm, meaning, size, max);
@@ -998,15 +1029,22 @@ fn wrapped_with_parts(mtm: MainThreadMarker, meaning: &str, parts: &[(char, Vec<
     if !meaning.is_empty() {
         push(meaning, &lead, false);
     }
-    // Each character, then its parts a line each; no glosses (the owner
-    // reads the shapes, an explanation of a part is noise).
+    // A line per character, its parts after it (owner, 2026-11-13: a
+    // line each was too tall); no glosses, the shapes are what's read.
     let head = attr(&big, 0.74);
     for (i, (c, ps)) in parts.iter().enumerate() {
-        push(if i == 0 && meaning.is_empty() { "" } else { "\n\n" }, &dim, false);
-        push(&c.to_string(), &head, false);
-        for (p, _, radical) in ps {
+        if i > 0 || !meaning.is_empty() {
             push("\n", &dim, false);
+        }
+        push(&format!("{c}  "), &head, false);
+        for (k, (p, m, radical)) in ps.iter().enumerate() {
+            if k > 0 {
+                push("   ", &dim, false);
+            }
             push(p, &dim, *radical);
+            if let Some(name) = part_name(p, m) {
+                push(&format!(" {name}"), &dim, false);
+            }
         }
     }
     // Centred, as the meaning alone is (an attributed text has no alignment of its own).
