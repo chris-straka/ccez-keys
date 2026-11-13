@@ -681,6 +681,15 @@ pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &st
     let reading = pieces(engine.strip_words(lang.to_string(), shown.clone()).into_iter().flat_map(|w| w.ruby).map(|r| (r.text, r.rt)).collect(), &shown);
     let cell = Rect { x: 0.0, y: 0.0, w: 240.0, h: 175.0 };
     let mut w = build(mtm, 1, lang.to_string(), word.to_string(), shown, meaning, tags, reading, cell, 1080.0);
+    // Where the word lands on screen, closed and open: it mustn't move.
+    let at = |w: &Word| {
+        let (p, b) = (w.panel.frame(), w.button.frame());
+        (p.origin.x + b.origin.x, p.origin.y + b.origin.y)
+    };
+    let closed = at(&w);
+    w.open = true;
+    lay_out(mtm, &mut w, 1080.0);
+    println!("word on screen: closed {closed:?}, open {:?}", at(&w));
     w.open = open;
     lay_out(mtm, &mut w, 1080.0);
     let bounds = w.bg.bounds();
@@ -784,7 +793,7 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     w.button.setAttributedTitle(&title);
     let ww = objc2_app_kit::NSAttributedStringNSStringDrawing::size(&*title).width.ceil() + 2.0;
     w.button.sizeToFit();
-    let wh = w.button.frame().size.height;
+    let wh = w.button.frame().size.height.ceil();
     // The meaning wraps within the word's spot (owner, 2026-11-12: a long
     // one was cut off at the screen's edge), centred under the word.
     // Chinese and Japanese: under the meaning, what each character is
@@ -821,11 +830,18 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
             over = vec![(l, ww / 2.0 - lw / 2.0)];
         }
     }
-    let rh = over.first().map(|(l, _)| l.frame().size.height - 3.0).unwrap_or(0.0);
+    // Whole points, so the word's line doesn't shift by rounding as the reading comes.
+    let rh = over.first().map(|(l, _)| (l.frame().size.height - 3.0).ceil()).unwrap_or(0.0);
     let rw = over.iter().map(|(l, x)| 2.0 * (ww / 2.0 - x).abs().max((x + l.frame().size.width - ww / 2.0).abs())).fold(0.0, f64::max);
     let width = (ww + 2.0 * pills_w).max(mw).max(rw) + 20.0;
     let height = wh + mh + rh + 10.0;
-    let wx = (width - ww) / 2.0;
+    // The word at the same whole point on screen however wide the window
+    // gets: the window and the word on half points were rounded one way
+    // closed and another open, and the word slipped sideways on hover
+    // (owner, 2026-11-13).
+    let cx = w.cell.x + w.cell.w / 2.0;
+    let panel_x = (cx - width / 2.0).round();
+    let wx = (cx - ww / 2.0).round() - panel_x;
     w.button.setFrame(rect(wx, mh + 5.0, ww, wh));
     content.addSubview(&w.button);
     for (l, x) in &over {
@@ -846,9 +862,8 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     w.meaning_label = m;
     // Its spot's middle, in Cocoa's coordinates; the top stays where it first
     // was, and a reading opens above it: the word never moves.
-    let cx = w.cell.x + w.cell.w / 2.0;
-    let top = *w.top.get_or_insert(primary_h - (w.cell.y + w.cell.h / 2.0) + (height - rh) / 2.0) + rh;
-    let frame: NSRect = rect(cx - width / 2.0, top - height, width, height);
+    let top = *w.top.get_or_insert((primary_h - (w.cell.y + w.cell.h / 2.0) + (height - rh) / 2.0).round()) + rh;
+    let frame: NSRect = rect(panel_x, top - height, width, height);
     w.panel.setFrame_display(frame, true);
     w.bg.setFrame(rect(0.0, 0.0, width, height));
     content.addSubview(&pad(mtm, content.bounds()));
