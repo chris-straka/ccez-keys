@@ -54,6 +54,27 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
   Region page (Translation Languages is there) and names any language the
   Mac couldn't translate into.
 
+## Words on screen and videos (2026-11-12)
+
+Learning words (float.rs) go only where the front window has no content.
+"While a video plays" off: they leave while one plays.
+
+- A video is playing when something holds the display awake (browsers do),
+  or when the front window has a playing video with the browser's own
+  controls. Claude's videos hold nothing, so only the second sees them.
+- Such a video is found by its shape in the Accessibility tree (nothing
+  names it): a group whose first child is an empty group over the same
+  frame. Its whole frame is content, playing or not, so no word sits on it.
+  Playing: its controls are away, or up with a play button that doesn't
+  carry the class "pause" (idle.rs, tested on Claude's layout).
+- Not seen: a silent or muted video with a site's own controls (YouTube
+  muted, Discord): Accessibility shows it as an empty pane.
+- `ccez-keys-mac --look <pid>` prints what the words see in that app's
+  window (content count, videos, free spots); mac.log notes a video in the
+  front window starting and stopping.
+- Checks never open a browser window on the owner's Mac: a new Chromium
+  takes focus and asks for the keychain password (owner, 2026-11-12).
+
 ## Windows and Linux (built 2026-11-10)
 
 Owner asked for both; not Tauri: one Rust app (`desktop/`), the Mac's own

@@ -219,18 +219,25 @@ mod app {
     thread_local! {
         /// Per app, where its content keeps turning up (the spot thread's own).
         static BUSY: std::cell::RefCell<crate::idle::Busy> = std::cell::RefCell::new(crate::idle::Busy::default());
+        /// A video in the front window was playing at the last look (for the log).
+        static PLAYING: Cell<bool> = const { Cell::new(false) };
     }
 
     /// Where idle words can go: room in the front window its content leaves,
-    /// and screen no other app's window covers.
-    fn spots(screen: crate::model::Rect) -> Vec<crate::model::Rect> {
+    /// and screen no other app's window covers. And whether a video in that
+    /// window is playing (one that doesn't hold the display awake: Claude's).
+    fn spots(screen: crate::model::Rect) -> (Vec<crate::model::Rect>, bool) {
         let pid = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
-        let (front, content) = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
-        let free = crate::idle::free_spots(screen, front, &content, &crate::idle::windows(pid), 8, 6);
+        let look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
+        let free = crate::idle::free_spots(screen, look.window, &look.content, &crate::idle::windows(pid), 8, 6);
         // Spots this app keeps filling lately: skipped too.
         let all = crate::idle::free_cells(screen, &[], 8, 6);
         let app = NSWorkspace::sharedWorkspace().frontmostApplication().and_then(|a| a.bundleIdentifier()).map(|b| b.to_string()).unwrap_or_default();
-        BUSY.with_borrow_mut(|b| b.look(&app, &all, &free))
+        let playing = look.videos.iter().any(|v| v.1);
+        if PLAYING.replace(playing) != playing {
+            log("info", &format!("video in the front window ({app}): {}", if playing { "playing" } else { "stopped" }));
+        }
+        (BUSY.with_borrow_mut(|b| b.look(&app, &all, &free)), playing)
     }
 
     /// Lets this app set the cursor while it isn't the front app (the
@@ -416,6 +423,19 @@ mod app {
             if let Ok(mut out) = std::fs::OpenOptions::new().create(true).append(true).open(dirs().join("mac.log")) {
                 use std::io::Write;
                 let _ = writeln!(out, "{line}");
+            }
+            return;
+        }
+        // `--look <pid>`: that app's window as idle words see it (how much
+        // content, its videos and whether each plays), printed; reads only,
+        // never its text.
+        if let Some(i) = args.iter().position(|a| a == "--look") {
+            let pid = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(0);
+            let look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
+            println!("window={:?} content={} videos={:?}", look.window, look.content.len(), look.videos);
+            if let Some(w) = look.window {
+                let free = crate::idle::free_spots(w, look.window, &look.content, &[], 8, 6);
+                println!("spots={} of 48: {:?}", free.len(), free.iter().map(|c| (c.x as i64, c.y as i64)).collect::<Vec<_>>());
             }
             return;
         }

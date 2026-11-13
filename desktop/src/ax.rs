@@ -128,10 +128,50 @@ fn frame_of(el: Ref) -> Option<Rect> {
     (r.w > 0.0 && r.h > 0.0).then_some(r)
 }
 
-/// Where the front window's content is (its text, pictures and controls,
-/// from its Accessibility tree), and the window itself: what idle words keep
-/// clear of. Stops after `most` elements or `budget`, whichever comes first.
-pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> (Option<Rect>, Vec<Rect>) {
+/// The front window as idle words see it.
+#[derive(Default)]
+pub struct Layout {
+    /// The window itself.
+    pub window: Option<Rect>,
+    /// Its content: text, pictures, controls, videos.
+    pub content: Vec<Rect>,
+    /// Its videos (idle::video_frame), and whether each is playing.
+    pub videos: Vec<(Rect, bool)>,
+}
+
+/// An element's children (none for a leaf or an app that won't say).
+fn children(el: Ref) -> Vec<Owned> {
+    let Some(a) = attr(el, "AXChildren").filter(|a| unsafe { CFGetTypeID(a.0) == CFArrayGetTypeID() }) else {
+        return Vec::new();
+    };
+    (0..unsafe { CFArrayGetCount(a.0) }).map(|i| unsafe { CFArrayGetValueAtIndex(a.0, i) }).filter(|c| !c.is_null()).map(|c| Owned(unsafe { CFRetain(c) })).collect()
+}
+
+/// A web element's classes (Chromium's AXDOMClassList).
+fn classes(el: Ref) -> Vec<String> {
+    let Some(a) = attr(el, "AXDOMClassList").filter(|a| unsafe { CFGetTypeID(a.0) == CFArrayGetTypeID() }) else {
+        return Vec::new();
+    };
+    (0..unsafe { CFArrayGetCount(a.0) })
+        .map(|i| unsafe { CFArrayGetValueAtIndex(a.0, i) })
+        .filter(|c| !c.is_null() && unsafe { CFGetTypeID(*c) == CFStringGetTypeID() })
+        .map(|c| unsafe { &*(c as *const NSString) }.to_string())
+        .collect()
+}
+
+/// A video's controls are up and its play button says paused (its class
+/// "pause", idle::video_playing): looked for among the controls and one
+/// level into them, where Chromium keeps it.
+fn paused_mark(video: Ref) -> bool {
+    let is_mark = |el: Ref| attr(el, "AXRole").and_then(|r| string(&r)).as_deref() == Some("AXButton") && classes(el).iter().any(|c| c == "pause");
+    children(video).iter().skip(1).any(|c| is_mark(c.0) || children(c.0).iter().any(|g| is_mark(g.0)))
+}
+
+/// Where the front window's content is (its text, pictures, controls and
+/// videos, from its Accessibility tree), and the window itself: what idle
+/// words keep clear of. Stops after `most` elements or `budget`, whichever
+/// comes first.
+pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> Layout {
     const CONTENT: [&str; 16] = [
         "AXStaticText",
         "AXTextArea",
@@ -154,14 +194,17 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> (Op
     let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
     unsafe { AXUIElementSetMessagingTimeout(app.0, 0.25) };
     let Some(window) = attr(app.0, "AXFocusedWindow").or_else(|| attr(app.0, "AXMainWindow")) else {
-        return (None, Vec::new());
+        return Layout::default();
     };
     let frame = frame_of(window.0);
     let mut out = Vec::new();
-    let mut queue: std::collections::VecDeque<Owned> = std::collections::VecDeque::new();
-    queue.push_back(window);
+    let mut videos = Vec::new();
+    // Each element; a first child comes with its parent and how many
+    // children that has (a video is told by its first child).
+    let mut queue: std::collections::VecDeque<(Owned, Option<(Owned, isize)>)> = std::collections::VecDeque::new();
+    queue.push_back((window, None));
     let mut seen = 0;
-    while let Some(el) = queue.pop_front() {
+    while let Some((el, up)) = queue.pop_front() {
         seen += 1;
         if seen > most || start.elapsed() > budget {
             break;
@@ -174,24 +217,34 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> (Op
         let small = |f: &Rect| frame.is_none_or(|w| f.w * f.h < w.w * w.h * 0.08);
         if (CONTENT.contains(&role.as_str()) || n == 0)
             && let Some(f) = frame_of(el.0)
-            && frame.is_none_or(|w| f.w < w.w * 0.95 || f.h < w.h * 0.95)
-            && (CONTENT.contains(&role.as_str()) || small(&f))
         {
-            out.push(f);
-            if CONTENT.contains(&role.as_str()) && role != "AXCell" {
+            // A video's picture: the whole video is content, however big.
+            if n == 0
+                && let Some((parent, siblings)) = &up
+                && let Some(v) = crate::idle::video_frame(&role, f, || Some((attr(parent.0, "AXRole").and_then(|r| string(&r))?, frame_of(parent.0)?)))
+            {
+                out.push(v);
+                videos.push((v, crate::idle::video_playing(*siblings as usize, *siblings > 1 && paused_mark(parent.0))));
                 continue;
+            }
+            if frame.is_none_or(|w| f.w < w.w * 0.95 || f.h < w.h * 0.95) && (CONTENT.contains(&role.as_str()) || small(&f)) {
+                out.push(f);
+                if CONTENT.contains(&role.as_str()) && role != "AXCell" {
+                    continue;
+                }
             }
         }
         if let Some(a) = kids {
             for i in 0..n {
                 let c = unsafe { CFArrayGetValueAtIndex(a.0, i) };
                 if !c.is_null() {
-                    queue.push_back(Owned(unsafe { CFRetain(c) }));
+                    let up = (i == 0).then(|| (Owned(unsafe { CFRetain(el.0) }), n));
+                    queue.push_back((Owned(unsafe { CFRetain(c) }), up));
                 }
             }
         }
     }
-    (frame, out)
+    Layout { window: frame, content: out, videos }
 }
 
 /// A run of text's width in points in the system font at 15 pt (what web

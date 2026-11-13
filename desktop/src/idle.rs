@@ -1,7 +1,8 @@
 //! Where learning words can go on screen (float.rs puts them there): the
 //! spots the front window has no content in and no other window covers, and
-//! whether a video holds the display awake. The layout is pure (tested); the
-//! system calls are at the foot.
+//! whether a video is playing: one that holds the display awake, or one in
+//! the front window (Claude's holds nothing). The layout is pure (tested);
+//! the system calls are at the foot.
 
 use crate::model::Rect;
 
@@ -72,6 +73,34 @@ impl Busy {
         }
         free.iter().filter(|c| all.iter().position(|a| a == *c).is_none_or(|i| map[i] < AVOID)).copied().collect()
     }
+}
+
+/// A video's picture is at least this big each way (points).
+const VIDEO_MIN: f64 = 72.0;
+
+/// A web page's video with the browser's own controls, as Chromium apps
+/// (Claude, Brave) give it to Accessibility: a group whose first child is an
+/// empty group over the very same frame (the picture); the controls, while
+/// they're up, come after it. Nothing names it a video, and to the layout
+/// its picture is one more empty pane, so words went on it (owner,
+/// 2026-11-12). `role` and `first` are a childless first child's, `parent`
+/// reads its parent's role and frame (asked only when the child fits). The
+/// video's frame when it is one.
+pub fn video_frame(role: &str, first: Rect, parent: impl FnOnce() -> Option<(String, Rect)>) -> Option<Rect> {
+    if role != "AXGroup" || first.w < VIDEO_MIN || first.h < VIDEO_MIN {
+        return None;
+    }
+    let (parent_role, frame) = parent()?;
+    let near = |a: f64, b: f64| (a - b).abs() < 1.5;
+    (parent_role == "AXGroup" && near(frame.x, first.x) && near(frame.y, first.y) && near(frame.w, first.w) && near(frame.h, first.h)).then_some(frame)
+}
+
+/// Whether such a video is playing. Its controls stay up while it's paused
+/// or over, so none (`children` is 1, the picture alone) means playing; up,
+/// its play button carries the class "pause" exactly when it isn't
+/// (`paused_mark`; a class, so the same in every language).
+pub fn video_playing(children: usize, paused_mark: bool) -> bool {
+    children <= 1 || !paused_mark
 }
 
 #[cfg(target_os = "macos")]
@@ -179,6 +208,40 @@ mod tests {
         let half = Rect { x: 0.0, y: 0.0, w: 700.0, h: 800.0 };
         let spots = free_spots(SCREEN, Some(half), &[], &[], 6, 4);
         assert!(spots.iter().all(|c| c.x + c.w <= 700.0 || c.x >= 700.0));
+    }
+
+    /// Claude's window with a video in a reply, as read on 2026-11-12.
+    const REEL: Rect = Rect { x: 715.0, y: 139.0, w: 457.0, h: 394.0 };
+
+    #[test]
+    fn a_video_is_a_group_over_an_empty_group_of_the_same_frame() {
+        let group = |f: Rect| move || Some(("AXGroup".to_string(), f));
+        assert_eq!(video_frame("AXGroup", REEL, group(REEL)), Some(REEL));
+        // A pane inside a bigger group, a picture, a control's icon: not one.
+        assert_eq!(video_frame("AXGroup", REEL, group(Rect { h: 900.0, ..REEL })), None);
+        assert_eq!(video_frame("AXImage", REEL, group(REEL)), None);
+        let icon = Rect { x: 1022.0, y: 461.0, w: 40.0, h: 40.0 };
+        assert_eq!(video_frame("AXGroup", icon, group(icon)), None);
+        assert_eq!(video_frame("AXGroup", REEL, || Some(("AXWebArea".to_string(), REEL))), None);
+        assert_eq!(video_frame("AXGroup", REEL, || None), None);
+    }
+
+    #[test]
+    fn a_video_plays_unless_its_controls_are_up_and_say_paused() {
+        // Controls away: playing. Up while it plays, up when paused or over.
+        assert!(video_playing(1, false));
+        assert!(video_playing(3, false));
+        assert!(!video_playing(3, true));
+    }
+
+    #[test]
+    fn no_word_goes_on_a_video() {
+        // Its picture counted as content: every spot left is clear of it.
+        let window = Rect { x: 0.0, y: 30.0, w: 1920.0, h: 1050.0 };
+        let hits = |c: &Rect| REEL.x < c.x + c.w && c.x < REEL.x + REEL.w && REEL.y < c.y + c.h && c.y < REEL.y + REEL.h;
+        assert!(free_spots(window, Some(window), &[], &[], 8, 6).iter().any(hits));
+        let spots = free_spots(window, Some(window), &[REEL], &[], 8, 6);
+        assert!(!spots.is_empty() && !spots.iter().any(hits));
     }
 
     #[test]

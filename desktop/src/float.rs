@@ -179,7 +179,8 @@ pub struct Floaters {
     pub hide_in_shots: Cell<bool>,
     /// When the screenshot tools were last looked for, and whether they were up.
     capture_seen: Cell<(Instant, bool)>,
-    /// From the spot thread: the free spots, and whether a video holds the display.
+    /// From the spot thread: the free spots, and whether a video is playing
+    /// (holding the display awake, or in the front window).
     spots: Arc<Mutex<Option<Vec<Rect>>>>,
     video: Arc<AtomicBool>,
     /// For the spot thread: the screen (top-left coordinates) and whether to look.
@@ -188,7 +189,9 @@ pub struct Floaters {
 }
 
 impl Floaters {
-    pub fn new(engine: std::sync::Arc<ccez_keys_core::Engine>, find: impl Fn(Rect) -> Vec<Rect> + Send + 'static, video: impl Fn() -> bool + Send + 'static) -> Floaters {
+    /// `find` gives the free spots on a screen and whether a video in the
+    /// front window is playing; `video`, whether one holds the display awake.
+    pub fn new(engine: std::sync::Arc<ccez_keys_core::Engine>, find: impl Fn(Rect) -> (Vec<Rect>, bool) + Send + 'static, video: impl Fn() -> bool + Send + 'static) -> Floaters {
         let spots: Arc<Mutex<Option<Vec<Rect>>>> = Arc::default();
         let playing: Arc<AtomicBool> = Arc::default();
         let screen: Arc<Mutex<Rect>> = Arc::default();
@@ -215,11 +218,14 @@ impl Floaters {
                     }
                     seen = Some(now);
                     walked = std::time::Instant::now();
-                    playing.store(video(), Ordering::Relaxed);
+                    let mut on = video();
                     let s = *screen.lock().unwrap();
                     if s.w > 0.0 {
-                        *spots.lock().unwrap() = Some(find(s));
+                        let (free, in_window) = find(s);
+                        on |= in_window;
+                        *spots.lock().unwrap() = Some(free);
                     }
+                    playing.store(on, Ordering::Relaxed);
                 }
             });
         }
@@ -249,8 +255,8 @@ impl Floaters {
     /// `most` is how many may be up (the menu's count; 0: none, also when
     /// paused), `words` gives the learning words (lang, word) and `meaning` a
     /// word as shown and its short meaning.
-    /// With `while_video` off they go while a video holds the display
-    /// awake; with `while_typing` off none comes while keys are being typed.
+    /// With `while_video` off they go while a video plays; with
+    /// `while_typing` off none comes while keys are being typed.
     #[allow(clippy::too_many_arguments)]
     pub fn tick(
         &self,
