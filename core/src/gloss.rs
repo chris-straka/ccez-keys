@@ -49,8 +49,9 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
     };
     let first = cut_explanation(&drop_long_bracket(first_part(&m).trim()));
     // "to sap (to subvert by digging)": the explanation in brackets at the
-    // end goes; the short meaning is what comes before it.
-    let first = drop_trailing_note(&first);
+    // end goes; a qualifier stays ("to talk (with sb)"), and a rare English
+    // word gives way to its explanation (keep_note).
+    let first = keep_note(&first);
     // "(transitive) to hold back": the labels are tags (tags_of), not words of the meaning.
     let tags = tags_of(&first);
     let first = untagged(&first).to_string();
@@ -64,12 +65,145 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
         Some((i, i + open.len() + j + 1, w.to_string()))
     });
     match with {
-        Some((a, b, w)) if !w.is_empty() && w.split_whitespace().count() <= 2 => {
+        Some((a, b, w)) if !w.is_empty() && w.split_whitespace().count() <= 2 && !is_somebody(&w) => {
             let gloss = format!("{} {}", first[..a].trim(), first[b..].trim()).trim().to_string();
-            (format!("{word} {w}"), gloss, tags)
+            (format!("{word} {w}"), spelled_out(&gloss), tags)
         }
-        _ => (word.to_string(), first, tags),
+        _ => (word.to_string(), spelled_out(&first), tags),
     }
+}
+
+/// A word's kind as a short tag first among `tags` ("v", "n", "a"…; owner,
+/// 2026-11-13: "so I don't have to ask"): the dictionary's first part of
+/// speech, else a meaning starting "to " is a verb.
+pub fn with_pos(tags: Vec<String>, pos: Vec<String>, meaning: &str) -> Vec<String> {
+    let tag = match pos.first().map(String::as_str) {
+        Some("verb") => Some("v"),
+        Some("noun" | "proper noun" | "name") => Some("n"),
+        Some("adjective" | "adj") => Some("a"),
+        Some("adverb" | "adv") => Some("adv"),
+        Some("pronoun") => Some("pron"),
+        Some("preposition" | "prep") => Some("prep"),
+        Some("conjunction" | "conj") => Some("conj"),
+        Some("interjection" | "intj") => Some("interj"),
+        Some("numeral" | "num") => Some("num"),
+        Some("article" | "determiner" | "det") => Some("det"),
+        Some("particle") => Some("part"),
+        Some(_) => None,
+        None => meaning.starts_with("to ").then_some("v"),
+    };
+    match tag {
+        Some(t) if !meaning.is_empty() => std::iter::once(t.to_string()).chain(tags.into_iter().filter(|x| x != t)).collect(),
+        _ => tags,
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn a_words_kind_is_its_first_tag() {
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(with_pos(s(&["intr"]), s(&["verb"]), "to stand out"), ["v", "intr"]);
+    assert_eq!(with_pos(vec![], s(&["adjective", "verb"]), "deposed"), ["a"]);
+    // Chinese has no parts of speech in its dictionary: "to …" is a verb.
+    assert_eq!(with_pos(vec![], vec![], "to bring about"), ["v"]);
+    assert!(with_pos(vec![], vec![], "bankruptcy").is_empty());
+}
+
+/// "sb", "sth" and the like: a dictionary's stand-ins for an object.
+fn is_somebody(w: &str) -> bool {
+    matches!(w.trim_end_matches("'s"), "sb" | "sth" | "someone" | "something" | "somebody" | "one" | "oneself")
+}
+
+/// The dictionary's shorthand spelled out (owner, 2026-11-13: "what is
+/// sb?"): "to talk with sb" → "to talk with someone".
+fn spelled_out(m: &str) -> String {
+    let mut out = String::new();
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        out.push_str(match word.as_str() {
+            "sb" => "someone",
+            "sth" => "something",
+            "sb's" => "someone's",
+            "sth's" => "something's",
+            w => w,
+        });
+        word.clear();
+    };
+    for c in m.chars() {
+        if c.is_alphanumeric() || c == '\'' {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
+}
+
+/// English words in everyday use (the keyboard's English list, commonest
+/// first): a meaning in a word outside it ("to fulgurate") tells a learner
+/// nothing.
+fn common_english(w: &str) -> bool {
+    static WORDS: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
+    WORDS
+        .get_or_init(|| include_str!("../../data/words/en.txt").lines().filter(|l| !l.starts_with('#')).collect())
+        .contains(w.to_lowercase().as_str())
+}
+
+/// A meaning with its bracketed note at the end weighed (owner, 2026-11-13:
+/// the full definition, not a cut one):
+/// - a qualifier with "sb"/"sth" stays, unbracketed: "to talk (with sb)" →
+///   "to talk with sb";
+/// - a meaning in one rare English word gives way to the note explaining
+///   it: "to fulgurate (to emit lightning)" → "to emit lightning";
+/// - a short list of what it's said of stays: "to quench (fire, thirst, or
+///   lime)", "to investigate (by the police)";
+/// - anything longer is an explanation, and goes ("to read (to look at and
+///   understand symbols, words, or data)" → "to read").
+fn keep_note(m: &str) -> String {
+    let Some((before, note)) = split_note(m) else { return m.trim_end().to_string() };
+    let words = note.split_whitespace().count();
+    let mentions = note.split(|c: char| !c.is_alphanumeric() && c != '\'').any(is_somebody);
+    if mentions && words <= 5 {
+        return format!("{before} {note}");
+    }
+    let core = before.strip_prefix("to ").unwrap_or(&before);
+    let rare = !core.contains([' ', ',']) && !common_english(core);
+    if rare && words <= 6 {
+        return note;
+    }
+    let plain = note.chars().all(|c| c.is_alphabetic() || matches!(c, ' ' | ',' | '\'' | '-'));
+    let explains = note.starts_with("to ") || note.starts_with("by extension") || note.starts_with("e.g.") || note.starts_with("i.e.");
+    if plain && !explains && words <= 4 {
+        return format!("{before} ({note})");
+    }
+    before
+}
+
+/// "to sap (to subvert by digging (slowly))" → ("to sap", "to subvert by
+/// digging (slowly)"); None without a note at the end, or when the note is
+/// all there is.
+fn split_note(m: &str) -> Option<(String, String)> {
+    let t = m.trim_end();
+    if !t.ends_with(')') {
+        return None;
+    }
+    let mut depth = 0i32;
+    for (i, ch) in t.char_indices().rev() {
+        match ch {
+            ')' => depth += 1,
+            '(' => {
+                depth -= 1;
+                if depth == 0 {
+                    let before = t[..i].trim_end().trim_end_matches(',').trim_end();
+                    return (!before.is_empty()).then(|| (before.to_string(), t[i + 1..t.len() - 1].trim().to_string()));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Of a word's first few senses, the everyday one. Not one marked rare,
@@ -302,11 +436,16 @@ mod everyday_tests {
         ];
         assert_eq!(short_gloss("lesen", &lesen, none).1, "to read");
         let loeschen = ["(transitive) to quench (fire, thirst, or lime)".into(), "(transitive) to delete, to erase (remembrance, memory, data)".into()];
-        assert_eq!(short_gloss("löschen", &loeschen, none).1, "to quench");
+        assert_eq!(short_gloss("löschen", &loeschen, none).1, "to quench (fire, thirst, or lime)");
         let spur = ["trace (rest of something that indicates its former presence; (by extension) any small amount)".into(), "trail, track, spoor".into()];
         assert_eq!(short_gloss("Spur", &spur, none).1, "trace");
         let ermitteln = ["(intransitive) to investigate (by the police) [(optional) with gegen (+ accusative) ‘someone’ and wegen (+ genitive) ‘for something’]".into()];
-        assert_eq!(short_gloss("ermitteln", &ermitteln, none).1, "to investigate");
+        assert_eq!(short_gloss("ermitteln", &ermitteln, none).1, "to investigate (by the police)");
+        // The whole meaning (owner, 2026-11-13): a qualifier stays, spelled out;
+        // a rare English word gives way to what it means.
+        assert_eq!(short_gloss("谈话", &["to talk (with sb)".into(), "to have a conversation".into()], none).1, "to talk with someone");
+        assert_eq!(short_gloss("fulgurer", &["to fulgurate (to emit lightning)".into()], none).1, "to emit lightning");
+        assert_eq!(short_gloss("x", &["to give sth to sb".into()], none).1, "to give something to someone");
         assert_eq!(short_gloss("parvenir", &["(intransitive) to reach [with à]".into()], none).0, "parvenir à");
         assert_eq!(short_gloss("défaillir", &["to faint, feel faint [with de ‘with/from’]".into()], none), ("défaillir de".into(), "to faint, feel faint".into(), vec![]));
         assert_eq!(short_gloss("eau", &["water, a liquid that is transparent, colorless, odorless, and tasteless in its pure form".into()], none).1, "water");

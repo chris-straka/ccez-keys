@@ -153,9 +153,12 @@ impl Engine {
             && !meanings(head).is_empty()
         {
             let (_, meaning, tags) = gloss::short_gloss(head, &meanings(head), meanings);
+            let tags = gloss::with_pos(tags, card(head).map(|c| c.pos).unwrap_or_default(), &meaning);
             return (w, meaning, tags);
         }
         let (shown, meaning, tags) = gloss::short_gloss(&w, &meanings(&w), meanings);
+        // What kind of word, first among its tags (owner, 2026-11-13).
+        let tags = gloss::with_pos(tags, card(&w).map(|c| c.pos).unwrap_or_default(), &meaning);
         if shown != w || meaning.is_empty() {
             return (shown, meaning, tags);
         }

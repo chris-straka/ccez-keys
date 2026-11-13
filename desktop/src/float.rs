@@ -177,6 +177,10 @@ struct Word {
     seen: Duration,
     /// The meaning shows (hovered, or after Again until this time).
     open: bool,
+    /// When it last opened: its tags come a moment later.
+    opened: Option<Instant>,
+    /// Its tags are up (and have faded in).
+    tags_up: bool,
     /// Its top edge (Cocoa's coordinates), fixed once it's up: the meaning
     /// opens below the word without moving it (owner, 2026-11-11).
     top: Option<f64>,
@@ -399,6 +403,14 @@ impl Floaters {
             let open = over || held;
             if open != w.open {
                 w.open = open;
+                w.opened = open.then(Instant::now);
+                w.tags_up = false;
+                lay_out(mtm, w, primary_h);
+            }
+            // Its tags a moment after its meaning (owner, 2026-11-13: they
+            // took the eye before the translation did).
+            if w.open && !w.tags_up && !w.tags.is_empty() && w.opened.is_some_and(|t| t.elapsed() >= TAGS_AFTER) {
+                w.tags_up = true;
                 lay_out(mtm, w, primary_h);
             }
             // Answered Again: its meaning shown a moment (longer while the
@@ -709,6 +721,8 @@ fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: St
         on: Default::default(),
         seen: Duration::ZERO,
         open: false,
+        opened: None,
+        tags_up: false,
         hold_until: None,
         top: None,
         pointed: false,
@@ -732,6 +746,7 @@ pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &st
     };
     let closed = at(&w);
     w.open = true;
+    w.tags_up = true;
     lay_out(mtm, &mut w, 1080.0);
     println!("word on screen: closed {closed:?}, open {:?}", at(&w));
     // What a click lands on at the pill's edges and the word: the pad, where
@@ -869,10 +884,13 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     // Its tags as small pills (owner, 2026-11-11), a centred row under the
     // word, above the meaning (owner, 2026-11-13: beside the word they hung
     // off its end).
+    // Made whenever open, so their room is there from the start; shown
+    // only once `tags_up`.
     let pills: Vec<(Retained<NSBox>, f64, f64)> = if w.open { w.tags.iter().map(|t| pill(mtm, t)).collect() } else { Vec::new() };
     let pills_w: f64 = pills.iter().map(|(_, pw, _)| pw + 4.0).sum::<f64>() - if pills.is_empty() { 0.0 } else { 4.0 };
     let pills_h: f64 = pills.iter().map(|(_, _, ph)| *ph).fold(0.0, f64::max);
     let pb = if pills.is_empty() { 0.0 } else { (pills_h + 3.0).ceil() };
+    let pills = if w.tags_up { pills } else { Vec::new() };
     let (mw, mh) = m.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0), l.frame().size.height)).unwrap_or((0.0, 0.0));
     // Japanese and Chinese, open: furigana or pinyin over each piece where
     // every one fits over its own, else one line over the whole word.
@@ -944,13 +962,13 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
             for (l, _) in &over {
                 views.push(Retained::into_super(Retained::into_super(l.clone())));
             }
-            for (p, _, _) in &pills {
-                views.push(Retained::into_super(p.clone()));
-            }
             if let Some(m) = &w.meaning_label {
                 views.push(Retained::into_super(Retained::into_super(m.clone())));
             }
         }
+        ease(&w.button, target, &views);
+    } else if !pills.is_empty() {
+        let views: Vec<Retained<objc2_app_kit::NSView>> = pills.iter().map(|(p, _, _)| Retained::into_super(p.clone())).collect();
         ease(&w.button, target, &views);
     }
     content.addSubview(&pad(mtm, content.bounds(), w.id));
@@ -961,6 +979,9 @@ thread_local! {
     /// Off for drawings to a file, which must show the end state.
     static EASE: Cell<bool> = const { Cell::new(true) };
 }
+
+/// Its tags come this long after its meaning.
+const TAGS_AFTER: Duration = Duration::from_millis(1500);
 
 /// How long a word takes to brighten or dim.
 const EASE_SECS: f64 = 0.18;
