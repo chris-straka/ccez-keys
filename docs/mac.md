@@ -106,9 +106,12 @@ A left click (Good) and a right click (Again) say the word aloud as shown,
 article and all, in its language's voice (owner, 2026-11-12/13); middle
 clicks stay silent.
 
-A new word never comes up in a spot whose word was clicked in the last two
-minutes, nor under the pointer (owner, 2026-11-12: the next one appeared
-right where the click was).
+A new word never comes up in a spot whose word was clicked in the last 30
+seconds (that spot and the ones just above and below), nor under the
+pointer (owner, 2026-11-12: the next one appeared right where the click
+was; 2026-11-13: two minutes over every overlapping spot sent words to
+the far right). A word stays 3 minutes of time the Mac is in use (input
+in the last minute): away or reading, words don't turn over unseen.
 
 Of the empty space left, a new word takes the spot nearest the screen's
 centre, whatever the app (owner, 2026-11-13: in Claude that's the gap

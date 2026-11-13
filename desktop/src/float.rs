@@ -22,8 +22,12 @@ use crate::model::Rect;
 use crate::view::{fade_over, label, new_panel, rect};
 use ccez_keys_core::review::{Grade, Snapshot};
 
-/// How long a word stays when left alone.
-const STAYS: Duration = Duration::from_secs(90);
+/// How long a word stays when left alone, counting only time the Mac is in
+/// use (owner, 2026-11-13: "leave the words on the screen for longer maybe
+/// from inactivity"): away or reading, words don't turn over unseen.
+const STAYS: Duration = Duration::from_secs(180);
+/// In use: a key, click or pointer move this recently.
+const IN_USE: Duration = Duration::from_secs(60);
 /// Kept off the screen this long after a screenshot key, and while the
 /// screenshot tools run (owner, 2026-11-11: not in screenshots).
 const SHOT_QUIET: Duration = Duration::from_secs(8);
@@ -35,8 +39,11 @@ const WALK_EVERY: Duration = Duration::from_secs(2);
 /// A new word may come this often.
 const EVERY: Duration = Duration::from_secs(4);
 /// A spot whose word was just clicked takes no new word this long (owner,
-/// 2026-11-12: the next one came up right where the click was).
-const RESTS: Duration = Duration::from_secs(120);
+/// 2026-11-12: the next one came up right where the click was). Short, and
+/// only that spot and the ones just above and below it: two minutes over
+/// every overlapping spot left only far ones, and words went to the far
+/// side of the screen (owner, 2026-11-13: "the right side is annoying").
+const RESTS: Duration = Duration::from_secs(30);
 
 thread_local! {
     /// What a click on a word does: (its index, 0 left / 1 right / 2 middle).
@@ -166,7 +173,8 @@ struct Word {
     button: Retained<NSButton>,
     meaning_label: Option<Retained<NSTextField>>,
     on: std::rc::Rc<Cell<bool>>,
-    came: Instant,
+    /// Time on screen while the Mac was in use.
+    seen: Duration,
     /// The meaning shows (hovered, or after Again until this time).
     open: bool,
     /// Its top edge (Cocoa's coordinates), fixed once it's up: the meaning
@@ -204,6 +212,8 @@ pub struct Floaters {
     next_id: Cell<isize>,
     seed: Cell<usize>,
     last: Cell<Instant>,
+    /// The last tick, for words' time `seen`.
+    ticked: Cell<Instant>,
     /// Off the screen until then (a screenshot key was pressed).
     quiet_until: Cell<Option<Instant>>,
     /// The menu's "Hide in screenshots" (owner, 2026-11-11: off, to show them).
@@ -272,6 +282,7 @@ impl Floaters {
             next_id: Cell::new(1),
             seed: Cell::new((std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) % 997) as usize),
             last: Cell::new(Instant::now()),
+            ticked: Cell::new(Instant::now()),
             quiet_until: Cell::new(None),
             hide_in_shots: Cell::new(true),
             readings: Cell::new(true),
@@ -330,7 +341,7 @@ impl Floaters {
             if let Some(i) = i {
                 let (mut w, _, _) = self.leaving.borrow_mut().remove(i);
                 w.on.set(true);
-                w.came = Instant::now();
+                w.seen = Duration::ZERO;
                 fade_over(&w.panel, true, w.on.clone(), 0.25);
                 self.words.borrow_mut().push(w);
             }
@@ -370,6 +381,9 @@ impl Floaters {
             }
         }
         // Hovered: its meaning shows; left: it closes again. Old: it goes.
+        let now = Instant::now();
+        let dt = now.saturating_duration_since(self.ticked.replace(now)).min(Duration::from_secs(2));
+        let in_use = crate::idle::idle() < IN_USE;
         let mut gone = Vec::new();
         for (i, w) in self.words.borrow_mut().iter_mut().enumerate() {
             let f = w.panel.frame();
@@ -402,7 +416,10 @@ impl Floaters {
             if over {
                 continue;
             }
-            if w.came.elapsed() > STAYS {
+            if in_use {
+                w.seen += dt;
+            }
+            if w.seen > STAYS {
                 gone.push((i, true));
             }
         }
@@ -507,7 +524,7 @@ impl Floaters {
         if let Some(i) = up {
             let mut ws = self.words.borrow_mut();
             ws[i].hold_until = None;
-            ws[i].came = Instant::now();
+            ws[i].seen = Duration::ZERO;
             ws[i].open = false;
             lay_out(mtm, &mut ws[i], primary_h);
         } else {
@@ -690,7 +707,7 @@ fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: St
         button,
         meaning_label: None,
         on: Default::default(),
-        came: Instant::now(),
+        seen: Duration::ZERO,
         open: false,
         hold_until: None,
         top: None,
@@ -743,10 +760,12 @@ fn next_spot(free: &[Rect], taken: &[Rect], rested: &[Rect], pointer: (f64, f64)
         let (dx, dy) = (c.x + c.w / 2.0 - centre.0, c.y + c.h / 2.0 - centre.1);
         dx * dx + dy * dy
     };
-    // Spots overlap (idle::free_cells): one touching a word's, or a clicked one's, is out.
+    // Spots overlap (idle::free_cells): one touching a word's is out; a
+    // clicked one blocks spots centred within it across, and a cell up or down.
     let hits = |a: &Rect, b: &Rect| a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    let near = |a: &Rect, b: &Rect| ((a.x + a.w / 2.0) - (b.x + b.w / 2.0)).abs() < b.w / 2.0 && ((a.y + a.h / 2.0) - (b.y + b.h / 2.0)).abs() < b.h;
     free.iter()
-        .filter(|c| !taken.iter().chain(rested).any(|t| hits(c, t)) && !under(c))
+        .filter(|c| !taken.iter().any(|t| hits(c, t)) && !rested.iter().any(|r| near(c, r)) && !under(c))
         .min_by(|a, b| far(a).total_cmp(&far(b)))
         .copied()
 }
@@ -947,6 +966,22 @@ fn a_new_word_never_comes_where_one_was_just_clicked_or_under_the_pointer() {
     assert_eq!(next_spot(&free[..2], &[cell(1)], &[cell(0)], away, left), None);
     // Nearest the middle of the screen first.
     assert_eq!(next_spot(&free, &[], &[], away, (600.0, 80.0)), Some(cell(2)));
+}
+
+#[cfg(test)]
+#[test]
+fn a_click_in_a_narrow_gap_keeps_the_next_word_in_the_gap() {
+    // Claude, 2026-11-13: the gap's spots (x 360 and 420), and the far right.
+    let screen = Rect { x: 0.0, y: 30.0, w: 1920.0, h: 1050.0 };
+    let cells = crate::idle::free_cells(screen, &[], 8, 6);
+    let free: Vec<Rect> = cells.into_iter().filter(|c| (c.x >= 360.0 && c.x + c.w <= 696.0) || c.x >= 1500.0).collect();
+    let centre = (960.0, 555.0);
+    let first = next_spot(&free, &[], &[], (5000.0, 5000.0), centre).unwrap();
+    assert!(first.x < 696.0);
+    // Clicked there, the pointer moved off: the next is still in the gap, not beside the old one.
+    let next = next_spot(&free, &[], &[first], (5000.0, 5000.0), centre).unwrap();
+    assert!(next.x < 696.0, "{next:?}");
+    assert!((next.y - first.y).abs() >= first.h);
 }
 
 #[test]

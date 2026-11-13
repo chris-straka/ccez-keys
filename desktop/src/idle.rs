@@ -219,7 +219,7 @@ mod sys {
 }
 
 #[cfg(target_os = "macos")]
-pub use sys::{video, windows};
+pub use sys::{idle, video, windows};
 
 #[cfg(test)]
 mod tests {
