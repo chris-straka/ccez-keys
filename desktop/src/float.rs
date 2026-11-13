@@ -81,15 +81,26 @@ objc2::define_class!(
     }
 );
 
+/// Which button a click was: 0 left, 1 right (Again), 2 middle (Easy),
+/// 3 shift + middle (Known, owner 2026-11-11).
+fn kind_of(e: &NSEvent, button: u8) -> u8 {
+    match button {
+        2 if e.modifierFlags().contains(objc2_app_kit::NSEventModifierFlags::Shift) => 3,
+        b => b,
+    }
+}
+
 objc2::define_class!(
-    /// Over a whole word's pill, on top and click-through: the pointing
-    /// finger the moment the pointer is on it and on every move (the app
-    /// underneath puts its own cursor back as the pointer moves), the arrow
-    /// when it leaves. The one place a word sets the cursor, so two never
-    /// take turns.
+    /// Over a whole word's pill, on top: the pointing finger the moment the
+    /// pointer is on it and on every move (the app underneath puts its own
+    /// cursor back as the pointer moves), the arrow when it leaves; and the
+    /// clicks anywhere on it, so a click lands wherever the finger shows
+    /// (owner, 2026-11-13: a click just beside the word did nothing). The one
+    /// place a word sets the cursor, so two never take turns.
     #[unsafe(super(objc2_app_kit::NSView, objc2_app_kit::NSResponder, objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "CcezKeysFloatPad"]
+    #[ivars = std::cell::Cell<isize>]
     struct FloatPad;
 
     impl FloatPad {
@@ -105,17 +116,30 @@ objc2::define_class!(
         fn mouse_exited(&self, _e: &NSEvent) {
             objc2_app_kit::NSCursor::arrowCursor().set();
         }
-        #[unsafe(method(hitTest:))]
-        fn hit_test(&self, _p: objc2_foundation::NSPoint) -> *mut objc2_app_kit::NSView {
-            std::ptr::null_mut()
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, e: &NSEvent) {
+            fire(objc2::DefinedClass::ivars(self).get(), kind_of(e, 0));
+        }
+        #[unsafe(method(rightMouseDown:))]
+        fn right_mouse_down(&self, e: &NSEvent) {
+            fire(objc2::DefinedClass::ivars(self).get(), kind_of(e, 1));
+        }
+        #[unsafe(method(otherMouseDown:))]
+        fn other_mouse_down(&self, e: &NSEvent) {
+            fire(objc2::DefinedClass::ivars(self).get(), kind_of(e, 2));
+        }
+        #[unsafe(method(acceptsFirstMouse:))]
+        fn accepts_first_mouse(&self, _e: Option<&NSEvent>) -> bool {
+            true
         }
     }
 );
 
-fn pad(mtm: MainThreadMarker, frame: NSRect) -> Retained<objc2_app_kit::NSView> {
+fn pad(mtm: MainThreadMarker, frame: NSRect, id: isize) -> Retained<objc2_app_kit::NSView> {
     use objc2::AllocAnyThread;
     use objc2_app_kit::{NSTrackingArea, NSTrackingAreaOptions};
-    let p: Retained<FloatPad> = unsafe { objc2::msg_send![FloatPad::alloc(mtm), initWithFrame: frame] };
+    let p = FloatPad::alloc(mtm).set_ivars(std::cell::Cell::new(id));
+    let p: Retained<FloatPad> = unsafe { objc2::msg_send![super(p), initWithFrame: frame] };
     let opts = NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::MouseMoved | NSTrackingAreaOptions::ActiveAlways | NSTrackingAreaOptions::InVisibleRect;
     let area = unsafe { NSTrackingArea::initWithRect_options_owner_userInfo(NSTrackingArea::alloc(), p.bounds(), opts, Some(&p), None) };
     p.addTrackingArea(&area);
@@ -690,6 +714,14 @@ pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &st
     w.open = true;
     lay_out(mtm, &mut w, 1080.0);
     println!("word on screen: closed {closed:?}, open {:?}", at(&w));
+    // What a click lands on at the pill's edges and the word: the pad, where
+    // the finger shows, not just the word's text.
+    let b = w.bg.frame();
+    let hits: Vec<String> = [(3.0, b.size.height / 2.0), (b.size.width / 2.0, b.size.height - 8.0), (b.size.width - 3.0, 6.0)]
+        .iter()
+        .map(|&(x, y)| w.bg.hitTest(objc2_foundation::NSPoint::new(x, y)).map(|v| v.class().name().to_string_lossy().into_owned()).unwrap_or_else(|| "nothing".into()))
+        .collect();
+    println!("a click at the left edge, the word, the bottom right lands on: {}", hits.join(", "));
     w.open = open;
     lay_out(mtm, &mut w, 1080.0);
     let bounds = w.bg.bounds();
@@ -866,7 +898,7 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let frame: NSRect = rect(panel_x, top - height, width, height);
     w.panel.setFrame_display(frame, true);
     w.bg.setFrame(rect(0.0, 0.0, width, height));
-    content.addSubview(&pad(mtm, content.bounds()));
+    content.addSubview(&pad(mtm, content.bounds(), w.id));
     w.bg.setCornerRadius(height.min(28.0) / 2.0);
 }
 
