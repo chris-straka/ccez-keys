@@ -24,10 +24,14 @@ class App : Application() {
     /** Bumped whenever a setting changes (from the panel or `keys`). */
     val settingsVersion = MutableStateFlow(0)
 
-    /** Background work. A failure in one job is logged, never a crash of the keyboard. */
+    /**
+     * Background work. A failure in one job is logged, never a crash of the
+     * keyboard. Logs name an error's class and where, never its message: a
+     * Rust panic's message can quote the text it was handling.
+     */
     val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
-            runCatching { log("error", "job-failed", "error" to e.toString(), "at" to e.stackTrace.take(6).joinToString(" < ")) }
+            runCatching { log("error", "job-failed", "error" to e.javaClass.name, "at" to e.stackTrace.take(6).joinToString(" < ")) }
         },
     )
 
@@ -35,7 +39,7 @@ class App : Application() {
         super.onCreate()
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            runCatching { log("error", "crash", "thread" to t.name, "error" to e.toString(), "at" to e.stackTrace.take(8).joinToString(" < ")) }
+            runCatching { log("error", "crash", "thread" to t.name, "error" to e.javaClass.name, "at" to e.stackTrace.take(8).joinToString(" < ")) }
             previous?.uncaughtException(t, e)
         }
         log("info", "start", "version" to BuildConfig.VERSION_NAME)
@@ -112,7 +116,7 @@ class App : Application() {
                     runCatching {
                         // The innermost cause says what went wrong (the outer one is Android's wrapper).
                         val root = generateSequence(e) { it.cause }.last()
-                        log("error", "recovered", "error" to e.toString(), "cause" to root.toString(), "at" to root.stackTrace.take(10).joinToString(" < "))
+                        log("error", "recovered", "error" to e.javaClass.name, "cause" to root.javaClass.name, "at" to root.stackTrace.take(10).joinToString(" < "))
                     }
                     if (recent.size >= 3) throw e
                     onRecovered?.invoke()

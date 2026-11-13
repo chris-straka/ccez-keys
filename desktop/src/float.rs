@@ -234,6 +234,9 @@ pub struct Floaters {
     answered: Cell<usize>,
     /// The break, until then.
     break_until: Cell<Option<Instant>>,
+    /// Words that left unanswered (timed out), kept off the screen a while:
+    /// an overdue one came straight back in the next free spot.
+    away: RefCell<Vec<((String, String), Instant)>>,
     /// Spots whose word was clicked, and when: resting (RESTS).
     rested: RefCell<Vec<(Rect, Instant)>>,
     /// When the screenshot tools were last looked for, and whether they were up.
@@ -300,6 +303,7 @@ impl Floaters {
             breather: Cell::new(Duration::ZERO),
             answered: Cell::new(0),
             break_until: Cell::new(None),
+            away: RefCell::new(Vec::new()),
             quiet_until: Cell::new(None),
             hide_in_shots: Cell::new(true),
             readings: Cell::new(true),
@@ -456,6 +460,9 @@ impl Floaters {
         gone.dedup_by_key(|g| g.0);
         for (i, revive) in gone.into_iter().rev() {
             let w = self.words.borrow_mut().remove(i);
+            if revive {
+                self.away.borrow_mut().push(((w.lang.clone(), w.word.clone()), Instant::now()));
+            }
             self.leave(w, revive);
         }
         // A new word now and then, in a spot nobody holds.
@@ -490,7 +497,8 @@ impl Floaters {
         let front = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication().and_then(|a| a.bundleIdentifier()).map(|b| b.to_string()).unwrap_or_default();
         let mid = free.iter().filter(|c| (c.x + c.w / 2.0 - (scr.x + scr.w / 2.0)).abs() < scr.w / 4.0).count();
         crate::app::log("info", &format!("word spot ({}, {}) in {front}: {} free, {mid} in the middle half, {} up, {} resting", cell.x as i64, cell.y as i64, free.len(), taken.len(), rested.len()));
-        let up: Vec<(String, String)> = self.words.borrow().iter().map(|w| (w.lang.clone(), w.word.clone())).collect();
+        self.away.borrow_mut().retain(|(_, at)| at.elapsed() < AWAY);
+        let up: Vec<(String, String)> = self.words.borrow().iter().map(|w| (w.lang.clone(), w.word.clone())).chain(self.away.borrow().iter().map(|(w, _)| w.clone())).collect();
         let list = ccez_keys_core::review::mixed(words());
         // The first of a few that the dictionary can give a meaning to.
         let picks = self.engine.with_review(|r| r.next(&list, &up, 4, Self::now(), self.seed.get()));
@@ -1047,6 +1055,9 @@ thread_local! {
 
 /// Its tags come this long after its meaning.
 const TAGS_AFTER: Duration = Duration::from_millis(1500);
+
+/// A word that timed out stays off the screen this long.
+const AWAY: Duration = Duration::from_secs(600);
 
 /// How long a word takes to brighten or dim.
 const EASE_SECS: f64 = 0.18;

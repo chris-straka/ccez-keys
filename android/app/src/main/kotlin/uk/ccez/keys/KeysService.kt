@@ -154,7 +154,9 @@ class KeysService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwne
         }
         val text = clip.getItemAt(0).coerceToText(this)?.toString()?.trim().orEmpty().take(10_000)
         ui.clip = text.ifEmpty { null }
-        if (text.isNotEmpty()) uk.ccez.keys.learn.Clips.add(this, text)
+        // A key or token from an app that didn't mark it sensitive: offered
+        // once on the chip, never kept in the history (review, 2026-11-13).
+        if (text.isNotEmpty() && !uk.ccez.keys.core.looksSecret(text)) uk.ccez.keys.learn.Clips.add(this, text)
         typist.findLatest()
     }
 }

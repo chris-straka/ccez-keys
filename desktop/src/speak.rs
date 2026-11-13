@@ -202,8 +202,10 @@ pub fn say(lang: &str, text: &str) {
         PLAYING.with(|p| *p.borrow_mut() = Some(sound));
         return;
     }
+    // Not kept: only screen words (learning words) have their sound made
+    // ahead. A preview line or word is a translation of what was typed, and
+    // was saved as audio for two weeks (review, 2026-11-13).
     say_at(lang, text, 1.0);
-    prepare(lang, text);
 }
 
 fn kept(lang: &str, text: &str) -> Option<Retained<NSSound>> {

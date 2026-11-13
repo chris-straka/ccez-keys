@@ -31,9 +31,9 @@ fn main() {
         ["use", lang] => ("use", Some(lang.to_string()), None),
         ["mistakes"] => ("mistakes", None, None),
         ["update"] => ("update", None, None),
-        ["word", lang, word] => ("word", Some(format!("{lang} {word}")), None),
-        ["word", lang, word, status] => ("word", Some(format!("{lang} {word} {status}")), None),
-        ["forget", lang, word] => ("forget", Some(format!("{lang} {word}")), None),
+        // The word may be a phrase, in one argument ("parvenir à") or several.
+        ["word", lang, rest @ ..] if !rest.is_empty() => ("word", Some(format!("{lang} {}", rest.join(" "))), None),
+        ["forget", lang, rest @ ..] if !rest.is_empty() => ("forget", Some(format!("{lang} {}", rest.join(" "))), None),
         ["log"] => ("log", Some("50".to_string()), None),
         ["log", "-n", n] => ("log", Some(n.to_string()), None),
         ["backup"] | ["backup", _] => {

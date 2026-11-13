@@ -192,6 +192,10 @@ mod field {
     pub const WEB_EMAIL_ADDRESS: i32 = 0xd0;
     pub const NO_PERSONALIZED_LEARNING: i32 = 0x100_0000;
     pub const EMAIL_SUBJECT: i32 = 0x30;
+    pub const PERSON_NAME: i32 = 0x60;
+    pub const POSTAL_ADDRESS: i32 = 0x70;
+    pub const FILTER: i32 = 0xb0;
+    pub const PHONETIC: i32 = 0xc0;
     pub const SHORT_MESSAGE: i32 = 0x40;
     pub const LONG_MESSAGE: i32 = 0x50;
     pub const PASSWORD: i32 = 0x80;
@@ -266,7 +270,9 @@ pub fn ai_allowed(input_type: i32, ime_options: i32) -> bool {
     if input_type & CLASS != CLASS_TEXT || ime_options & NO_PERSONALIZED_LEARNING != 0 {
         return false;
     }
-    if matches!(input_type & VARIATION, PASSWORD | VISIBLE_PASSWORD | WEB_PASSWORD | URI | EMAIL_ADDRESS | WEB_EMAIL_ADDRESS) {
+    // Names and postal addresses too (review, 2026-11-13), and a list's
+    // filter or a phonetic field: none is a sentence to work on.
+    if matches!(input_type & VARIATION, PASSWORD | VISIBLE_PASSWORD | WEB_PASSWORD | URI | EMAIL_ADDRESS | WEB_EMAIL_ADDRESS | PERSON_NAME | POSTAL_ADDRESS | FILTER | PHONETIC) {
         return false;
     }
     input_type & NO_SUGGESTIONS == 0 || input_type & MULTI_LINE != 0

@@ -90,11 +90,19 @@ class Control : ContentProvider() {
                 "schema" -> engine.settingsSchema()
                 // A word's status: `keys word fr libre` reads it, `keys word fr libre new|learning|known` sets it (and syncs).
                 "word" -> {
-                    val parts = (arg ?: error("word needs: lang word [status]")).split(' ')
+                    // "fr parvenir à learning": the word may be a phrase; the
+                    // last part is a status only when it's one.
+                    val parts = (arg ?: error("word needs: lang word [status]")).split(' ').filter { it.isNotEmpty() }
                     if (parts.size < 2) error("word needs: lang word [status]")
-                    val (lang, w) = parts
-                    if (parts.size > 2) {
-                        val st = when (parts[2]) { "new" -> uk.ccez.keys.core.WordStatus.NEW; "learning" -> uk.ccez.keys.core.WordStatus.LEARNING; "known" -> uk.ccez.keys.core.WordStatus.KNOWN; else -> error("status is new, learning or known") }
+                    val st = when (parts.last().takeIf { parts.size > 2 }) {
+                        "new" -> uk.ccez.keys.core.WordStatus.NEW
+                        "learning" -> uk.ccez.keys.core.WordStatus.LEARNING
+                        "known" -> uk.ccez.keys.core.WordStatus.KNOWN
+                        else -> null
+                    }
+                    val lang = parts[0]
+                    val w = parts.subList(1, if (st != null) parts.size - 1 else parts.size).joinToString(" ")
+                    if (st != null) {
                         engine.setWordStatus(lang, w, st)
                         uk.ccez.keys.learn.WordSync.soon(500)
                     }
@@ -102,9 +110,9 @@ class Control : ContentProvider() {
                 }
                 // `keys forget en konnichiha`: a word typing taught the keyboard, forgotten.
                 "forget" -> {
-                    val parts = (arg ?: error("forget needs: lang word")).split(' ')
-                    if (parts.size != 2) error("forget needs: lang word")
-                    val had = engine.forget(parts[0], parts[1])
+                    val parts = (arg ?: error("forget needs: lang word")).split(' ').filter { it.isNotEmpty() }
+                    if (parts.size < 2) error("forget needs: lang word")
+                    val had = engine.forget(parts[0], parts.drop(1).joinToString(" "))
                     app.ensureWords(parts[0])
                     if (had) "forgot" else "not learned"
                 }

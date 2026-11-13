@@ -417,7 +417,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (shift != Shift.OFF) w = w.replaceFirstChar { it.uppercase() }
         val prev = prevWord(0)
         ic.commitText((if (before.isNotEmpty() && !before[0].isWhitespace()) " " else "") + w + " ", 1)
-        if (!noLearn) learn(lang, prev, w, false)
+        if (learnsHere()) learn(lang, prev, w, false)
         lastSpaceAt = SystemClock.uptimeMillis()
         swiped = w
         if (shift == Shift.ONCE) setShift(Shift.OFF)
@@ -692,7 +692,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         // learned in the language it turned out to be ("chez" in French, never
         // in English, where it would stop counting as foreign).
         noticeLanguage(typed)
-        if (!noLearn && out != resumedWord) learn(lang, prev, lastWordOf(out).second, false)
+        if (learnsHere() && out != resumedWord) learn(lang, prev, lastWordOf(out).second, false)
         return out
     }
 
@@ -727,7 +727,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         refresh()
         word.append(typed)
         ic.setComposingText(word, 1)
-        if (!noLearn) learn(lang, prevWord(typed.length), typed, true)
+        if (learnsHere()) learn(lang, prevWord(typed.length), typed, true)
         buzz(HapticFeedbackConstants.CONTEXT_CLICK)
         updateBar()
         return true
@@ -743,6 +743,15 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         return lastSuggest?.takeIf { it.first == key && it.second == typed }?.third
             ?: engine.suggestIn(lang, typed, before).also { lastSuggest = Triple(key, typed, it) }
     }
+
+    /**
+     * Words typed here may be learned: not where learning is refused, nor
+     * where addresses, usernames and codes go (email and web fields, a single
+     * line with no suggestions). Those went into the word store and the
+     * nightly backup (review, 2026-11-13). Saving a word by holding it is
+     * the owner's own act, and stays.
+     */
+    private fun learnsHere() = !noLearn && !noCorrect
 
     /** What the core learns changes its suggestions: the last ones are dropped. */
     private fun learn(l: String, prev: String, w: String, strong: Boolean) {
@@ -828,7 +837,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 ic.deleteSurroundingText(tail.length, 0)
                 word.append(typed)
                 ic.setComposingText(word, 1)
-                if (!noLearn) learn(lang, prevWord(typed.length), typed, true)
+                if (learnsHere()) learn(lang, prevWord(typed.length), typed, true)
                 buzz(HapticFeedbackConstants.CONTEXT_CLICK)
                 updateBar()
                 return
@@ -929,7 +938,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             ic.deleteSurroundingText(before.length, after.length)
             ic.commitText(text, 1)
             ic.endBatchEdit()
-            if (!noLearn) learn(lang, prevWord(text.length), text, true)
+            if (learnsHere()) learn(lang, prevWord(text.length), text, true)
             updateShift()
             updateBar()
             return
@@ -942,7 +951,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 ic.deleteSurroundingText(tail.length, 0)
                 ic.commitText("$text ", 1)
                 // The word picked is the one meant (the swiped one was learned already).
-                if (!noLearn) learn(lang, prevWord(text.length + 1), text, true)
+                if (learnsHere()) learn(lang, prevWord(text.length + 1), text, true)
                 updateBar()
                 return
             }
@@ -956,7 +965,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         ic.commitText(if (noSpaces()) head + text else "$gap$text ", 1)
         clearWord()
         fix = null
-        if (!noLearn) learn(lang, prev, text, isTyped)
+        if (learnsHere()) learn(lang, prev, text, isTyped)
         lastSpaceAt = SystemClock.uptimeMillis()
         autoSpace = !noSpaces()
         updateShift()
@@ -1016,11 +1025,21 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         acted()
         endWord(correct = false)
         val before = ic?.getTextBeforeCursor(1, 0)?.toString().orEmpty()
-        // A kaomoji wants a space before it, an emoji doesn't.
-        val gap = if (text.length > 2 && before.isNotEmpty() && !before[0].isWhitespace()) " " else ""
+        // A kaomoji wants a space before it, an emoji doesn't: one character
+        // as seen (a flag, a skin tone, a joined family) is an emoji, however
+        // many UTF-16 units it takes.
+        val gap = if (graphemes(text) > 1 && before.isNotEmpty() && !before[0].isWhitespace()) " " else ""
         ic?.commitText(gap + text, 1)
         uk.ccez.keys.ui.Faces.used(service, text)
         updateBar()
+    }
+
+    private fun graphemes(t: String): Int {
+        val it = android.icu.text.BreakIterator.getCharacterInstance()
+        it.setText(t)
+        var n = 0
+        while (it.next() != android.icu.text.BreakIterator.DONE) n++
+        return n
     }
 
     fun currentLanguage() = lang

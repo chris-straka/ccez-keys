@@ -145,8 +145,9 @@ fn the_ai_hears_only_fields_sentences_are_written_in() {
         // The same field in a private window or an app that asks for no learning.
         assert!(!ai_allowed(t, NO_LEARNING), "{t:#x}");
     }
-    // Passwords, web and email addresses.
-    for v in [0x80, 0x90, 0xe0, 0x10, 0x20, 0xd0] {
+    // Passwords, web and email addresses, a person's name, a postal address,
+    // a list's filter, a phonetic field.
+    for v in [0x80, 0x90, 0xe0, 0x10, 0x20, 0xd0, 0x60, 0x70, 0xb0, 0xc0] {
         assert!(!ai_allowed(TEXT | v, 0), "{v:#x}");
     }
     // Numbers (a card, a code, a PIN), phone numbers, dates; a terminal (no type).
@@ -181,8 +182,9 @@ fn capitals_in_fields_written_in() {
 
 #[test]
 fn no_capitals_where_nothing_is_written_in_sentences() {
-    // Passwords, web and email addresses.
-    for v in [0x80, 0x90, 0xe0, 0x10, 0x20, 0xd0] {
+    // Passwords, web and email addresses, a person's name, a postal address,
+    // a list's filter, a phonetic field.
+    for v in [0x80, 0x90, 0xe0, 0x10, 0x20, 0xd0, 0x60, 0x70, 0xb0, 0xc0] {
         assert!(!caps(TEXT | v, 0), "{v:#x}");
         assert!(!caps(TEXT | v | MULTI_LINE, 0), "{v:#x}");
     }
