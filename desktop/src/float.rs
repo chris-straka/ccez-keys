@@ -966,8 +966,8 @@ fn a_characters_parts_come_with_its_radical() {
     assert!(han_parts("gênant").is_empty());
 }
 
-/// The meaning, then a line per character ("治 = 氵 water + 台 platform",
-/// the radical underlined), smaller and dimmer, wrapped within `max`.
+/// The meaning, then each character with its parts a line each (the
+/// radical underlined), smaller and dimmer, wrapped within `max`.
 fn wrapped_with_parts(mtm: MainThreadMarker, meaning: &str, parts: &[(char, Vec<(String, String, bool)>)], size: f64, max: f64) -> Retained<NSTextField> {
     use objc2_foundation::{NSDictionary, NSMutableAttributedString, NSNumber, NSRange};
     let l = wrapped(mtm, meaning, size, max);
@@ -998,17 +998,15 @@ fn wrapped_with_parts(mtm: MainThreadMarker, meaning: &str, parts: &[(char, Vec<
     if !meaning.is_empty() {
         push(meaning, &lead, false);
     }
+    // Each character, then its parts a line each; no glosses (the owner
+    // reads the shapes, an explanation of a part is noise).
+    let head = attr(&big, 0.74);
     for (i, (c, ps)) in parts.iter().enumerate() {
-        push(if i == 0 && meaning.is_empty() { "" } else { "\n" }, &dim, false);
-        push(&format!("{c} = "), &dim, false);
-        for (k, (p, m, radical)) in ps.iter().enumerate() {
-            if k > 0 {
-                push(" + ", &dim, false);
-            }
+        push(if i == 0 && meaning.is_empty() { "" } else { "\n\n" }, &dim, false);
+        push(&c.to_string(), &head, false);
+        for (p, _, radical) in ps {
+            push("\n", &dim, false);
             push(p, &dim, *radical);
-            if !m.is_empty() {
-                push(&format!(" {m}"), &dim, false);
-            }
         }
     }
     // Centred, as the meaning alone is (an attributed text has no alignment of its own).
