@@ -187,6 +187,10 @@ mod field {
     pub const CLASS_TEXT: i32 = 1;
     pub const VARIATION: i32 = 0xff0;
     pub const NORMAL: i32 = 0x00;
+    pub const URI: i32 = 0x10;
+    pub const EMAIL_ADDRESS: i32 = 0x20;
+    pub const WEB_EMAIL_ADDRESS: i32 = 0xd0;
+    pub const NO_PERSONALIZED_LEARNING: i32 = 0x100_0000;
     pub const EMAIL_SUBJECT: i32 = 0x30;
     pub const SHORT_MESSAGE: i32 = 0x40;
     pub const LONG_MESSAGE: i32 = 0x50;
@@ -248,6 +252,24 @@ pub fn sentence_capitals(input_type: i32, ime_options: i32, hint: String) -> boo
         return true;
     }
     input_type & NO_SUGGESTIONS == 0
+}
+
+/// Whether what's typed in a field may go to the AI (a reworded line, a
+/// correction, Ask). Never from a password field or one that asks for no
+/// personalised learning (the owner's rule for a keyboard), nor from where
+/// addresses, numbers and codes are typed: web and email addresses,
+/// number, phone and date fields, and a single line with no suggestions
+/// (usernames, codes). Until 2026-11-12 only the first two were kept back.
+#[uniffi::export]
+pub fn ai_allowed(input_type: i32, ime_options: i32) -> bool {
+    use field::*;
+    if input_type & CLASS != CLASS_TEXT || ime_options & NO_PERSONALIZED_LEARNING != 0 {
+        return false;
+    }
+    if matches!(input_type & VARIATION, PASSWORD | VISIBLE_PASSWORD | WEB_PASSWORD | URI | EMAIL_ADDRESS | WEB_EMAIL_ADDRESS) {
+        return false;
+    }
+    input_type & NO_SUGGESTIONS == 0 || input_type & MULTI_LINE != 0
 }
 
 /// Text that looks like a password, an API key or a token: never shown,

@@ -34,6 +34,9 @@ const FADE_OUT: f64 = 0.8;
 const WALK_EVERY: Duration = Duration::from_secs(2);
 /// A new word may come this often.
 const EVERY: Duration = Duration::from_secs(4);
+/// A spot whose word was just clicked takes no new word this long (owner,
+/// 2026-11-12: the next one came up right where the click was).
+const RESTS: Duration = Duration::from_secs(120);
 
 thread_local! {
     /// What a click on a word does: (its index, 0 left / 1 right / 2 middle).
@@ -183,6 +186,8 @@ pub struct Floaters {
     pub hide_in_shots: Cell<bool>,
     /// The menu's "Readings over Japanese and Chinese".
     pub readings: Cell<bool>,
+    /// Spots whose word was clicked, and when: resting (RESTS).
+    rested: RefCell<Vec<(Rect, Instant)>>,
     /// When the screenshot tools were last looked for, and whether they were up.
     capture_seen: Cell<(Instant, bool)>,
     /// From the spot thread: the free spots, and whether a video is playing
@@ -246,6 +251,7 @@ impl Floaters {
             quiet_until: Cell::new(None),
             hide_in_shots: Cell::new(true),
             readings: Cell::new(true),
+            rested: RefCell::default(),
             capture_seen: Cell::new((Instant::now(), false)),
             spots,
             video: playing,
@@ -393,7 +399,10 @@ impl Floaters {
         }
         self.last.set(Instant::now());
         let taken: Vec<Rect> = self.words.borrow().iter().map(|w| w.cell).collect();
-        let Some(cell) = free.into_iter().find(|c| !taken.contains(c)) else { return };
+        self.rested.borrow_mut().retain(|(_, at)| at.elapsed() < RESTS);
+        let rested: Vec<Rect> = self.rested.borrow().iter().map(|r| r.0).collect();
+        // The pointer, in the spots' coordinates (top-left).
+        let Some(cell) = next_spot(&free, &taken, &rested, (mouse.x, primary_h - mouse.y)) else { return };
         let up: Vec<(String, String)> = self.words.borrow().iter().map(|w| (w.lang.clone(), w.word.clone())).collect();
         let list = ccez_keys_core::review::mixed(words());
         // The first of a few that the dictionary can give a meaning to.
@@ -515,6 +524,7 @@ impl Floaters {
             let ws = self.words.borrow();
             (ws[i].lang.clone(), ws[i].word.clone())
         };
+        self.rested.borrow_mut().push((self.words.borrow()[i].cell, Instant::now()));
         // Kept for Undo (owner, 2026-11-11: "just in case I misclicked").
         {
             let ws = self.words.borrow();
@@ -680,6 +690,14 @@ pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &st
     png.is_some_and(|d| std::fs::write(out, d.to_vec()).is_ok())
 }
 
+/// The spot for a new word: the first free one that no word holds, that
+/// isn't resting after a click, and that the pointer isn't in (a word never
+/// comes up under the pointer). None: the word waits.
+fn next_spot(free: &[Rect], taken: &[Rect], rested: &[Rect], pointer: (f64, f64)) -> Option<Rect> {
+    let under = |c: &Rect| pointer.0 >= c.x && pointer.0 <= c.x + c.w && pointer.1 >= c.y && pointer.1 <= c.y + c.h;
+    free.iter().find(|c| !taken.contains(c) && !rested.contains(c) && !under(c)).copied()
+}
+
 /// A word's pieces as the dictionary cut them, when they have a reading and
 /// spell the word as shown (else none: nothing goes over the wrong letters).
 fn pieces(ruby: Vec<(String, String)>, shown: &str) -> Vec<(String, String)> {
@@ -803,6 +821,21 @@ fn without_article(lang: &str, shown: &str) -> String {
 }
 
 #[cfg(test)]
+#[test]
+fn a_new_word_never_comes_where_one_was_just_clicked_or_under_the_pointer() {
+    let cell = |i: usize| Rect { x: 240.0 * i as f64, y: 0.0, w: 240.0, h: 175.0 };
+    let free = [cell(0), cell(1), cell(2), cell(3)];
+    let away = (5000.0, 5000.0);
+    assert_eq!(next_spot(&free, &[], &[], away), Some(cell(0)));
+    // The first spot's word was clicked (the pointer is still there): the next free one.
+    assert_eq!(next_spot(&free, &[], &[cell(0)], (100.0, 80.0)), Some(cell(1)));
+    // The pointer moved on to the second: neither.
+    assert_eq!(next_spot(&free, &[], &[cell(0)], (300.0, 80.0)), Some(cell(2)));
+    // Nowhere else: the word waits.
+    assert_eq!(next_spot(&free[..1], &[], &[cell(0)], away), None);
+    assert_eq!(next_spot(&free[..2], &[cell(1)], &[cell(0)], away), None);
+}
+
 #[test]
 fn readings_go_over_the_word_shown() {
     let r = |v: &[(&str, &str)]| v.iter().map(|(t, r)| (t.to_string(), r.to_string())).collect::<Vec<_>>();

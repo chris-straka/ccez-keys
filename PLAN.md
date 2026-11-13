@@ -89,6 +89,13 @@ on the page.
   (USB or tailnet) through a provider only the shell user can call.
 - Privacy: no strip, AI, learning or clipboard in password fields or
   apps that ask for no personalised learning. Typed text never in logs.
+  Since 2026-11-12 (a review found the phone short of this): the strip is
+  off in no-learning fields too, not only passwords; nothing typed in an
+  address, number, phone, date or no-suggestions line goes to the AI
+  (the core's `ai_allowed`); text that looks like a key or a password
+  gets no strip, no translation and no AI, as on the Mac (`looks_secret`);
+  Ask opens only from a field the AI may hear. The clipboard chip still
+  shows in no-learning fields (it reads, it doesn't record).
 
 ## Stage 1 status (2026-11-08)
 

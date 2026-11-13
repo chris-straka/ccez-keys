@@ -1,6 +1,6 @@
 //! The text-only typing rules (core/src/text.rs).
 
-use ccez_keys_core::text::{delete_span, digit_joins, form_tag, looks_secret, mark_after_space, sentence_of, space_after_mark, space_makes_stop, sentence_capitals, starts_sentence, word_before};
+use ccez_keys_core::text::{ai_allowed, delete_span, digit_joins, form_tag, looks_secret, mark_after_space, sentence_of, space_after_mark, space_makes_stop, sentence_capitals, starts_sentence, word_before};
 
 #[test]
 fn the_sentence_typed() {
@@ -134,6 +134,28 @@ const ACTION_GO: i32 = 2;
 const ACTION_SEARCH: i32 = 3;
 const ACTION_SEND: i32 = 4;
 const NO_ENTER_ACTION: i32 = 0x4000_0000;
+
+#[test]
+fn the_ai_hears_only_fields_sentences_are_written_in() {
+    const NO_LEARNING: i32 = 0x100_0000;
+    const NO_SUGGESTIONS: i32 = 0x80000;
+    // A message, a web comment box, a plain line, an email's subject.
+    for t in [TEXT | 0x40, TEXT | 0xa0 | MULTI_LINE, TEXT, TEXT | 0x30, TEXT | NO_SUGGESTIONS | MULTI_LINE] {
+        assert!(ai_allowed(t, 0), "{t:#x}");
+        // The same field in a private window or an app that asks for no learning.
+        assert!(!ai_allowed(t, NO_LEARNING), "{t:#x}");
+    }
+    // Passwords, web and email addresses.
+    for v in [0x80, 0x90, 0xe0, 0x10, 0x20, 0xd0] {
+        assert!(!ai_allowed(TEXT | v, 0), "{v:#x}");
+    }
+    // Numbers (a card, a code, a PIN), phone numbers, dates; a terminal (no type).
+    for class in [2, 2 | 0x10, 3, 4, 0] {
+        assert!(!ai_allowed(class, 0), "{class:#x}");
+    }
+    // A single line with no suggestions: a username, a code.
+    assert!(!ai_allowed(TEXT | NO_SUGGESTIONS, 0));
+}
 
 fn caps(input_type: i32, ime_options: i32) -> bool {
     sentence_capitals(input_type, ime_options, String::new())

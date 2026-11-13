@@ -95,6 +95,10 @@ A left click (Good) also says the word aloud as shown, article and all, in
 its language's voice (owner, 2026-11-12); right and middle clicks stay
 silent.
 
+A new word never comes up in a spot whose word was clicked in the last two
+minutes, nor under the pointer (owner, 2026-11-12: the next one appeared
+right where the click was).
+
 ## Windows and Linux (built 2026-11-10)
 
 Owner asked for both; not Tauri: one Rust app (`desktop/`), the Mac's own

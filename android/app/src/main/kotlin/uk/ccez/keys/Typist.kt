@@ -154,6 +154,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /** The field is one sentences are written in: they start with a capital (the core decides). */
     private var sentenceCaps = false
     private var noLearn = false
+    /** What's typed here may go to the AI (the core decides: never passwords,
+     * no-learning fields, addresses, numbers or codes). */
+    private var aiField = false
     private var noCorrect = false
     /** Number, phone and date fields: digits go straight in, never composed. */
     private var numeric = false
@@ -197,6 +200,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         password = (cls == InputType.TYPE_CLASS_TEXT && variation in PASSWORDS) ||
             (cls == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
         noLearn = password || info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
+        aiField = !noLearn && uk.ccez.keys.core.aiAllowed(info.inputType, info.imeOptions)
         noCorrect = password || variation in ADDRESSES || info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0
         numeric = cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE || cls == InputType.TYPE_CLASS_DATETIME
         rawKeys = info.inputType == InputType.TYPE_NULL
@@ -1019,13 +1023,15 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         ui.card = null
         if (converting() && (conv.isNotEmpty() || romaji.isNotEmpty())) {
             // The strip too, while Japanese or Chinese is still being converted.
-            strip.update(if (password) "" else sentence(), lang, allowed = !password, polite = polite(), ai = !noLearn)
+            val typed = if (password) "" else sentence()
+            strip.update(typed, lang, allowed = stripHere(typed), polite = polite(), ai = aiField)
             showConv()
             return
         }
         val sentence = if (password) "" else sentence()
-        strip.update(sentence, lang, allowed = !password, polite = polite(), ai = !noLearn)
-        tips.update(sentence, lang, allowed = !password && !noLearn, ended = sentence.trimEnd().lastOrNull()?.let { it in ".!?。！？" } == true)
+        val plain = stripHere(sentence)
+        strip.update(sentence, lang, allowed = plain, polite = polite(), ai = aiField)
+        tips.update(sentence, lang, allowed = plain && aiField, ended = sentence.trimEnd().lastOrNull()?.let { it in ".!?。！？" } == true)
         if (password) { ui.bar = Bar.Buttons; return }
         updateWords()
         ui.face = if (ui.chatApp && app.flag("buttons.face")) uk.ccez.keys.learn.Kaomoji.suggest(service, sentence, uk.ccez.keys.ui.Faces.recent(service)) else null
@@ -1167,7 +1173,17 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         replaceSentence(t.fix.text)
     }
 
+    /**
+     * The strip shows here: never in a password or no-learning field
+     * (PLAN, Privacy), nor over text that looks like a key or a password,
+     * which is never shown, translated or sent (the core's looksSecret, as
+     * on the Mac).
+     */
+    private fun stripHere(sentence: String) = !noLearn && !uk.ccez.keys.core.looksSecret(sentence)
+
     fun openAsk(about: String) {
+        // Ask sends what was typed to the AI: only from a field it may hear.
+        if (!aiField || uk.ccez.keys.core.looksSecret(about)) return
         ui.card = null
         endWord(correct = false)
         ask.open(about)
