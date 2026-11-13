@@ -21,7 +21,7 @@ cli = ["uniffi/cli"]
 [dependencies]
 # Dictionaries, readings, word statuses and ccez-words sync, the AI client:
 # the library ccez-tube's learning code moved into.
-ccez-lang-core = { git = "https://github.com/chris-straka/ccez-lang-core", tag = "v0.1.5", features = ["ja"] }
+ccez-lang-core = { git = "https://github.com/chris-straka/ccez-lang-core", tag = "v0.1.6", features = ["ja"] }
 # The review schedule's round with ccez-words (same client ccez-lang-core
 # uses: 0.12 with ring-backed rustls, no cmake on Android).
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
