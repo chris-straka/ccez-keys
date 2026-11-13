@@ -135,9 +135,6 @@ struct Word {
     /// each ("" over kana), shown while the pointer is on it (owner,
     /// 2026-11-12). Empty for other languages.
     reading: Vec<(String, String)>,
-    /// Its language's flag, small beside it (owner, 2026-11-13: Chinese
-    /// and Japanese words looked alike).
-    flag: String,
     /// Its spot (top-left coordinates), as the spot search gives them.
     cell: Rect,
     panel: Retained<NSPanel>,
@@ -189,8 +186,6 @@ pub struct Floaters {
     pub hide_in_shots: Cell<bool>,
     /// The menu's "Readings over Japanese and Chinese".
     pub readings: Cell<bool>,
-    /// Each language's flag (data/languages.json), set by the app.
-    pub flags: RefCell<std::collections::HashMap<String, String>>,
     /// Spots whose word was clicked, and when: resting (RESTS).
     rested: RefCell<Vec<(Rect, Instant)>>,
     /// When the screenshot tools were last looked for, and whether they were up.
@@ -256,7 +251,6 @@ impl Floaters {
             quiet_until: Cell::new(None),
             hide_in_shots: Cell::new(true),
             readings: Cell::new(true),
-            flags: RefCell::default(),
             rested: RefCell::default(),
             capture_seen: Cell::new((Instant::now(), false)),
             spots,
@@ -427,8 +421,7 @@ impl Floaters {
         let id = self.next_id.get();
         self.next_id.set(id + 1);
         let reading = self.reading(&lang, &shown);
-        let flag = self.flags.borrow().get(&lang).cloned().unwrap_or_default();
-        let w = show(mtm, id, lang, word, shown, m, tags, reading, flag, cell, primary_h);
+        let w = show(mtm, id, lang, word, shown, m, tags, reading, cell, primary_h);
         if !self.hide_in_shots.get() {
             w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
         }
@@ -496,8 +489,7 @@ impl Floaters {
             let id = self.next_id.get();
             self.next_id.set(id + 1);
             let reading = self.reading(&a.lang, &a.shown);
-            let flag = self.flags.borrow().get(&a.lang).cloned().unwrap_or_default();
-            let w = show(mtm, id, a.lang.clone(), a.word.clone(), a.shown, a.meaning, a.tags, reading, flag, a.cell, primary_h);
+            let w = show(mtm, id, a.lang.clone(), a.word.clone(), a.shown, a.meaning, a.tags, reading, a.cell, primary_h);
             if !self.hide_in_shots.get() {
                 w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
             }
@@ -632,8 +624,8 @@ fn typing() -> bool {
 /// A word put up in `cell`, faint, its meaning hidden.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
-fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, flag: String, cell: Rect, primary_h: f64) -> Word {
-    let w = build(mtm, id, lang, word, shown, meaning, tags, reading, flag, cell, primary_h);
+fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, cell: Rect, primary_h: f64) -> Word {
+    let w = build(mtm, id, lang, word, shown, meaning, tags, reading, cell, primary_h);
     w.on.set(true);
     w.panel.setAlphaValue(0.0);
     w.panel.orderFrontRegardless();
@@ -643,7 +635,7 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
 
 /// A word made and laid out, not yet on screen.
 #[allow(clippy::too_many_arguments)]
-fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, flag: String, cell: Rect, primary_h: f64) -> Word {
+fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, cell: Rect, primary_h: f64) -> Word {
     let (panel, bg) = new_panel(mtm);
     panel.setLevel(20);
     panel.setHasShadow(false);
@@ -666,7 +658,6 @@ fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: St
         meaning,
         tags,
         reading,
-        flag,
         cell,
         panel,
         bg,
@@ -685,11 +676,11 @@ fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: St
 
 /// For checks (`--word-picture`): a word as it looks with the pointer on
 /// it, drawn into a PNG without ever being put on screen.
-pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &str, word: &str, flag: &str, open: bool, out: &std::path::Path) -> bool {
+pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &str, word: &str, open: bool, out: &std::path::Path) -> bool {
     let (shown, meaning, tags) = engine.word_face(lang, word);
     let reading = pieces(engine.strip_words(lang.to_string(), shown.clone()).into_iter().flat_map(|w| w.ruby).map(|r| (r.text, r.rt)).collect(), &shown);
     let cell = Rect { x: 0.0, y: 0.0, w: 240.0, h: 175.0 };
-    let mut w = build(mtm, 1, lang.to_string(), word.to_string(), shown, meaning, tags, reading, flag.to_string(), cell, 1080.0);
+    let mut w = build(mtm, 1, lang.to_string(), word.to_string(), shown, meaning, tags, reading, cell, 1080.0);
     w.open = open;
     lay_out(mtm, &mut w, 1080.0);
     let bounds = w.bg.bounds();
@@ -796,7 +787,10 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let wh = w.button.frame().size.height;
     // The meaning wraps within the word's spot (owner, 2026-11-12: a long
     // one was cut off at the screen's edge), centred under the word.
-    let m = (w.open && !w.meaning.is_empty()).then(|| wrapped(mtm, &w.meaning, 13.0, (w.cell.w - 24.0).max(120.0)));
+    // Chinese and Japanese: under the meaning, what each character is
+    // built from, its radical underlined (owner, 2026-11-13).
+    let parts = if matches!(w.lang.split(['-', '_']).next(), Some("zh" | "ja")) { han_parts(&w.shown) } else { Vec::new() };
+    let m = (w.open && (!w.meaning.is_empty() || !parts.is_empty())).then(|| wrapped_with_parts(mtm, &w.meaning, &parts, 13.0, (w.cell.w - 24.0).max(160.0)));
     // Its tags as small pills beside the word (owner, 2026-11-11), the word
     // kept in the middle so it doesn't move when they come.
     let pills: Vec<(Retained<NSBox>, f64, f64)> = if w.open { w.tags.iter().map(|t| pill(mtm, t)).collect() } else { Vec::new() };
@@ -917,6 +911,101 @@ fn a_click_copies_the_word_without_its_article() {
 }
 
 /// A grey label that wraps at `max` points wide, sized to its text.
+/// Each common Han character's parts (cjk-decomp and Unihan, data/han.tsv,
+/// as ccez-tube's card shows them): the part, its meaning, whether it's the
+/// character's radical.
+fn han_table() -> &'static std::collections::HashMap<char, Vec<(String, String, bool)>> {
+    static TABLE: std::sync::OnceLock<std::collections::HashMap<char, Vec<(String, String, bool)>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        include_str!("../../data/han.tsv")
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .filter_map(|l| {
+                let (c, rest) = l.split_once('\t')?;
+                let parts = rest
+                    .split(' ')
+                    .filter_map(|p| {
+                        let mut f = p.split('|');
+                        Some((f.next()?.to_string(), f.next().unwrap_or("").replace('_', " "), f.next() == Some("r")))
+                    })
+                    .collect();
+                Some((c.chars().next()?, parts))
+            })
+            .collect()
+    })
+}
+
+/// A word's characters with their parts: (character, [(part, meaning, radical)]), those the table has.
+fn han_parts(word: &str) -> Vec<(char, Vec<(String, String, bool)>)> {
+    let t = han_table();
+    let mut seen = Vec::new();
+    word.chars().filter_map(|c| t.get(&c).map(|p| (c, p.clone()))).filter(|(c, _)| if seen.contains(c) { false } else { seen.push(*c); true }).collect()
+}
+
+#[test]
+fn a_characters_parts_come_with_its_radical() {
+    let p = han_parts("治療");
+    assert_eq!(p.len(), 2);
+    assert_eq!(p[0].0, '治');
+    assert_eq!(p[0].1[0], ("氵".to_string(), "water".to_string(), true));
+    assert!(han_parts("gênant").is_empty());
+}
+
+/// The meaning, then a line per character ("治 = 氵 water + 台 platform",
+/// the radical underlined), smaller and dimmer, wrapped within `max`.
+fn wrapped_with_parts(mtm: MainThreadMarker, meaning: &str, parts: &[(char, Vec<(String, String, bool)>)], size: f64, max: f64) -> Retained<NSTextField> {
+    use objc2_foundation::{NSDictionary, NSMutableAttributedString, NSNumber, NSRange};
+    let l = wrapped(mtm, meaning, size, max);
+    if parts.is_empty() {
+        return l;
+    }
+    let attr = |font: &NSFont, grey: f64| unsafe {
+        let color = crate::view::rgb(grey, grey, grey);
+        NSDictionary::<NSString, objc2::runtime::AnyObject>::from_slices(
+            &[objc2_app_kit::NSFontAttributeName, objc2_app_kit::NSForegroundColorAttributeName],
+            &[font as &objc2::runtime::AnyObject, &*color as &objc2::runtime::AnyObject],
+        )
+    };
+    let text = NSMutableAttributedString::new();
+    let big = NSFont::systemFontOfSize(size);
+    let small = NSFont::systemFontOfSize(size - 1.0);
+    let mut utf16 = 0usize;
+    let mut push = |s: &str, d: &NSDictionary<NSString, objc2::runtime::AnyObject>, underline: bool| {
+        let a = unsafe { objc2_foundation::NSAttributedString::new_with_attributes(&NSString::from_str(s), d) };
+        text.appendAttributedString(&a);
+        let n = s.encode_utf16().count();
+        if underline {
+            unsafe { text.addAttribute_value_range(objc2_app_kit::NSUnderlineStyleAttributeName, &NSNumber::new_isize(1), NSRange::new(utf16, n)) };
+        }
+        utf16 += n;
+    };
+    let (lead, dim) = (attr(&big, 0.74), attr(&small, 0.6));
+    if !meaning.is_empty() {
+        push(meaning, &lead, false);
+    }
+    for (i, (c, ps)) in parts.iter().enumerate() {
+        push(if i == 0 && meaning.is_empty() { "" } else { "\n" }, &dim, false);
+        push(&format!("{c} = "), &dim, false);
+        for (k, (p, m, radical)) in ps.iter().enumerate() {
+            if k > 0 {
+                push(" + ", &dim, false);
+            }
+            push(p, &dim, *radical);
+            if !m.is_empty() {
+                push(&format!(" {m}"), &dim, false);
+            }
+        }
+    }
+    // Centred, as the meaning alone is (an attributed text has no alignment of its own).
+    let centred = objc2_app_kit::NSMutableParagraphStyle::new();
+    centred.setAlignment(objc2_app_kit::NSTextAlignment::Center);
+    unsafe { text.addAttribute_value_range(objc2_app_kit::NSParagraphStyleAttributeName, &centred, NSRange::new(0, utf16)) };
+    l.setAttributedStringValue(&text);
+    let fit = l.fittingSize();
+    l.setFrameSize(objc2_foundation::NSSize::new(fit.width.min(max).ceil(), fit.height.ceil()));
+    l
+}
+
 fn wrapped(mtm: MainThreadMarker, text: &str, size: f64, max: f64) -> Retained<NSTextField> {
     let l = NSTextField::wrappingLabelWithString(&NSString::from_str(text), mtm);
     l.setFont(Some(&NSFont::systemFontOfSize(size)));

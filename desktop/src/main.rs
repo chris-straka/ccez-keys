@@ -486,9 +486,8 @@ mod app {
             NSApplication::sharedApplication(mtm).setActivationPolicy(NSApplicationActivationPolicy::Prohibited);
             let engine = ccez_keys_core::Engine::new(dirs().to_string_lossy().into_owned());
             let arg = |n: usize| args.get(i + n).cloned().unwrap_or_default();
-            let flag = flags().get(&arg(1)).cloned().unwrap_or_default();
             let open = args.iter().all(|a| a != "--closed");
-            println!("drawn: {}", crate::float::picture(mtm, &engine, &arg(1), &arg(2), &flag, open, std::path::Path::new(&arg(3))));
+            println!("drawn: {}", crate::float::picture(mtm, &engine, &arg(1), &arg(2), open, std::path::Path::new(&arg(3))));
             return;
         }
         // `--meaning lang word`: what a screen word shows (word, meaning, tags).
@@ -545,8 +544,6 @@ mod app {
             floaters: crate::float::Floaters::new(engine.clone(), spots, crate::idle::video),
             swapped: Default::default(),
         }));
-        // Each screen word with its language's flag.
-        app.floaters.flags.replace(app.flags.clone());
 
         // The menu: pause, how many languages, readings, off in this app, the
         // Mac's translation languages, open at login, quit.

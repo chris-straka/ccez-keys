@@ -26,3 +26,9 @@ Tatoeba's stock names (Tom, Mary and others) are left out.
   [fxtranslate](https://github.com/gregtatum/translations) (MPL-2.0).
 - Flags in `desktop/assets/flags/`: [Twemoji](https://github.com/jdecked/twemoji)
   graphics (CC-BY 4.0), copyright Twitter, Inc. and other contributors.
+
+## Character parts (desktop screen words)
+
+- `data/han.tsv` (from ccez-tube): each common Han character's parts from
+  **cjk-decomp** (Gavin Grover, fork by Aaron Madlon-Kay), MIT, and
+  **Unihan** (Unicode 17.0.0), © Unicode, Inc., Unicode License V3.

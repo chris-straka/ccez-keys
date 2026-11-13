@@ -94,7 +94,9 @@ hovered into a file, nothing on screen.
 Each word is in its language's colour (owner, 2026-11-13: Chinese and
 Japanese looked alike; colour, not flags): French blue, German gold,
 Spanish orange, Chinese red, Japanese violet, Korean teal (float.rs
-lang_color). The typing preview is centred on the
+lang_color). Hovered, a Chinese or Japanese word shows what each
+character is built from under its meaning, the radical underlined
+(data/han.tsv, about 2,000 common characters). The typing preview is centred on the
 field typed in (it followed a cursor Claude doesn't give, guessed off the
 end of a wrapped line, to the screen's right edge); a document's preview
 is centred on the cursor.
