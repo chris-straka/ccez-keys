@@ -743,7 +743,12 @@ fn next_spot(free: &[Rect], taken: &[Rect], rested: &[Rect], pointer: (f64, f64)
         let (dx, dy) = (c.x + c.w / 2.0 - centre.0, c.y + c.h / 2.0 - centre.1);
         dx * dx + dy * dy
     };
-    free.iter().filter(|c| !taken.contains(c) && !rested.contains(c) && !under(c)).min_by(|a, b| far(a).total_cmp(&far(b))).copied()
+    // Spots overlap (idle::free_cells): one touching a word's, or a clicked one's, is out.
+    let hits = |a: &Rect, b: &Rect| a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    free.iter()
+        .filter(|c| !taken.iter().chain(rested).any(|t| hits(c, t)) && !under(c))
+        .min_by(|a, b| far(a).total_cmp(&far(b)))
+        .copied()
 }
 
 /// Each language's colour for its words on screen (sRGB, readable on the

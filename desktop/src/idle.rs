@@ -6,37 +6,40 @@
 
 use crate::model::Rect;
 
-/// Spots for words: the cells of a `cols` × `rows` grid over `screen` that no
-/// window touches, each as its rectangle, in an order spread over the screen.
-/// All in one coordinate space (top-left origin).
+/// Spots for words: rectangles a `cols` × `rows` grid's cell in size, at
+/// every quarter cell across and half cell down (owner, 2026-11-13: a fixed
+/// grid missed the gap between Claude's sidebar and its chat, narrower than
+/// two cells), that no window touches. They overlap; float.rs keeps words
+/// apart. All in one coordinate space (top-left origin).
 pub fn free_cells(screen: Rect, windows: &[Rect], cols: usize, rows: usize) -> Vec<Rect> {
     let (cw, ch) = (screen.w / cols as f64, screen.h / rows as f64);
+    let (sx, sy) = (cw / 4.0, ch / 2.0);
+    let steps = |span: f64, size: f64, step: f64| ((span - size) / step + 1e-6).floor().max(0.0) as usize + 1;
     let mut out = Vec::new();
-    for r in 0..rows {
-        for c in 0..cols {
-            let cell = Rect { x: screen.x + c as f64 * cw, y: screen.y + r as f64 * ch, w: cw, h: ch };
+    for r in 0..steps(screen.h, ch, sy) {
+        for c in 0..steps(screen.w, cw, sx) {
+            let cell = Rect { x: screen.x + c as f64 * sx, y: screen.y + r as f64 * sy, w: cw, h: ch };
             let covered = windows.iter().any(|w| w.x < cell.x + cell.w && cell.x < w.x + w.w && w.y < cell.y + cell.h && cell.y < w.y + w.h);
             if !covered {
                 out.push(cell);
             }
         }
     }
-    // Every other cell first, so a few words don't bunch in one corner.
-    let even = out.iter().step_by(2);
-    let odd = out.iter().skip(1).step_by(2);
-    even.chain(odd).copied().collect()
+    out
 }
 
 /// Free spots on a screen with the front window's content known: inside the
 /// front window, cells clear of its `content`; outside it, cells clear of the
-/// `others` (other apps' windows). Top-left coordinates throughout.
+/// `others` (other apps' windows). Content 2 points thin or less (a
+/// window's edge line, a focus marker) blocks nothing. Top-left
+/// coordinates throughout.
 pub fn free_spots(screen: Rect, front: Option<Rect>, content: &[Rect], others: &[Rect], cols: usize, rows: usize) -> Vec<Rect> {
     let inside = |c: &Rect, w: &Rect| c.x >= w.x && c.y >= w.y && c.x + c.w <= w.x + w.w && c.y + c.h <= w.y + w.h;
     let hits = |c: &Rect, r: &Rect| r.x < c.x + c.w && c.x < r.x + r.w && r.y < c.y + c.h && c.y < r.y + r.h;
     free_cells(screen, &[], cols, rows)
         .into_iter()
         .filter(|c| match front {
-            Some(w) if inside(c, &w) => !content.iter().any(|r| hits(c, r)),
+            Some(w) if inside(c, &w) => !content.iter().any(|r| r.w > 2.0 && r.h > 2.0 && hits(c, r)),
             Some(w) if hits(c, &w) => false,
             _ => !others.iter().any(|r| hits(c, r)),
         })
@@ -228,11 +231,27 @@ mod tests {
     fn words_go_only_where_no_window_is() {
         // A window over the left half: only right-half cells.
         let cells = free_cells(SCREEN, &[Rect { x: 0.0, y: 0.0, w: 600.0, h: 800.0 }], 4, 2);
-        assert_eq!(cells.len(), 4);
+        assert!(!cells.is_empty());
         assert!(cells.iter().all(|c| c.x >= 600.0));
         // A full-screen window: nowhere.
         assert!(free_cells(SCREEN, &[SCREEN], 4, 2).is_empty());
-        assert_eq!(free_cells(SCREEN, &[], 4, 2).len(), 8);
+        // Quarter cells across (13), half cells down (3).
+        assert_eq!(free_cells(SCREEN, &[], 4, 2).len(), 39);
+    }
+
+    #[test]
+    fn a_gap_narrower_than_two_cells_still_takes_a_word() {
+        // Claude on 2026-11-13: sidebar to x 360, chat from 696, a 1920 wide screen.
+        let window = Rect { x: 0.0, y: 30.0, w: 1920.0, h: 1050.0 };
+        let content = [
+            Rect { x: 0.0, y: 30.0, w: 360.0, h: 1050.0 },
+            Rect { x: 696.0, y: 30.0, w: 900.0, h: 1050.0 },
+            // A window's edge line and a focus marker: nothing.
+            Rect { x: 0.0, y: 30.0, w: 1920.0, h: 1.0 },
+            Rect { x: 500.0, y: 400.0, w: 2.0, h: 2.0 },
+        ];
+        let spots = free_spots(window, Some(window), &content, &[], 8, 6);
+        assert!(spots.iter().any(|c| c.x >= 360.0 && c.x + c.w <= 696.0));
     }
 
     #[test]
@@ -302,7 +321,7 @@ mod tests {
     #[test]
     fn a_cell_that_had_content_lately_is_avoided_until_it_fades() {
         let all = free_cells(SCREEN, &[], 2, 1);
-        let (left, right) = (all[0], all[1]);
+        let (left, right) = (all[0], *all.last().unwrap());
         let mut b = Busy::default();
         // Content on the right, then gone: the right stays avoided a while.
         assert_eq!(b.look("claude", &all, &[left]), vec![left]);

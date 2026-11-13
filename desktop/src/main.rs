@@ -443,10 +443,13 @@ mod app {
             let pid = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(0);
             let look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
             println!("window={:?} content={} videos={:?}", look.window, look.content.len(), look.videos);
+            for c in &look.content {
+                println!("  content {} {} {} {}", c.x as i64, c.y as i64, c.w as i64, c.h as i64);
+            }
             if let Some(w) = look.window {
                 let content: Vec<_> = look.content.iter().copied().chain(look.videos.iter().map(|v| v.frame)).collect();
                 let free = crate::idle::free_spots(w, look.window, &content, &[], 8, 6);
-                println!("spots={} of 48: {:?}", free.len(), free.iter().map(|c| (c.x as i64, c.y as i64)).collect::<Vec<_>>());
+                println!("spots={}: {:?}", free.len(), free.iter().map(|c| (c.x as i64, c.y as i64)).collect::<Vec<_>>());
             }
             return;
         }
