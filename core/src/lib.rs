@@ -396,6 +396,25 @@ impl Engine {
         (kana.chars().count() >= 3 && !kana.chars().any(|c| c.is_ascii()) && typing::is_word(ja, &kana)).then_some(kana)
     }
 
+    /// Whether `text` has anything to translate (owner, 2026-11-12: "Surunara m"
+    /// came back as "SURUNARA M" and in Arabic and Hindi letters): a word of
+    /// two letters or more in one of the typed languages. Text in a script
+    /// with no spaces between words (Japanese, Chinese) always has.
+    pub fn has_words(&self, text: String) -> bool {
+        if text.chars().any(|c| c.is_alphabetic() && !c.is_ascii() && !matches!(c, 'À'..='ɏ')) {
+            return true;
+        }
+        let s = self.lock();
+        let typed: Vec<&typing::Lang> = s.langs.values().collect();
+        if typed.is_empty() {
+            return true;
+        }
+        text.split(|c: char| !(c.is_alphabetic() || c == '\'' || c == '’' || c == '-'))
+            .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()))
+            .filter(|w| w.chars().count() >= 2)
+            .any(|w| typed.iter().any(|l| typing::is_word(l, w)))
+    }
+
     /// Whether `word` is among the commonest 10,000 of `lang` (true when its words aren't loaded).
     pub fn common_word(&self, lang: String, word: String) -> bool {
         self.lock().langs.get(&lang).map(|l| typing::common(l, &word)).unwrap_or(true)

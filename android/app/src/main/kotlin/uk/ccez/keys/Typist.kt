@@ -233,13 +233,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     private var latestJob: kotlinx.coroutines.Job? = null
 
-    /** The latest copy, for the bar when it's idle. A burst of calls (a screenshot being saved) looks once. */
+    /** The latest copies, for the bar when it's idle. A burst of calls (a screenshot being saved) looks once. */
     fun findLatest() {
         latestJob?.cancel()
         latestJob = app.scope.launch {
             kotlinx.coroutines.delay(150)
-            val l = runCatching { uk.ccez.keys.learn.Clips.latest(service) }.getOrNull()
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { ui.latest = l }
+            val l = runCatching { uk.ccez.keys.learn.Clips.recent(service, RECENT) }.getOrDefault(emptyList())
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { ui.recent = l }
         }
     }
 
@@ -909,6 +909,18 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     fun pick(text: String, isTyped: Boolean) {
         val ic = ic ?: return
         acted()
+        // A fix for the word the cursor was put in: it takes that word's place.
+        around?.let { (before, after) ->
+            around = null
+            ic.beginBatchEdit()
+            ic.deleteSurroundingText(before, after)
+            ic.commitText(text, 1)
+            ic.endBatchEdit()
+            if (!noLearn) learn(lang, prevWord(text.length), text, true)
+            updateShift()
+            updateBar()
+            return
+        }
         // After a swipe: the bar's other words replace the one put in.
         swiped?.let { w ->
             swiped = null
@@ -969,6 +981,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     /** A screenshot from the clipboard panel: into the app as an image, or onto the clipboard. */
     fun sendShot(uri: android.net.Uri): Boolean {
+        buzz(HapticFeedbackConstants.KEYBOARD_TAP)
         val ic = ic ?: return false
         val ed = editor ?: return false
         acted()
@@ -976,8 +989,10 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         return runCatching { uk.ccez.keys.learn.Shots.send(service, ic, ed, uri) }.getOrDefault(false)
     }
 
+    /** A copy tapped in the bar or the clipboard: in it goes, with a tick (owner, 2026-11-12). */
     fun paste(text: String) {
         acted()
+        buzz(HapticFeedbackConstants.KEYBOARD_TAP)
         endWord(correct = false)
         ic?.commitText(text, 1)
         updateShift()
@@ -1037,7 +1052,32 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         ui.face = if (ui.chatApp && app.flag("buttons.face")) uk.ccez.keys.learn.Kaomoji.suggest(service, sentence, uk.ccez.keys.ui.Faces.recent(service)) else null
     }
 
+    /**
+     * The word the cursor sits in or at the end of, when the bar offers its
+     * fixes (owner, 2026-11-12: the cursor put in "tran|dlate", a tap fixes
+     * it): letters before and after the cursor that a pick replaces.
+     */
+    private var around: Pair<Int, Int>? = null
+
     private fun updateWords() {
+        around = null
+        if (word.isEmpty() && !password && !numeric && !noCorrect && !noSpaces()) {
+            val ic = ic
+            val tail = ic?.getTextBeforeCursor(40, 0)?.toString().orEmpty().takeLastWhile(::isWordChar)
+            val head = ic?.getTextAfterCursor(40, 0)?.toString().orEmpty().takeWhile(::isWordChar)
+            val whole = tail + head
+            if (tail.isNotEmpty() && whole.length in 2..39 && whole.any { it.isLetter() }) {
+                val s = suggestFor(whole)
+                val fixes = listOfNotNull(s.correction) + s.words
+                val offered = fixes.distinctBy { it.lowercase() }.filter { !it.equals(whole, ignoreCase = true) }
+                // A word that's no word, or one with a fix: its fixes, a tap away.
+                if (offered.isNotEmpty() && (s.correction != null || !s.typedKnown)) {
+                    around = tail.length to head.length
+                    ui.bar = Bar.Words(offered.getOrNull(1), offered[0], offered.getOrNull(2), true, null)
+                    return
+                }
+            }
+        }
         if (word.isNotEmpty()) {
             val typed = lastWordOf(word.toString()).second
             val s = suggestFor(typed)
@@ -1258,6 +1298,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         )
         /** Marks a space goes in after (text.rs, space_after_mark). */
         private const val AUTO_SPACED = ".,!?)]}»”’\""
+        /** Copies in the bar's row at most (it scrolls past the ones that don't fit). */
+        const val RECENT = 10
+
         private val ADDRESSES = setOf(
             InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,

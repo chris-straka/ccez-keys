@@ -345,3 +345,17 @@ fn the_text_before_orders_suggestions() {
     e.learn("de".into(), "schwarze".into(), "Kater".into(), false);
     assert_eq!(first("Eine schwarze ", "Kat").as_deref(), Some("Kater"));
 }
+
+#[test]
+fn nothing_to_translate_without_a_real_word() {
+    let e = engine(&["en", "fr"]);
+    // Romaji typed on English, a stray letter: no strip (owner, 2026-11-12).
+    assert!(!e.has_words("Surunara m".into()));
+    assert!(!e.has_words("asdfgh qwer".into()));
+    // A word in any typed language: there is.
+    assert!(e.has_words("Surunara maison".into()));
+    assert!(e.has_words("je pense".into()));
+    assert!(e.has_words("déjà".into()));
+    // Kana, hanzi: always.
+    assert!(e.has_words("すき".into()));
+}

@@ -42,8 +42,17 @@ object Clips {
         l.remove(text)
         l.add(0, text)
         save(ctx, l.take(MAX))
-        prefs(ctx).edit().putLong("text-at", System.currentTimeMillis()).apply()
+        val now = System.currentTimeMillis()
+        prefs(ctx).edit().putLong("text-at", now).apply()
+        // When each was copied, to put them in order with pictures and screenshots.
+        val at = times(ctx)
+        at.put(text, now)
+        at.keys().asSequence().toList().filter { it !in l.take(MAX) }.forEach(at::remove)
+        runCatching { timeFile(ctx).writeText(at.toString()) }
     }
+
+    private fun timeFile(ctx: Context) = File(ctx.filesDir, "clips-at.json")
+    private fun times(ctx: Context): org.json.JSONObject = runCatching { org.json.JSONObject(timeFile(ctx).readText()) }.getOrDefault(org.json.JSONObject())
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("clips", Context.MODE_PRIVATE)
 
@@ -52,16 +61,37 @@ object Clips {
         prefs(ctx).edit().putString("picture", uri.toString()).putLong("picture-at", System.currentTimeMillis()).apply()
     }
 
-    /** The newest of: the last text copied, the last picture copied, the last screenshot. Reads storage: off the main thread. */
-    fun latest(ctx: Context): Latest? {
+    /**
+     * The newest [n] things copied or screenshot, newest first (owner,
+     * 2026-11-12: several in the bar, each a tap away, newest on the left):
+     * the texts copied, the last picture copied, the last screenshot.
+     * Reads storage: off the main thread.
+     */
+    fun recent(ctx: Context, n: Int): List<Latest> {
         val p = prefs(ctx)
-        val text = all(ctx).firstOrNull()?.let { Latest.Text(it, p.getLong("text-at", 0)) }
+        val at = times(ctx)
+        val texts = all(ctx).take(n).mapIndexed { i, t -> Latest.Text(t, at.optLong(t, if (i == 0) p.getLong("text-at", 0) else 0)) }
         val copied = p.getString("picture", null)?.let { u ->
             val uri = android.net.Uri.parse(u)
             Shots.thumb(ctx, uri)?.let { Latest.Picture(uri, it, p.getLong("picture-at", 0)) }
         }
         val shot = Shots.newest(ctx)?.let { (uri, at) -> Shots.thumb(ctx, uri)?.let { Latest.Picture(uri, it, at) } }
-        return listOfNotNull(text, copied, shot).maxByOrNull { it.at }
+        return order(texts, listOfNotNull(copied, shot).distinctBy { it.uri }).take(n)
+    }
+
+    /**
+     * Texts (newest first, some with no time, from before times were
+     * kept) and pictures, together newest first: a picture goes before
+     * the first text older than it; texts keep their own order.
+     */
+    internal fun order(texts: List<Latest.Text>, pictures: List<Latest>): List<Latest> {
+        val out = mutableListOf<Latest>()
+        val pics = pictures.sortedByDescending { it.at }.toMutableList()
+        for (t in texts) {
+            while (pics.isNotEmpty() && pics.first().at > t.at) out += pics.removeAt(0)
+            out += t
+        }
+        return out + pics
     }
 
     fun remove(ctx: Context, text: String) {

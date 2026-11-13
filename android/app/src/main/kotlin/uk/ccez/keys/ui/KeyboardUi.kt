@@ -255,25 +255,37 @@ private fun BarRow(ui: UiState, typist: Typist) {
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.clip, "Clipboard", tint = if (on) Colors.fg else Colors.muted, modifier = Modifier.size(20.dp)) }
             // Right of it: something just copied, until pasted; whenever the bar is idle (an
-            // empty field, or after a full stop: owner, 2026-11-12), the latest copy (a word,
-            // a phrase, a picture or screenshot). Tap: in it goes. Hold: the clipboard.
+            // empty field, or after a full stop: owner, 2026-11-12), the latest copies, newest
+            // on the left (a word, a phrase, a picture or screenshot; owner, 2026-11-12: "multiple
+            // clipboard items so I can tap them all"). Tap: in it goes. Hold: the clipboard.
             val clip = ui.clip
-            val latest = if (ui.panel == Panel.KEYS) ui.latest else null
-            if (clip != null && (latest == null || latest is uk.ccez.keys.learn.Latest.Text)) {
-                TextChip(clip, onTap = { typist.paste(clip); ui.clip = null }, onHold = { ui.panel = Panel.CLIPS })
-            } else if (latest is uk.ccez.keys.learn.Latest.Text) {
-                TextChip(latest.text, onTap = { typist.paste(latest.text) }, onHold = { ui.panel = Panel.CLIPS })
-            } else if (latest is uk.ccez.keys.learn.Latest.Picture) {
-                val bmp = remember(latest.uri) { latest.thumb.asImageBitmap() }
-                androidx.compose.foundation.Image(
-                    bmp,
-                    "Picture",
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier.padding(start = 6.dp).height(38.dp).width(28.dp).clip(RoundedCornerShape(6.dp)).background(Colors.chip)
-                        .border(1.dp, Colors.line, RoundedCornerShape(6.dp))
-                        .combinedClickable(onClick = { typist.sendShot(latest.uri) }, onLongClick = { typist.holdBuzz(); ui.bigPicture = latest.uri }),
-                )
+            val recent = if (ui.panel == Panel.KEYS) ui.recent else emptyList()
+            val texts = recent.filterIsInstance<uk.ccez.keys.learn.Latest.Text>().map { it.text }
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (clip != null && clip !in texts) TextChip(clip, onTap = { typist.paste(clip); ui.clip = null }, onHold = { ui.panel = Panel.CLIPS })
+                recent.forEach { item ->
+                    when (item) {
+                        is uk.ccez.keys.learn.Latest.Text ->
+                            TextChip(item.text, onTap = { typist.paste(item.text); if (item.text == clip) ui.clip = null }, onHold = { ui.panel = Panel.CLIPS })
+                        is uk.ccez.keys.learn.Latest.Picture -> {
+                            val bmp = remember(item.uri) { item.thumb.asImageBitmap() }
+                            androidx.compose.foundation.Image(
+                                bmp,
+                                "Picture",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.padding(start = 6.dp).height(38.dp).width(28.dp).clip(RoundedCornerShape(6.dp)).background(Colors.chip)
+                                    .border(1.dp, Colors.line, RoundedCornerShape(6.dp))
+                                    .combinedClickable(onClick = { typist.sendShot(item.uri) }, onLongClick = { typist.holdBuzz(); ui.bigPicture = item.uri }),
+                            )
+                        }
+                    }
+                }
             }
+        } else {
+            Spacer(Modifier.weight(1f))
         }
         val face = ui.face
         if (face != null && ui.panel == Panel.KEYS) {
@@ -286,7 +298,6 @@ private fun BarRow(ui: UiState, typist: Typist) {
                     .combinedClickable(onClick = { typist.insertFace(face) }).padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
-        Spacer(Modifier.weight(1f))
         if (!ui.password && App.instance.flag("buttons.camera")) {
             Box(
                 Modifier.padding(end = 4.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = { typist.openCamera() }),
@@ -305,14 +316,15 @@ private fun BarRow(ui: UiState, typist: Typist) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RowScope.TextChip(text: String, onTap: () -> Unit, onHold: () -> Unit) {
+private fun TextChip(text: String, onTap: () -> Unit, onHold: () -> Unit) {
     Text(
-        text.replace('\n', ' '),
+        text.replace('\n', ' ').trim(),
         color = Colors.fg,
         fontSize = 13.sp,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.weight(1f, fill = false).padding(start = 6.dp, end = 6.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
+        // Several to a row: each no wider than a word or two.
+        modifier = Modifier.widthIn(max = 120.dp).padding(start = 6.dp).clip(RoundedCornerShape(14.dp)).background(Colors.chip)
             .combinedClickable(onClick = onTap, onLongClick = onHold).padding(horizontal = 12.dp, vertical = 8.dp),
     )
 }

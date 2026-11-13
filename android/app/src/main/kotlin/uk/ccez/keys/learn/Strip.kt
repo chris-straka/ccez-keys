@@ -159,7 +159,9 @@ class Strip(private val ui: UiState) {
     fun update(sentence: String, typingLang: String, allowed: Boolean, polite: Boolean = false, ai: Boolean = true) {
         this.polite = polite
         this.ai = ai
-        if (!allowed || !app.flag("learning.strip") || sentence.isBlank() || !Translator.supports(typingLang)) {
+        // Nothing to translate (romaji on English, a stray letter): no line
+        // (owner, 2026-11-12: "Surunara m" came back as "SURUNARA M").
+        if (!allowed || !app.flag("learning.strip") || sentence.isBlank() || !Translator.supports(typingLang) || !engine.hasWords(sentence)) {
             if (sentence.isBlank()) index = 0
             job?.cancel()
             ui.strip = null
@@ -225,6 +227,17 @@ class Strip(private val ui: UiState) {
         val better = synchronized(refined) { refined[key] }
         val text = (better ?: Translator.translate(src, from, lang) ?: return)
             .let { if (src.none { c -> c.isWhitespace() }) bare(it) else it }
+        // The translator handing the text back (in capitals, or as it was):
+        // nothing learned in this language, the next one instead.
+        if (better == null && bare(text).equals(bare(src), ignoreCase = true)) {
+            if (autoSteps < all.size - 1) {
+                index = (index + 1) % all.size
+                show(autoSteps + 1, pause)
+            } else {
+                withContext(Dispatchers.Main) { if (ui.strip?.source == src) ui.strip = null }
+            }
+            return
+        }
         val pending = better == null && refine(key, src, from, lang, all)
         val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }

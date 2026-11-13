@@ -49,8 +49,8 @@ class UiState {
     var ask by mutableStateOf<uk.ccez.keys.learn.AskState?>(null)
     /** A suggestion held: the bar offers to take it out of the suggestions. */
     var remove by mutableStateOf<String?>(null)
-    /** The newest thing copied or screenshot. */
-    var latest by mutableStateOf<uk.ccez.keys.learn.Latest?>(null)
+    /** The newest things copied or screenshot, newest first (the bar's row). */
+    var recent by mutableStateOf<List<uk.ccez.keys.learn.Latest>>(emptyList())
     /** A picture held in the clipboard panel, shown large. */
     var bigPicture by mutableStateOf<android.net.Uri?>(null)
 }
