@@ -95,15 +95,26 @@ internal fun bare(t: String) = t.trimEnd { it.isWhitespace() || Character.getTyp
 
 /**
  * The learning strip: the sentence being typed, in a language being
- * learned (or, typing in one of those, in the default language). A
- * sentence whose words are all known shows grey for a moment, then the
- * next language takes over.
+ * learned (or, typing in one of those, in the default language).
+ *
+ * Which language leads is worked out afresh on every refresh, never
+ * carried along (owner, 2026-11-13: the line wandered to Chinese and
+ * Hindi): the first of the owner's languages, in their order, whose line
+ * has a word not yet known, among the first [SEARCH]; none of those, the
+ * first. A language swiped to stays for that sentence. Before, the strip
+ * kept a position that walked on by itself (an all-known line moved on
+ * after a pause, a translator handing a letter back moved on at once) and
+ * stayed put for the rest of the sentence, and a new message starting
+ * with the same letter counted as the same sentence.
  */
 class Strip(private val ui: UiState) {
     private val app = App.instance
     private val engine get() = app.engine
     private var job: Job? = null
+    /** The language shown: its place in [targets]. */
     private var index = 0
+    /** A language swiped to: the sentence it was swiped on, and its place. */
+    private var pin: Pair<String, Int>? = null
     /** The way the last change of language went (1 down the list, -1 up). */
     private var moved = 1
     private var switchedAt = 0L
@@ -161,14 +172,13 @@ class Strip(private val ui: UiState) {
         this.ai = ai
         // Nothing to translate (romaji on English, a stray letter): no line
         // (owner, 2026-11-12: "Surunara m" came back as "SURUNARA M").
+        // A language swiped to holds for its sentence only.
+        if (pin?.let { (start, _) -> !sameSentence(start, sentence) } == true) pin = null
         if (!allowed || !app.flag("learning.strip") || sentence.isBlank() || !Translator.supports(typingLang) || !engine.hasWords(sentence)) {
-            if (sentence.isBlank()) index = 0
             job?.cancel()
             ui.strip = null
             return
         }
-        // Another sentence (not this one going on): back to the first language.
-        if (!sameSentence(source, sentence)) { index = 0; moved = 1 }
         source = sentence
         job?.cancel()
         job = app.scope.launch {
@@ -176,16 +186,16 @@ class Strip(private val ui: UiState) {
             // The sentence's own language (the keyboard may be on another):
             // English typed on Français still shows the learning languages.
             typing = written(sentence, typingLang)
-            show(autoSteps = 0)
+            show()
         }
     }
 
-    /** `now` is `before` typed on (or a few letters taken back), not a new sentence. */
-    private fun sameSentence(before: String, now: String): Boolean {
-        if (before.isEmpty() || now.isEmpty()) return false
-        val n = minOf(before.length, now.length, 12)
-        return before.take(n) == now.take(n)
-    }
+    /**
+     * `now` is the sentence `before` typed on (or a little taken back), not a
+     * new one: one starts with the other, and they share their first word
+     * at least ("I" doesn't make "Idk how it works" the sentence before).
+     */
+    private fun sameSentence(before: String, now: String): Boolean = sameSentenceAs(before, now)
 
     /** One language-ID client for the keyboard's life (each one holds native memory). */
     private val langId by lazy { com.google.mlkit.nl.languageid.LanguageIdentification.getClient() }
@@ -205,41 +215,78 @@ class Strip(private val ui: UiState) {
         val n = targets(typing).size
         if (n == 0) return
         index = ((index + by) % n + n) % n
+        pin = source to index
+        app.log("info", "strip-step", "why" to "swipe", "by" to by, "index" to index, "from" to typing, "of" to n)
         moved = if (by < 0) -1 else 1
         switchedAt = android.os.SystemClock.uptimeMillis()
         job?.cancel()
-        job = app.scope.launch { show(autoSteps = n) }
+        job = app.scope.launch { show() }
     }
 
-    /** `pause`: how long an all-known sentence shows before the next language. */
-    private suspend fun show(autoSteps: Int, pause: Long = 1500) {
+    /** A language's line, as tried for the lead. */
+    private class Tried(val at: Int, val lang: String, val text: String, val better: String?, val words: List<StripWord>)
+
+    /**
+     * The line in the language that leads (see the class): the one swiped
+     * to, the same one again ([keep]: a redraw), or the first of the first
+     * [SEARCH] with a word not yet known.
+     */
+    private suspend fun show(keep: Boolean = false) {
         // This sentence and language, read once: typing goes on while this runs.
         val src = source
         val from = typing
         val all = targets(from)
         if (all.isEmpty()) return
-        index %= all.size
-        val lang = all[index]
-        // A dictionary that arrives now brings readings and statuses: redraw.
-        app.scope.launch { if (Dictionaries.ensure(lang) && ui.strip?.lang == lang) redraw() }
-        // A full stop added isn't a new sentence for Muse: the key leaves end marks out.
-        val key = "$from|$lang|$polite|${bare(src)}"
-        val better = synchronized(refined) { refined[key] }
-        val text = (better ?: Translator.translate(src, from, lang) ?: return)
-            .let { if (src.none { c -> c.isWhitespace() }) bare(it) else it }
-        // The translator handing the text back (in capitals, or as it was):
-        // nothing learned in this language, the next one instead.
-        if (better == null && bare(text).equals(bare(src), ignoreCase = true)) {
-            if (autoSteps < all.size - 1) {
-                index = (index + 1) % all.size
-                show(autoSteps + 1, pause)
-            } else {
-                withContext(Dispatchers.Main) { if (ui.strip?.source == src) ui.strip = null }
+        val pinned = pin?.second?.takeIf { it < all.size }
+        val order = when {
+            pinned != null -> listOf(pinned)
+            keep -> listOf(index % all.size)
+            else -> (0 until minOf(all.size, SEARCH)).toList()
+        }
+        var first: Tried? = null
+        var lead: Tried? = null
+        for ((n, k) in order.withIndex()) {
+            val lang = all[k]
+            // A full stop added isn't a new sentence for Muse: the key leaves end marks out.
+            val better = synchronized(refined) { refined["$from|$lang|$polite|${bare(src)}"] }
+            // Only the first may fetch its model; the others are tried with what's on the phone.
+            val got = better ?: Translator.translate(src, from, lang, download = n == 0)
+            if (got == null) {
+                app.log("info", "strip-step", "lang" to lang, "why" to "no-translation", "index" to k)
+                continue
             }
+            val text = if (src.none { c -> c.isWhitespace() }) bare(got) else got
+            // The translator handing the text back (in capitals, or as it was): nothing to learn there.
+            if (better == null && bare(text).equals(bare(src), ignoreCase = true)) {
+                app.log("info", "strip-step", "lang" to lang, "why" to "echo", "index" to k)
+                continue
+            }
+            val words = engine.stripWords(lang, text)
+            val ws = words.filter { it.word }
+            val known = ws.count { it.status == WordStatus.KNOWN }
+            // Languages and counts only, never the words (a keyboard's log).
+            app.log("info", "strip-step", "lang" to lang, "why" to "tried", "index" to k, "from" to from, "of" to all.size, "words" to ws.size, "known" to known)
+            val t = Tried(k, lang, text, better, words)
+            if (first == null) first = t
+            if (pinned != null || keep || ws.isEmpty() || known < ws.size) {
+                lead = t
+                break
+            }
+        }
+        val pick = lead ?: first ?: run {
+            withContext(Dispatchers.Main) { if (ui.strip?.source == src) ui.strip = null }
             return
         }
+        if (pick.at != index) moved = if (pick.at > index) 1 else -1
+        index = pick.at
+        val lang = pick.lang
+        val text = pick.text
+        val better = pick.better
+        val words = pick.words
+        // A dictionary that arrives now brings readings and statuses: redraw.
+        app.scope.launch { if (Dictionaries.ensure(lang) && ui.strip?.lang == lang) redraw() }
+        val key = "$from|$lang|$polite|${bare(src)}"
         val pending = better == null && refine(key, src, from, lang, all)
-        val words = engine.stripWords(lang, text)
         val flags = all.map { Langs.of(app, it)?.flag ?: it }
         val next = emptyList<String>()
         withContext(Dispatchers.Main) {
@@ -258,14 +305,6 @@ class Strip(private val ui: UiState) {
         prefetch(all, index, src, from)
         // The voice ready before a word is tapped (the speech engine on the main thread, as taps are).
         withContext(Dispatchers.Main) { Speaker.warm(app, lang, text) }
-        val known = words.filter { it.word }
-        if (known.isNotEmpty() && known.all { it.status == WordStatus.KNOWN } && autoSteps < all.size - 1) {
-            delay(pause)
-            index = (index + 1) % all.size
-            moved = 1
-            show(autoSteps + 1)
-            return
-        }
         addMore(all, lang, text)
     }
 
@@ -414,9 +453,9 @@ class Strip(private val ui: UiState) {
         engine.setWordStatus(lang, word, status)
         WordSync.soon()
         if (status == WordStatus.KNOWN && ui.strip?.lang == lang) {
-            // Everything shown now known: on to the next language.
+            // Worked out again: everything shown now known, the next language leads.
             job?.cancel()
-            job = app.scope.launch { show(autoSteps = 0, pause = 300) }
+            job = app.scope.launch { show() }
         } else {
             redraw()
         }
@@ -425,6 +464,26 @@ class Strip(private val ui: UiState) {
     /** The same language again, without moving on. */
     private fun redraw() {
         job?.cancel()
-        job = app.scope.launch { show(autoSteps = Int.MAX_VALUE / 2) }
+        job = app.scope.launch { show(keep = true) }
     }
+}
+
+/** Languages tried for the lead on each refresh, at most (each one a translation). */
+private const val SEARCH = 4
+
+/**
+ * Whether [now] is the sentence [before] typed on (or a little taken back):
+ * one starts with the other and they share their first word, whole. "I"
+ * then "Idk how it works" are two sentences; "Je pen" then "Je pense" one.
+ */
+internal fun sameSentenceAs(before: String, now: String): Boolean {
+    val a = before.trim()
+    val b = now.trim()
+    if (a.isEmpty() || b.isEmpty()) return false
+    if (!a.startsWith(b) && !b.startsWith(a)) return false
+    val shorter = if (a.length <= b.length) a else b
+    val longer = if (a.length <= b.length) b else a
+    // The shorter one's first word is the longer one's whole first word.
+    val word = shorter.takeWhile { !it.isWhitespace() }
+    return longer.length == word.length || longer.getOrNull(word.length)?.isWhitespace() == true || shorter.contains(' ')
 }

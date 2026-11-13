@@ -40,4 +40,16 @@ class StripTest {
         assertEquals("", uk.ccez.keys.learn.Review.article("Bahnhof", ""))
         assertEquals("el", uk.ccez.keys.learn.Review.article("libro", "el"))
     }
+
+    @org.junit.Test
+    fun aNewMessageStartingWithTheSameLetterIsANewSentence() {
+        // The owner's case: the strip kept its language from "I" into "Idk how it works".
+        org.junit.Assert.assertFalse(uk.ccez.keys.learn.sameSentenceAs("I", "Idk how it works"))
+        org.junit.Assert.assertFalse(uk.ccez.keys.learn.sameSentenceAs("Really", "Ready to go"))
+        // Typed on, or a little taken back: the same.
+        org.junit.Assert.assertTrue(uk.ccez.keys.learn.sameSentenceAs("Je pen", "Je pense que oui"))
+        org.junit.Assert.assertTrue(uk.ccez.keys.learn.sameSentenceAs("Je pense que oui", "Je pense"))
+        org.junit.Assert.assertTrue(uk.ccez.keys.learn.sameSentenceAs("Je", "Je pense"))
+        org.junit.Assert.assertFalse(uk.ccez.keys.learn.sameSentenceAs("", "Je"))
+    }
 }

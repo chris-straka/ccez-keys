@@ -76,7 +76,8 @@ fun StripRow(s: StripView, typist: Typist) {
     Row(
         Modifier.fillMaxSize().background(STRIP_BG)
             .pointerInput(s.lang) {
-                val far = 16.dp.toPx()
+                // Far enough that a sideways drag along the line doesn't change it by accident.
+                val far = 36.dp.toPx()
                 detectVerticalDragGestures(
                     // Up: the next language on the owner's list; down: the one before.
                     onDragEnd = { if (drag < -far) typist.strip.step(1) else if (drag > far) typist.strip.step(-1); drag = 0f },

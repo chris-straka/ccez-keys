@@ -1,3 +1,18 @@
+# Strip: which language leads (2026-11-13)
+
+Owner, 2026-11-13: the line showed Hindi, then Chinese, for English typed
+("Idk how it works", "Really iron out a good solution"). The strip kept a
+position that walked on by itself (an all-known line moved to the next
+language after 1.5 s; since 0.1.196 a translator echo moved it at once),
+kept it for the rest of the sentence, and a new message starting with the
+same letter counted as the same sentence. Now: worked out afresh on every
+refresh, the first of the owner's languages whose line has a word not yet
+known among the first four, else the first; a swipe pins a language for
+that sentence only (sameSentenceAs, tested); the swipe needs 36 dp, not
+16. `keys log` has a `strip-step` line per language tried (codes and
+counts, never text). Checked on the emulator with the owner's settings
+and statuses: both sentences stay on French.
+
 # Review, 2026-11-12 (the code against what the owner has asked for)
 
 Read-only, cut short; nothing here is checked on screen. Delete each as it ships.
