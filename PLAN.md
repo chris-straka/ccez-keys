@@ -1,3 +1,9 @@
+# Bug review, 2026-11-13: left for later
+
+- Mac: the ⌥⏎ key tap runs on the main run loop beside the 0.15 s tick's
+  Accessibility reads, so every key-down can wait on a slow app
+  (chatswap.rs:122): put the tap on its own thread, `on` in an atomic.
+
 # Strip: which language leads (2026-11-13)
 
 Owner, 2026-11-13: the line showed Hindi, then Chinese, for English typed

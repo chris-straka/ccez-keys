@@ -250,9 +250,11 @@ pub(crate) fn new_panel(mtm: MainThreadMarker) -> (Retained<NSPanel>, Retained<N
 ///
 /// It never covers the field being typed in (owner, 2026-11-12: it sat on
 /// the last lines of Claude's composer): just under the field when there's
-/// room on screen, else just over it, level with the cursor (or the field's
-/// left edge when the app gives no believable cursor). Only a field too tall
-/// to step around (a document) has it by the cursor's line instead.
+/// room on screen, else just over it, centred on the field (owner,
+/// 2026-11-13: it hugged the screen's right edge, led there by a cursor
+/// Claude doesn't give and was guessed off the end of a wrapped line). Only
+/// a field too tall to step around (a document) has it by the cursor's
+/// line instead, centred on the cursor.
 pub fn spot((w, h): (f64, f64), place: Place, primary_h: f64, vis: Rect) -> (f64, f64) {
     const GAP: f64 = 6.0;
     let (floor, ceil) = (vis.y + 4.0, vis.y + vis.h - 4.0);
@@ -264,7 +266,10 @@ pub fn spot((w, h): (f64, f64), place: Place, primary_h: f64, vis: Rect) -> (f64
             && c.h > 0.0
             && frame.is_none_or(|f| c.x >= f.x - 2.0 && c.x <= f.x + f.w + 2.0 && c.y + c.h >= f.y - 2.0 && c.y <= f.y + f.h + 2.0)
     });
-    let x = caret.map(|c| c.x - 6.0).or(frame.map(|f| f.x)).map(|x| x.min(right - w).max(left));
+    let clamp = |x: f64| x.min(right - w).max(left);
+    // Centred on the field; on the cursor (a document's line), else the screen.
+    let on_field = frame.map(|f| clamp(f.x + (f.w - w) / 2.0));
+    let on_caret = caret.map(|c| clamp(c.x - w / 2.0)).or(on_field);
     let fits = |y: f64| y >= floor && y + h <= ceil;
     // Just under or just over `r` (in Cocoa's y), where the screen has room.
     let around = |r: Rect| {
@@ -279,11 +284,11 @@ pub fn spot((w, h): (f64, f64), place: Place, primary_h: f64, vis: Rect) -> (f64
         }
     };
     if let Some(y) = frame.and_then(around) {
-        return (x.unwrap_or(left), y);
+        return (on_field.unwrap_or(left), y);
     }
     match caret.or(frame) {
         // A field filling the screen top to foot: by the cursor's line, or else inside it at its foot.
-        Some(a) => (x.unwrap_or(left), around(a).unwrap_or(floor)),
+        Some(a) => (on_caret.unwrap_or(left), around(a).unwrap_or(floor)),
         None => (vis.x + (vis.w - w) / 2.0, vis.y + 24.0),
     }
 }
@@ -681,12 +686,20 @@ mod tests {
         let (x, y) = spot(SIZE, Place { caret: None, frame: Some(frame) }, H, VIS);
         let (_, bottom) = span(y);
         assert!(bottom <= frame.y, "covers the box: {bottom} > {}", frame.y);
-        assert_eq!(x, frame.x);
-        // With a cursor in it: still clear of the whole box, at the cursor's x.
+        // Centred on the box (owner, 2026-11-13), cursor or none.
+        assert_eq!(x, centred(frame));
         let caret = Rect { x: 900.0, y: 995.0, w: 1.0, h: 18.0 };
         let (x, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
         assert!(span(y).1 <= frame.y);
-        assert_eq!(x, 894.0);
+        assert_eq!(x, centred(frame));
+        // A cursor guessed off the end of a wrapped line (Claude gives none): still centred.
+        let guessed = Rect { x: 1580.0, y: 1000.0, w: 1.0, h: 18.0 };
+        assert_eq!(spot(SIZE, Place { caret: Some(guessed), frame: Some(frame) }, H, VIS).0, centred(frame));
+    }
+
+    /// Where a panel centred on `f` starts.
+    fn centred(f: Rect) -> f64 {
+        f.x + (f.w - SIZE.0) / 2.0
     }
 
     /// The panel, in Accessibility's coordinates, overlaps `r`.
@@ -703,7 +716,7 @@ mod tests {
         let caret = Rect { x: 900.0, y: 1000.0, w: 1.0, h: 18.0 };
         let at = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
         assert!(!covers(at, frame), "covers the composer: {at:?}");
-        assert_eq!(at.0, 894.0);
+        assert_eq!(at.0, centred(frame));
         // A guessed cursor a few lines short of the real one (line heights differ): still clear.
         let guess = Rect { x: 900.0, y: 900.0, w: 2.0, h: 20.0 };
         assert!(!covers(spot(SIZE, Place { caret: Some(guess), frame: Some(frame) }, H, VIS), frame));
@@ -720,7 +733,7 @@ mod tests {
         let frame = Rect { x: 672.0, y: 700.0, w: 921.0, h: 200.0 };
         for caret in [None, Some(Rect::default()), Some(Rect { x: 0.0, y: 0.0, w: 0.0, h: 18.0 }), Some(Rect { x: 50.0, y: 40.0, w: 1.0, h: 18.0 })] {
             let at = spot(SIZE, Place { caret, frame: Some(frame) }, H, VIS);
-            assert_eq!(at.0, frame.x, "{caret:?}");
+            assert_eq!(at.0, centred(frame), "{caret:?}");
             assert!(!covers(at, frame), "{caret:?}");
         }
     }
@@ -756,8 +769,10 @@ mod tests {
         // TextEdit's page is far too big to step around: under the line typed on.
         let frame = Rect { x: 200.0, y: 80.0, w: 900.0, h: 2400.0 };
         let caret = Rect { x: 500.0, y: 300.0, w: 1.0, h: 16.0 };
-        let (_, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
+        let (x, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);
         assert!(span(y).0 >= caret.y + caret.h);
+        // Centred on the cursor there.
+        assert_eq!(x, caret.x - SIZE.0 / 2.0);
         // Near the foot of the screen: over the line instead.
         let caret = Rect { x: 500.0, y: 1000.0, w: 1.0, h: 16.0 };
         let (_, y) = spot(SIZE, Place { caret: Some(caret), frame: Some(frame) }, H, VIS);

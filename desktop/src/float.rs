@@ -135,6 +135,9 @@ struct Word {
     /// each ("" over kana), shown while the pointer is on it (owner,
     /// 2026-11-12). Empty for other languages.
     reading: Vec<(String, String)>,
+    /// Its language's flag, small beside it (owner, 2026-11-13: Chinese
+    /// and Japanese words looked alike).
+    flag: String,
     /// Its spot (top-left coordinates), as the spot search gives them.
     cell: Rect,
     panel: Retained<NSPanel>,
@@ -186,6 +189,8 @@ pub struct Floaters {
     pub hide_in_shots: Cell<bool>,
     /// The menu's "Readings over Japanese and Chinese".
     pub readings: Cell<bool>,
+    /// Each language's flag (data/languages.json), set by the app.
+    pub flags: RefCell<std::collections::HashMap<String, String>>,
     /// Spots whose word was clicked, and when: resting (RESTS).
     rested: RefCell<Vec<(Rect, Instant)>>,
     /// When the screenshot tools were last looked for, and whether they were up.
@@ -251,6 +256,7 @@ impl Floaters {
             quiet_until: Cell::new(None),
             hide_in_shots: Cell::new(true),
             readings: Cell::new(true),
+            flags: RefCell::default(),
             rested: RefCell::default(),
             capture_seen: Cell::new((Instant::now(), false)),
             spots,
@@ -421,7 +427,8 @@ impl Floaters {
         let id = self.next_id.get();
         self.next_id.set(id + 1);
         let reading = self.reading(&lang, &shown);
-        let w = show(mtm, id, lang, word, shown, m, tags, reading, cell, primary_h);
+        let flag = self.flags.borrow().get(&lang).cloned().unwrap_or_default();
+        let w = show(mtm, id, lang, word, shown, m, tags, reading, flag, cell, primary_h);
         if !self.hide_in_shots.get() {
             w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
         }
@@ -489,7 +496,8 @@ impl Floaters {
             let id = self.next_id.get();
             self.next_id.set(id + 1);
             let reading = self.reading(&a.lang, &a.shown);
-            let w = show(mtm, id, a.lang.clone(), a.word.clone(), a.shown, a.meaning, a.tags, reading, a.cell, primary_h);
+            let flag = self.flags.borrow().get(&a.lang).cloned().unwrap_or_default();
+            let w = show(mtm, id, a.lang.clone(), a.word.clone(), a.shown, a.meaning, a.tags, reading, flag, a.cell, primary_h);
             if !self.hide_in_shots.get() {
                 w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
             }
@@ -624,8 +632,8 @@ fn typing() -> bool {
 /// A word put up in `cell`, faint, its meaning hidden.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
-fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, cell: Rect, primary_h: f64) -> Word {
-    let w = build(mtm, id, lang, word, shown, meaning, tags, reading, cell, primary_h);
+fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, flag: String, cell: Rect, primary_h: f64) -> Word {
+    let w = build(mtm, id, lang, word, shown, meaning, tags, reading, flag, cell, primary_h);
     w.on.set(true);
     w.panel.setAlphaValue(0.0);
     w.panel.orderFrontRegardless();
@@ -635,7 +643,7 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
 
 /// A word made and laid out, not yet on screen.
 #[allow(clippy::too_many_arguments)]
-fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, cell: Rect, primary_h: f64) -> Word {
+fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, flag: String, cell: Rect, primary_h: f64) -> Word {
     let (panel, bg) = new_panel(mtm);
     panel.setLevel(20);
     panel.setHasShadow(false);
@@ -658,6 +666,7 @@ fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: St
         meaning,
         tags,
         reading,
+        flag,
         cell,
         panel,
         bg,
@@ -676,12 +685,12 @@ fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: St
 
 /// For checks (`--word-picture`): a word as it looks with the pointer on
 /// it, drawn into a PNG without ever being put on screen.
-pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &str, word: &str, out: &std::path::Path) -> bool {
+pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &str, word: &str, flag: &str, open: bool, out: &std::path::Path) -> bool {
     let (shown, meaning, tags) = engine.word_face(lang, word);
     let reading = pieces(engine.strip_words(lang.to_string(), shown.clone()).into_iter().flat_map(|w| w.ruby).map(|r| (r.text, r.rt)).collect(), &shown);
     let cell = Rect { x: 0.0, y: 0.0, w: 240.0, h: 175.0 };
-    let mut w = build(mtm, 1, lang.to_string(), word.to_string(), shown, meaning, tags, reading, cell, 1080.0);
-    w.open = true;
+    let mut w = build(mtm, 1, lang.to_string(), word.to_string(), shown, meaning, tags, reading, flag.to_string(), cell, 1080.0);
+    w.open = open;
     lay_out(mtm, &mut w, 1080.0);
     let bounds = w.bg.bounds();
     let Some(rep) = w.bg.bitmapImageRepForCachingDisplayInRect(bounds) else { return false };
@@ -771,11 +780,23 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     }
     let rh = over.first().map(|(l, _)| l.frame().size.height - 3.0).unwrap_or(0.0);
     let rw = over.iter().map(|(l, x)| 2.0 * (ww / 2.0 - x).abs().max((x + l.frame().size.width - ww / 2.0).abs())).fold(0.0, f64::max);
-    let width = (ww + 2.0 * pills_w).max(mw).max(rw) + 20.0;
+    // The flag left of the word, the word kept in the middle as with the tags.
+    let flag = (!w.flag.is_empty()).then(|| {
+        let l = label(mtm, &w.flag, 13.0, false);
+        l.setAlphaValue(if w.open { 1.0 } else { 0.8 });
+        l
+    });
+    let fw = flag.as_ref().map(|l| l.frame().size.width + 4.0).unwrap_or(0.0);
+    let width = (ww + 2.0 * pills_w.max(fw)).max(mw).max(rw) + 20.0;
     let height = wh + mh + rh + 10.0;
     let wx = (width - ww) / 2.0;
     w.button.setFrame(rect(wx, mh + 5.0, ww, wh));
     content.addSubview(&w.button);
+    if let Some(l) = &flag {
+        let f = l.frame().size;
+        l.setFrame(rect(wx - fw, mh + 5.0 + (wh - f.height) / 2.0, f.width, f.height));
+        content.addSubview(l);
+    }
     for (l, x) in &over {
         let f = l.frame().size;
         l.setFrame(rect(wx + x, mh + 5.0 + wh - 3.0, f.width, f.height));
