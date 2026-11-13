@@ -85,7 +85,7 @@ const VIDEO_MIN: f64 = 72.0;
 /// its picture is one more empty pane, so words went on it (owner,
 /// 2026-11-12). `role` and `first` are a childless first child's, `parent`
 /// reads its parent's role and frame (asked only when the child fits). The
-/// video's frame when it is one.
+/// frame of what has that shape; [Videos] says which are videos.
 pub fn video_frame(role: &str, first: Rect, parent: impl FnOnce() -> Option<(String, Rect)>) -> Option<Rect> {
     if role != "AXGroup" || first.w < VIDEO_MIN || first.h < VIDEO_MIN {
         return None;
@@ -95,12 +95,50 @@ pub fn video_frame(role: &str, first: Rect, parent: impl FnOnce() -> Option<(Str
     (parent_role == "AXGroup" && near(frame.x, first.x) && near(frame.y, first.y) && near(frame.w, first.w) && near(frame.h, first.h)).then_some(frame)
 }
 
-/// Whether such a video is playing. Its controls stay up while it's paused
-/// or over, so none (`children` is 1, the picture alone) means playing; up,
-/// its play button carries the class "pause" exactly when it isn't
-/// (`paused_mark`; a class, so the same in every language).
-pub fn video_playing(children: usize, paused_mark: bool) -> bool {
-    children <= 1 || !paused_mark
+/// What has a video's shape (video_frame), as one look at a window found it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Video {
+    pub frame: Rect,
+    /// Its controls are up: its time slider is there. Other things have the
+    /// shape (Discord has one); only a video has the slider.
+    pub controls: bool,
+    /// Its play button says paused (its class "pause": the same in every
+    /// language).
+    pub paused: bool,
+}
+
+/// The videos known in each app. A video's controls stay up while it's
+/// paused or over and leave while it plays, when only its shape is left: so
+/// a shape counts as a video, playing, only where a video of that size was
+/// seen with its controls lately (it's paused before it plays, and the
+/// pointer over it brings them back).
+#[derive(Default)]
+pub struct Videos {
+    /// Per app: each one's width and height, and when it was last there.
+    known: std::collections::HashMap<String, Vec<(f64, f64, std::time::Instant)>>,
+}
+
+/// A video not on screen this long is forgotten.
+const VIDEO_KEPT: std::time::Duration = std::time::Duration::from_secs(600);
+
+impl Videos {
+    /// One look at `app`'s window, with the shapes `found` in it: its
+    /// videos, and whether each is playing.
+    pub fn look(&mut self, app: &str, found: &[Video], now: std::time::Instant) -> Vec<(Rect, bool)> {
+        let known = self.known.entry(app.to_string()).or_default();
+        known.retain(|k| now.duration_since(k.2) < VIDEO_KEPT);
+        let mut out = Vec::new();
+        for v in found {
+            let near = |a: f64, b: f64| (a - b).abs() < 1.5;
+            match known.iter_mut().find(|k| near(k.0, v.frame.w) && near(k.1, v.frame.h)) {
+                Some(k) => k.2 = now,
+                None if v.controls => known.push((v.frame.w, v.frame.h, now)),
+                None => continue,
+            }
+            out.push((v.frame, !v.controls || !v.paused));
+        }
+        out
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -227,11 +265,28 @@ mod tests {
     }
 
     #[test]
-    fn a_video_plays_unless_its_controls_are_up_and_say_paused() {
-        // Controls away: playing. Up while it plays, up when paused or over.
-        assert!(video_playing(1, false));
-        assert!(video_playing(3, false));
-        assert!(!video_playing(3, true));
+    fn a_video_counts_once_seen_with_its_controls() {
+        let t = std::time::Instant::now();
+        let later = |s: u64| t + std::time::Duration::from_secs(s);
+        let shape = Video { frame: REEL, controls: false, paused: false };
+        let paused = Video { frame: REEL, controls: true, paused: true };
+        let mut v = Videos::default();
+        // The shape alone (Discord has one): no video.
+        assert!(v.look("discord", &[shape], t).is_empty());
+        // Paused with its controls up: a video, not playing.
+        assert_eq!(v.look("claude", &[paused], t), vec![(REEL, false)]);
+        // Play pressed (controls still up), then the controls gone: playing.
+        assert_eq!(v.look("claude", &[Video { paused: false, ..paused }], later(2)), vec![(REEL, true)]);
+        assert_eq!(v.look("claude", &[shape], later(6)), vec![(REEL, true)]);
+        // Scrolled along the page: the same video. Known in Claude only.
+        let moved = Video { frame: Rect { y: 300.0, ..REEL }, ..shape };
+        assert_eq!(v.look("claude", &[moved], later(8)), vec![(moved.frame, true)]);
+        assert!(v.look("discord", &[shape], later(8)).is_empty());
+        // Still playing long after: known while it stays; gone a while: forgotten.
+        assert_eq!(v.look("claude", &[shape], later(500)).len(), 1);
+        assert_eq!(v.look("claude", &[shape], later(1000)).len(), 1);
+        assert!(v.look("claude", &[], later(1100)).is_empty());
+        assert!(v.look("claude", &[shape], later(1800)).is_empty());
     }
 
     #[test]

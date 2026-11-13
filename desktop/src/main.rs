@@ -219,6 +219,8 @@ mod app {
     thread_local! {
         /// Per app, where its content keeps turning up (the spot thread's own).
         static BUSY: std::cell::RefCell<crate::idle::Busy> = std::cell::RefCell::new(crate::idle::Busy::default());
+        /// The videos known in each app (the spot thread's own).
+        static VIDEOS: std::cell::RefCell<crate::idle::Videos> = std::cell::RefCell::new(crate::idle::Videos::default());
         /// A video in the front window was playing at the last look (for the log).
         static PLAYING: Cell<bool> = const { Cell::new(false) };
     }
@@ -228,15 +230,22 @@ mod app {
     /// window is playing (one that doesn't hold the display awake: Claude's).
     fn spots(screen: crate::model::Rect) -> (Vec<crate::model::Rect>, bool) {
         let pid = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
-        let look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
+        let mut look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
+        let app = NSWorkspace::sharedWorkspace().frontmostApplication().and_then(|a| a.bundleIdentifier()).map(|b| b.to_string()).unwrap_or_default();
+        // Its videos: content however big, playing or not.
+        let videos = VIDEOS.with_borrow_mut(|v| v.look(&app, &look.videos, Instant::now()));
+        look.content.extend(videos.iter().map(|v| v.0));
         let free = crate::idle::free_spots(screen, look.window, &look.content, &crate::idle::windows(pid), 8, 6);
         // Spots this app keeps filling lately: skipped too.
         let all = crate::idle::free_cells(screen, &[], 8, 6);
-        let app = NSWorkspace::sharedWorkspace().frontmostApplication().and_then(|a| a.bundleIdentifier()).map(|b| b.to_string()).unwrap_or_default();
-        let playing = look.videos.iter().any(|v| v.1);
-        if PLAYING.replace(playing) != playing {
-            log("info", &format!("video in the front window ({app}): {}", if playing { "playing" } else { "stopped" }));
+        let playing = videos.iter().find(|v| v.1).map(|v| v.0);
+        if PLAYING.replace(playing.is_some()) != playing.is_some() {
+            match playing {
+                Some(f) => log("info", &format!("video playing in {app} ({}x{})", f.w as i64, f.h as i64)),
+                None => log("info", "video stopped"),
+            }
         }
+        let playing = playing.is_some();
         (BUSY.with_borrow_mut(|b| b.look(&app, &all, &free)), playing)
     }
 
@@ -427,14 +436,15 @@ mod app {
             return;
         }
         // `--look <pid>`: that app's window as idle words see it (how much
-        // content, its videos and whether each plays), printed; reads only,
-        // never its text.
+        // content, what has a video's shape, the spots free with those
+        // counted as videos), printed; reads only, never its text.
         if let Some(i) = args.iter().position(|a| a == "--look") {
             let pid = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(0);
             let look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
             println!("window={:?} content={} videos={:?}", look.window, look.content.len(), look.videos);
             if let Some(w) = look.window {
-                let free = crate::idle::free_spots(w, look.window, &look.content, &[], 8, 6);
+                let content: Vec<_> = look.content.iter().copied().chain(look.videos.iter().map(|v| v.frame)).collect();
+                let free = crate::idle::free_spots(w, look.window, &content, &[], 8, 6);
                 println!("spots={} of 48: {:?}", free.len(), free.iter().map(|c| (c.x as i64, c.y as i64)).collect::<Vec<_>>());
             }
             return;

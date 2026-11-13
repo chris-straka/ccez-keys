@@ -133,10 +133,10 @@ fn frame_of(el: Ref) -> Option<Rect> {
 pub struct Layout {
     /// The window itself.
     pub window: Option<Rect>,
-    /// Its content: text, pictures, controls, videos.
+    /// Its content: text, pictures, controls.
     pub content: Vec<Rect>,
-    /// Its videos (idle::video_frame), and whether each is playing.
-    pub videos: Vec<(Rect, bool)>,
+    /// What in it has a video's shape (idle::Videos says which are videos).
+    pub videos: Vec<crate::idle::Video>,
 }
 
 /// An element's children (none for a leaf or an app that won't say).
@@ -159,18 +159,24 @@ fn classes(el: Ref) -> Vec<String> {
         .collect()
 }
 
-/// A video's controls are up and its play button says paused (its class
-/// "pause", idle::video_playing): looked for among the controls and one
-/// level into them, where Chromium keeps it.
-fn paused_mark(video: Ref) -> bool {
-    let is_mark = |el: Ref| attr(el, "AXRole").and_then(|r| string(&r)).as_deref() == Some("AXButton") && classes(el).iter().any(|c| c == "pause");
-    children(video).iter().skip(1).any(|c| is_mark(c.0) || children(c.0).iter().any(|g| is_mark(g.0)))
+/// A video's controls, when they're up (its time slider is among its
+/// children): whether its play button says paused (its class "pause"),
+/// looked for among the controls and one level into them, where Chromium
+/// keeps it.
+fn controls(video: Ref) -> Option<bool> {
+    let role = |el: Ref| attr(el, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
+    let kids = children(video);
+    if !kids.iter().skip(1).any(|c| role(c.0) == "AXSlider") {
+        return None;
+    }
+    let is_mark = |el: Ref| role(el) == "AXButton" && classes(el).iter().any(|c| c == "pause");
+    Some(kids.iter().skip(1).any(|c| is_mark(c.0) || children(c.0).iter().any(|g| is_mark(g.0))))
 }
 
-/// Where the front window's content is (its text, pictures, controls and
-/// videos, from its Accessibility tree), and the window itself: what idle
-/// words keep clear of. Stops after `most` elements or `budget`, whichever
-/// comes first.
+/// Where the front window's content is (its text, pictures and controls,
+/// from its Accessibility tree), the window itself, and what in it has a
+/// video's shape: what idle words keep clear of. Stops after `most` elements
+/// or `budget`, whichever comes first.
 pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> Layout {
     const CONTENT: [&str; 16] = [
         "AXStaticText",
@@ -218,14 +224,19 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> Lay
         if (CONTENT.contains(&role.as_str()) || n == 0)
             && let Some(f) = frame_of(el.0)
         {
-            // A video's picture: the whole video is content, however big.
+            // A video's picture (the browser gives it no class): noted, with
+            // its controls when they're up. More than the picture and no time
+            // slider: not a video.
             if n == 0
                 && let Some((parent, siblings)) = &up
                 && let Some(v) = crate::idle::video_frame(&role, f, || Some((attr(parent.0, "AXRole").and_then(|r| string(&r))?, frame_of(parent.0)?)))
+                && classes(el.0).is_empty()
             {
-                out.push(v);
-                videos.push((v, crate::idle::video_playing(*siblings as usize, *siblings > 1 && paused_mark(parent.0))));
-                continue;
+                match (*siblings, controls(parent.0)) {
+                    (_, Some(paused)) => videos.push(crate::idle::Video { frame: v, controls: true, paused }),
+                    (1, None) => videos.push(crate::idle::Video { frame: v, controls: false, paused: false }),
+                    _ => {}
+                }
             }
             if frame.is_none_or(|w| f.w < w.w * 0.95 || f.h < w.h * 0.95) && (CONTENT.contains(&role.as_str()) || small(&f)) {
                 out.push(f);

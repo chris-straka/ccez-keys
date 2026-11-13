@@ -62,16 +62,22 @@ Learning words (float.rs) go only where the front window has no content.
 - A video is playing when something holds the display awake (browsers do),
   or when the front window has a playing video with the browser's own
   controls. Claude's videos hold nothing, so only the second sees them.
-- Such a video is found by its shape in the Accessibility tree (nothing
-  names it): a group whose first child is an empty group over the same
-  frame. Its whole frame is content, playing or not, so no word sits on it.
-  Playing: its controls are away, or up with a play button that doesn't
-  carry the class "pause" (idle.rs, tested on Claude's layout).
+- Such a video has a shape in the Accessibility tree (nothing names it): a
+  group whose first child is an empty, classless group over the same
+  frame. Other things have that shape too (Discord has one: the first
+  build took it for a video and hid the words there), so it counts only
+  with its time slider, which shows whenever it's paused or the pointer is
+  on it. Seen so, its frame is content and no word sits on it; its play
+  button carries the class "pause" unless it's playing. While it plays the
+  controls leave and only the shape is left: it's still that video, playing,
+  where one of its size was seen with controls in the last ten minutes
+  (idle.rs `Videos`, tested on Claude's layout).
 - Not seen: a silent or muted video with a site's own controls (YouTube
-  muted, Discord): Accessibility shows it as an empty pane.
+  muted, Discord), which Accessibility shows as an empty pane, and one
+  that starts by itself and never shows controls.
 - `ccez-keys-mac --look <pid>` prints what the words see in that app's
-  window (content count, videos, free spots); mac.log notes a video in the
-  front window starting and stopping.
+  window (content count, video shapes, free spots); mac.log notes a video
+  in the front window starting (app and size) and stopping.
 - Checks never open a browser window on the owner's Mac: a new Chromium
   takes focus and asks for the keychain password (owner, 2026-11-12).
 
