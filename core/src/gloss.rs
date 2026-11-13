@@ -47,14 +47,21 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
     let Some(m) = everyday_sense(&senses) else {
         return (word.to_string(), String::new(), Vec::new());
     };
-    let first = cut_explanation(&drop_long_bracket(first_part(&m).trim()));
-    // "to sap (to subvert by digging)": the explanation in brackets at the
-    // end goes; a qualifier stays ("to talk (with sb)"), and a rare English
-    // word gives way to its explanation (keep_note).
-    let first = keep_note(&first);
-    // "(transitive) to hold back": the labels are tags (tags_of), not words of the meaning.
-    let tags = tags_of(&first);
-    let first = untagged(&first).to_string();
+    let (tags, mut first) = clean_sense(&m);
+    // A short meaning gets the next everyday sense after it, when both fit
+    // (owner, 2026-11-13: vorwerfen showed "to throw at" alone; its "to
+    // accuse of" is the one in use): "to conclude, end; to resolve".
+    if first.chars().count() < 28
+        // Only the word's own senses, before any line pointing to another
+        // word (déchu's "past participle of déchoir" brought déchoir's).
+        && let Some(next) = second_sense(&if meanings.iter().all(|x| form_of(x).is_some()) { senses.clone() } else { meanings.iter().take_while(|x| form_of(x).is_none()).cloned().collect::<Vec<_>>() }, &m)
+    {
+        let (_, more) = clean_sense(&next);
+        let more = first_item(&more);
+        if !more.is_empty() && !first.contains(&more) && first.chars().count() + more.chars().count() + 2 <= 48 {
+            first = format!("{first}; {more}");
+        }
+    }
     // "[with à]" or "(with à)": that word goes with it.
     let with = ["[with ", "(with "].iter().find_map(|open| {
         let i = first.find(open)?;
@@ -66,7 +73,7 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
     });
     match with {
         Some((a, b, w)) if !w.is_empty() && w.split_whitespace().count() <= 2 && !is_somebody(&w) => {
-            let gloss = format!("{} {}", first[..a].trim(), first[b..].trim()).trim().to_string();
+            let gloss = format!("{} {}", first[..a].trim(), first[b..].trim()).trim().replace(" ;", ";");
             (format!("{word} {w}"), spelled_out(&gloss), tags)
         }
         _ => (word.to_string(), spelled_out(&first), tags),
@@ -144,7 +151,7 @@ fn spelled_out(m: &str) -> String {
 /// English words in everyday use (the keyboard's English list, commonest
 /// first): a meaning in a word outside it ("to fulgurate") tells a learner
 /// nothing.
-fn common_english(w: &str) -> bool {
+pub fn common_english(w: &str) -> bool {
     static WORDS: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
     WORDS
         .get_or_init(|| include_str!("../../data/words/en.txt").lines().filter(|l| !l.starts_with('#')).collect())
@@ -170,7 +177,10 @@ fn keep_note(m: &str) -> String {
     }
     let core = before.strip_prefix("to ").unwrap_or(&before);
     let rare = !core.contains([' ', ',']) && !common_english(core);
-    if rare && words <= 6 {
+    // Only a note that explains (a "to …" or "a …" definition) stands in
+    // for it: "to quench (fire, thirst, or lime)" keeps its word.
+    let explains_word = ["to ", "a ", "an ", "the "].iter().any(|p| note.starts_with(p));
+    if rare && explains_word && words <= 6 {
         return note;
     }
     let plain = note.chars().all(|c| c.is_alphabetic() || matches!(c, ' ' | ',' | '\'' | '-'));
@@ -208,6 +218,82 @@ fn split_note(m: &str) -> Option<(String, String)> {
         }
     }
     None
+}
+
+/// A sense as a card shows it, and its labels as tags: the labels read
+/// first ("(transitive) to hold back" → tr), then the explanation after the
+/// word cut, the note at the end weighed (keep_note), and a long one ended
+/// at a comma.
+fn clean_sense(m: &str) -> (Vec<String>, String) {
+    let part = first_part(m).trim();
+    let tags = tags_of(part);
+    let body = cut_explanation(&drop_long_bracket(untagged(part).trim()));
+    // "to sap (to subvert by digging)": the explanation in brackets at the
+    // end goes; a qualifier stays ("to talk (with sb)"), and a rare English
+    // word gives way to its explanation.
+    let body = keep_note(&body);
+    (tags, cap(&body, 48))
+}
+
+/// Up to `max` characters, ended at the last comma or semicolon outside
+/// brackets that fits; a meaning with none stays whole.
+fn cap(m: &str, max: usize) -> String {
+    if m.chars().count() <= max {
+        return m.to_string();
+    }
+    let mut depth = 0i32;
+    let mut cut = None;
+    for (n, (i, c)) in m.char_indices().enumerate() {
+        if n >= max {
+            break;
+        }
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ',' | ';' if depth <= 0 => cut = Some(i),
+            _ => {}
+        }
+    }
+    cut.map(|i| m[..i].trim_end().to_string()).unwrap_or_else(|| m.to_string())
+}
+
+/// The first of a meaning's comma-separated items, brackets kept whole
+/// ("to accuse of, to reproach someone" → "to accuse of").
+fn first_item(m: &str) -> String {
+    let mut depth = 0i32;
+    for (i, c) in m.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ',' | ';' if depth <= 0 => return m[..i].trim().to_string(),
+            _ => {}
+        }
+    }
+    m.trim().to_string()
+}
+
+/// A label that marks a sense as out of everyday use, anywhere in it
+/// ("the general meaning, which is now rare").
+fn niche_label(l: &str) -> bool {
+    const OUT: [&str; 6] = ["archaic", "obsolete", "dated", "rare", "historical", "dialectal"];
+    let l = l.to_lowercase();
+    OUT.iter().any(|w| l.split(|c: char| !c.is_alphabetic()).any(|x| x == *w))
+}
+
+/// The next sense worth adding after `chosen`: among the first four, not
+/// out of use, not a narrowing of the one before ("(specifically) …").
+fn second_sense(senses: &[String], chosen: &str) -> Option<String> {
+    let at = senses.iter().position(|s| s == chosen)?;
+    senses.iter().take(4).enumerate().filter(|(i, _)| *i != at).map(|(_, s)| s).find(|s| {
+        let labels: Vec<String> = s.trim().strip_prefix('(').and_then(|r| r.split_once(')')).map(|(l, _)| l.split(',').map(|x| x.trim().to_lowercase()).collect()).unwrap_or_default();
+        // Only grammar labels (or none): a field's sense ("(geography) cape") never.
+        const GRAMMAR: [&str; 12] = ["transitive", "intransitive", "reflexive", "ditransitive", "ambitransitive", "figuratively", "figurative", "informal", "colloquial", "auxiliary", "impersonal", "transitive or intransitive"];
+        labels.iter().all(|l| GRAMMAR.contains(&l.as_str()))
+            && form_of(s).is_none()
+            && !untagged(s).trim().is_empty()
+            // A name, not a meaning ("a surname", "a male given name").
+            && !["surname", "given name", "placename", "place name"].iter().any(|n| untagged(s).contains(n))
+    }).cloned()
 }
 
 /// Of a word's first few senses, the everyday one. Not one marked rare,
@@ -252,7 +338,7 @@ fn everyday_sense(senses: &[String]) -> Option<String> {
         }
         out
     };
-    let plain = |m: &&String| !labels(m).iter().any(|l| NICHE.contains(&l.as_str()));
+    let plain = |m: &&String| !labels(m).iter().any(|l| NICHE.contains(&l.as_str()) || niche_label(l));
     let specialist = |m: &&String| labels(m).iter().any(|l| SPECIALIST.contains(&l.as_str()));
     // "of sound", "figurative senses": a heading over senses, not a meaning.
     let heading = |m: &&String| {
@@ -382,7 +468,7 @@ fn glosses_skip_form_lines_and_take_their_partner_word() {
         if w == "pencher" { vec!["to lean, to tilt".to_string()] } else { vec![] }
     };
     assert_eq!(short_gloss("penche", &["inflection of pencher: first/third-person singular present".into()], base), ("penche".into(), "to lean, to tilt".into(), vec![]));
-    assert_eq!(short_gloss("parvenir", &["to reach [with à]".into(), "to succeed".into()], base), ("parvenir à".into(), "to reach".into(), vec![]));
+    assert_eq!(short_gloss("parvenir", &["to reach [with à]".into(), "to succeed".into()], base), ("parvenir à".into(), "to reach; to succeed".into(), vec![]));
     assert_eq!(short_gloss("plage", &["beach; seaside".into()], base), ("plage".into(), "beach".into(), vec![]));
     assert_eq!(form_of("third-person plural present indicative/subjunctive of porter").as_deref(), Some("porter"));
     assert_eq!(form_of("a cup of tea"), None);
@@ -399,7 +485,7 @@ mod everyday_tests {
         let forms = vec!["inflection of saper: first-person plural present indicative".to_string()];
         let base = |w: &str| if w == "saper" { saper.clone() } else { vec![] };
         let (shown, meaning, tags) = short_gloss("sapons", &forms, base);
-        assert_eq!((shown.as_str(), meaning.as_str()), ("sapons", "to sap, do sapping work on"));
+        assert_eq!((shown.as_str(), meaning.as_str()), ("sapons", "to sap, do sapping work on; to erode"));
         assert_eq!(tags, ["tr"]);
         assert_eq!(split_note("to sap (to subvert by digging (slowly))"), Some(("to sap".into(), "to subvert by digging (slowly)".into())));
         let none = |_: &str| vec![];
@@ -418,14 +504,22 @@ mod everyday_tests {
         let loeschen = ["(transitive) to quench (fire, thirst, or lime)".into(), "(transitive) to delete, to erase (remembrance, memory, data)".into()];
         assert_eq!(short_gloss("löschen", &loeschen, none).1, "to quench (fire, thirst, or lime)");
         let spur = ["trace (rest of something that indicates its former presence; (by extension) any small amount)".into(), "trail, track, spoor".into()];
-        assert_eq!(short_gloss("Spur", &spur, none).1, "trace");
+        assert_eq!(short_gloss("Spur", &spur, none).1, "trace; trail");
         let ermitteln = ["(intransitive) to investigate (by the police) [(optional) with gegen (+ accusative) ‘someone’ and wegen (+ genitive) ‘for something’]".into()];
         assert_eq!(short_gloss("ermitteln", &ermitteln, none).1, "to investigate (by the police)");
         // The whole meaning (owner, 2026-11-13): a qualifier stays, spelled out;
         // a rare English word gives way to what it means.
-        assert_eq!(short_gloss("谈话", &["to talk (with sb)".into(), "to have a conversation".into()], none).1, "to talk with someone");
+        assert_eq!(short_gloss("谈话", &["to talk (with sb)".into(), "to have a conversation".into()], none).1, "to talk with someone; to have a conversation");
         assert_eq!(short_gloss("fulgurer", &["to fulgurate (to emit lightning)".into()], none).1, "to emit lightning");
         assert_eq!(short_gloss("x", &["to give sth to sb".into()], none).1, "to give something to someone");
+        let vorwerfen = ["(transitive) to throw at, throw forward".into(), "(specifically) to feed to (throw at an animal as food)".into(), "(figuratively, ditransitive) to accuse of, to reproach someone for something".into()];
+        assert_eq!(short_gloss("vorwerfen", &vorwerfen, none).1, "to throw at, throw forward; to accuse of");
+        let verhaften = ["(ambitransitive, the general meaning, which is now rare) to stop moving and instead stick".into(), "(transitive) to imprison, to put into confinement after judicial writ (the state of which is called Haft) (this is the most common signification in its strict definition)".into(), "(transitive, now rare) to legally subject to eventual foreclosure".into()];
+        assert_eq!(short_gloss("verhaften", &verhaften, none), ("verhaften".into(), "to imprison".into(), vec!["tr".to_string()]));
+        assert_eq!(short_gloss("Wahl", &["choice, selection".into(), "a surname".into()], none).1, "choice, selection");
+        let dechu = ["deposed, dethroned".into(), "past participle of déchoir".into(), "to wane (diminish)".into()];
+        assert_eq!(short_gloss("déchu", &dechu, none).1, "deposed, dethroned");
+        assert_eq!(short_gloss("beschließen", &["to conclude, end; to terminate".into(), "to resolve, decide, determine".into()], none).1, "to conclude, end; to resolve");
         assert_eq!(short_gloss("runterhalten", &["(transitive, colloquial) to hold something down(wards)".into()], none).1, "to hold something down(wards)");
         assert_eq!(short_gloss("parvenir", &["(intransitive) to reach [with à]".into()], none).0, "parvenir à");
         assert_eq!(short_gloss("défaillir", &["to faint, feel faint [with de ‘with/from’]".into()], none), ("défaillir de".into(), "to faint, feel faint".into(), vec![]));
@@ -434,3 +528,4 @@ mod everyday_tests {
         assert_eq!(short_gloss("répercuter", &["of sound".into(), "of light".into(), "figurative senses".into()], none).1, "");
     }
 }
+

@@ -1216,7 +1216,13 @@ fn part_name(part: &str, gloss: &str) -> Option<String> {
     }
     let g = gloss.replace('_', " ");
     let g = g.split([',', ';', '(']).next().unwrap_or("").trim();
-    let plain = !g.is_empty() && g.split_whitespace().count() <= 2 && !g.contains(['“', '"']) && !g.contains("component");
+    // English words only: some parts carry a Korean reading in Latin
+    // letters instead ("kwukyel" for 丆; owner, 2026-11-13).
+    let plain = !g.is_empty()
+        && g.split_whitespace().count() <= 2
+        && !g.contains(['“', '"'])
+        && !g.contains("component")
+        && g.split(|c: char| !c.is_alphabetic()).filter(|w| !w.is_empty()).all(ccez_keys_core::gloss::common_english);
     plain.then(|| g.to_string())
 }
 
@@ -1226,6 +1232,8 @@ fn a_part_is_named_in_a_word_or_two() {
     assert_eq!(part_name("台", "platform").as_deref(), Some("platform"));
     assert_eq!(part_name("去", "go_away").as_deref(), Some("go away"));
     assert_eq!(part_name("尞", "fuel_used_for_sacrifices"), None);
+    assert_eq!(part_name("丆", "kwukyel"), None);
+    assert_eq!(part_name("卜", "fortune_telling").as_deref(), Some("fortune telling"));
     assert_eq!(part_name("丷", "“ears-out”_component_used_in_some"), Some("eight".to_string()));
 }
 
