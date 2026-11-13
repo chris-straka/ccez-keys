@@ -196,6 +196,10 @@ fn split_note(m: &str) -> Option<(String, String)> {
             '(' => {
                 depth -= 1;
                 if depth == 0 {
+                    // "down(wards)": a bracket inside a word is the word's own.
+                    if t[..i].chars().last().is_some_and(|c| c.is_alphanumeric()) {
+                        return None;
+                    }
                     let before = t[..i].trim_end().trim_end_matches(',').trim_end();
                     return (!before.is_empty()).then(|| (before.to_string(), t[i + 1..t.len() - 1].trim().to_string()));
                 }
@@ -422,6 +426,7 @@ mod everyday_tests {
         assert_eq!(short_gloss("谈话", &["to talk (with sb)".into(), "to have a conversation".into()], none).1, "to talk with someone");
         assert_eq!(short_gloss("fulgurer", &["to fulgurate (to emit lightning)".into()], none).1, "to emit lightning");
         assert_eq!(short_gloss("x", &["to give sth to sb".into()], none).1, "to give something to someone");
+        assert_eq!(short_gloss("runterhalten", &["(transitive, colloquial) to hold something down(wards)".into()], none).1, "to hold something down(wards)");
         assert_eq!(short_gloss("parvenir", &["(intransitive) to reach [with à]".into()], none).0, "parvenir à");
         assert_eq!(short_gloss("défaillir", &["to faint, feel faint [with de ‘with/from’]".into()], none), ("défaillir de".into(), "to faint, feel faint".into(), vec![]));
         assert_eq!(short_gloss("eau", &["water, a liquid that is transparent, colorless, odorless, and tasteless in its pure form".into()], none).1, "water");
