@@ -497,6 +497,14 @@ impl Floaters {
         Some(without_article(&w.lang, &w.shown))
     }
 
+    /// The word `id`'s language and the word as it shows, article and all
+    /// ("das Urteil"): what a left click says aloud.
+    pub fn spoken(&self, id: isize) -> Option<(String, String)> {
+        let ws = self.words.borrow();
+        let w = ws.iter().find(|w| w.id == id)?;
+        Some((w.lang.clone(), w.shown.clone()))
+    }
+
     /// A click on word `id`: 0 Good, 1 Again, 2 Easy, 3 Known. The answer
     /// (for a toast), and the word (lang, word) when Known, which the caller
     /// marks known everywhere.

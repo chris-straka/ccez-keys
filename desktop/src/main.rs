@@ -662,7 +662,15 @@ mod app {
                 // Copied too, when "Copy a word when clicked" is on (owner,
                 // 2026-11-11), as a word in the preview is.
                 let shown = app.floaters.copy_text(id).unwrap_or_default();
+                let spoken = app.floaters.spoken(id);
                 let Some((answer, known)) = app.floaters.clicked(mtm, id, kind) else { return };
+                // A left click says it too (owner, 2026-11-12), in its
+                // language's voice, as a click on a preview word does.
+                if kind == 0
+                    && let Some((lang, text)) = spoken
+                {
+                    crate::speak::say(&lang, &text);
+                }
                 if app.prefs.borrow().copy_click && !shown.is_empty() {
                     copy(&shown);
                 }

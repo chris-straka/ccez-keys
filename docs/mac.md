@@ -91,6 +91,10 @@ above the word and the meaning below, so the word doesn't move.
 `ccez-keys-mac --word-picture <lang> <word> <out.png>` draws a word as
 hovered into a file, nothing on screen.
 
+A left click (Good) also says the word aloud as shown, article and all, in
+its language's voice (owner, 2026-11-12); right and middle clicks stay
+silent.
+
 ## Windows and Linux (built 2026-11-10)
 
 Owner asked for both; not Tauri: one Rust app (`desktop/`), the Mac's own
