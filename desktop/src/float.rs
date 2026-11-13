@@ -19,7 +19,7 @@ use objc2_app_kit::{NSBox, NSButton, NSColor, NSEvent, NSFont, NSPanel, NSScreen
 use objc2_foundation::{NSRect, NSString};
 
 use crate::model::Rect;
-use crate::view::{fade_over, label, new_panel, rect, rgb};
+use crate::view::{fade_over, label, new_panel, rect};
 use ccez_keys_core::review::{Grade, Snapshot};
 
 /// How long a word stays when left alone.
@@ -707,6 +707,52 @@ fn next_spot(free: &[Rect], taken: &[Rect], rested: &[Rect], pointer: (f64, f64)
     free.iter().find(|c| !taken.contains(c) && !rested.contains(c) && !under(c)).copied()
 }
 
+/// Each language's colour for its words on screen (sRGB, readable on the
+/// dark pill): the owner's languages far apart (Chinese red, Japanese
+/// violet), the rest spread round the wheel by their code.
+pub fn lang_color(lang: &str) -> (f64, f64, f64) {
+    match lang.split(['-', '_']).next().unwrap_or(lang) {
+        "fr" => (0.50, 0.66, 1.00),
+        "de" => (0.96, 0.77, 0.32),
+        "es" => (1.00, 0.58, 0.36),
+        "zh" => (1.00, 0.42, 0.42),
+        "ja" => (0.80, 0.55, 1.00),
+        "ko" => (0.31, 0.84, 0.78),
+        "pt" => (0.48, 0.85, 0.56),
+        "it" => (0.98, 0.55, 0.75),
+        other => {
+            // A hue from the code, at the same lightness as the rest.
+            let h = other.bytes().fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32)) % 360;
+            let (h, s, l) = (h as f64 / 60.0, 0.75, 0.68);
+            let c = (1.0 - (2.0 * l - 1.0f64).abs()) * s;
+            let x = c * (1.0 - (h % 2.0 - 1.0).abs());
+            let (r, g, b) = match h as u32 {
+                0 => (c, x, 0.0),
+                1 => (x, c, 0.0),
+                2 => (0.0, c, x),
+                3 => (0.0, x, c),
+                4 => (x, 0.0, c),
+                _ => (c, 0.0, x),
+            };
+            let m = l - c / 2.0;
+            (r + m, g + m, b + m)
+        }
+    }
+}
+
+#[test]
+fn chinese_and_japanese_words_are_far_apart_in_colour() {
+    let d = |a: &str, b: &str| {
+        let (x, y) = (lang_color(a), lang_color(b));
+        (x.0 - y.0).abs() + (x.1 - y.1).abs() + (x.2 - y.2).abs()
+    };
+    assert!(d("zh", "ja") > 0.4);
+    assert!(d("fr", "de") > 0.4);
+    // Any language gets a colour in range.
+    let (r, g, b) = lang_color("hy");
+    assert!([r, g, b].iter().all(|v| (0.0..=1.0).contains(v)));
+}
+
 /// A word's pieces as the dictionary cut them, when they have a reading and
 /// spell the word as shown (else none: nothing goes over the wrong letters).
 fn pieces(ruby: Vec<(String, String)>, shown: &str) -> Vec<(String, String)> {
@@ -733,7 +779,10 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
         v.removeFromSuperview();
     }
     let font = NSFont::boldSystemFontOfSize(20.0);
-    let color = if w.open { rgb(0.98, 0.55, 0.45) } else { NSColor::colorWithSRGBRed_green_blue_alpha(0.98, 0.55, 0.45, 0.75) };
+    // The word in its language's colour (owner, 2026-11-13: Chinese and
+    // Japanese looked alike; colour, not flags).
+    let (r, g, b) = lang_color(&w.lang);
+    let color = NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, if w.open { 1.0 } else { 0.75 });
     let attrs = unsafe {
         NSDictionary::<NSString, objc2::runtime::AnyObject>::from_slices(
             &[objc2_app_kit::NSFontAttributeName, objc2_app_kit::NSForegroundColorAttributeName],
@@ -780,23 +829,11 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     }
     let rh = over.first().map(|(l, _)| l.frame().size.height - 3.0).unwrap_or(0.0);
     let rw = over.iter().map(|(l, x)| 2.0 * (ww / 2.0 - x).abs().max((x + l.frame().size.width - ww / 2.0).abs())).fold(0.0, f64::max);
-    // The flag left of the word, the word kept in the middle as with the tags.
-    let flag = (!w.flag.is_empty()).then(|| {
-        let l = label(mtm, &w.flag, 13.0, false);
-        l.setAlphaValue(if w.open { 1.0 } else { 0.8 });
-        l
-    });
-    let fw = flag.as_ref().map(|l| l.frame().size.width + 4.0).unwrap_or(0.0);
-    let width = (ww + 2.0 * pills_w.max(fw)).max(mw).max(rw) + 20.0;
+    let width = (ww + 2.0 * pills_w).max(mw).max(rw) + 20.0;
     let height = wh + mh + rh + 10.0;
     let wx = (width - ww) / 2.0;
     w.button.setFrame(rect(wx, mh + 5.0, ww, wh));
     content.addSubview(&w.button);
-    if let Some(l) = &flag {
-        let f = l.frame().size;
-        l.setFrame(rect(wx - fw, mh + 5.0 + (wh - f.height) / 2.0, f.width, f.height));
-        content.addSubview(l);
-    }
     for (l, x) in &over {
         let f = l.frame().size;
         l.setFrame(rect(wx + x, mh + 5.0 + wh - 3.0, f.width, f.height));

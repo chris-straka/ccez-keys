@@ -91,8 +91,10 @@ above the word and the meaning below, so the word doesn't move.
 `ccez-keys-mac --word-picture <lang> <word> <out.png>` draws a word as
 hovered into a file, nothing on screen.
 
-Each word has its language's flag beside it, small (owner, 2026-11-13:
-Chinese and Japanese looked alike). The typing preview is centred on the
+Each word is in its language's colour (owner, 2026-11-13: Chinese and
+Japanese looked alike; colour, not flags): French blue, German gold,
+Spanish orange, Chinese red, Japanese violet, Korean teal (float.rs
+lang_color). The typing preview is centred on the
 field typed in (it followed a cursor Claude doesn't give, guessed off the
 end of a wrapped line, to the screen's right edge); a document's preview
 is centred on the cursor.
