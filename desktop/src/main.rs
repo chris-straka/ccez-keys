@@ -685,8 +685,10 @@ mod app {
                 let spoken = app.floaters.spoken(id);
                 let Some((answer, known)) = app.floaters.clicked(mtm, id, kind) else { return };
                 // A left click says it too (owner, 2026-11-12), in its
-                // language's voice, as a click on a preview word does.
-                if kind == 0
+                // language's voice, as a click on a preview word does; a
+                // right click (Again) most of all (owner, 2026-11-13: "the
+                // most important place to have TTS").
+                if kind <= 1
                     && let Some((lang, text)) = spoken
                 {
                     crate::speak::say(&lang, &text);
