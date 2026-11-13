@@ -42,7 +42,24 @@ object Updater {
                     .onFailure { App.instance.log("info", "update-service-unreachable", "error" to it.javaClass.simpleName) }
             }
         }
+        hidden = stillHidden
+        // One downloaded while the keyboard was open: in now, it's closed.
+        pending?.let { apk -> if (apk.exists()) App.instance.scope.launch { kotlinx.coroutines.delay(1500); placeWhenHidden(ctx, apk) } }
         if (e.settingBool("updates.self")) maybe(ctx)
+    }
+
+    @Volatile private var hidden: () -> Boolean = { true }
+    /** A checked update waiting for the keyboard to close. */
+    @Volatile private var pending: File? = null
+
+    /** Installs [apk] only with the keyboard hidden: the install restarts it, and keys typed meanwhile were lost. */
+    private suspend fun placeWhenHidden(ctx: Context, apk: File) {
+        if (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { hidden() }) {
+            pending = null
+            install(ctx, apk)
+        } else {
+            pending = apk
+        }
     }
 
     fun maybe(ctx: Context) {
@@ -87,7 +104,7 @@ object Updater {
         if (!sameSigner(ctx, apk)) { apk.delete(); error("signed by another key") }
         App.instance.log("info", "update", "to" to code)
         ctx.getSharedPreferences("updates", Context.MODE_PRIVATE).edit().putLong("offered", code).apply()
-        install(ctx, apk)
+        App.instance.scope.launch { placeWhenHidden(ctx, apk) }
     }
 
     private fun sameSigner(ctx: Context, apk: File): Boolean {

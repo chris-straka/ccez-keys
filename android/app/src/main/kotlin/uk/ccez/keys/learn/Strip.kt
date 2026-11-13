@@ -176,6 +176,8 @@ class Strip(private val ui: UiState) {
         if (pin?.let { (start, _) -> !sameSentence(start, sentence) } == true) pin = null
         if (!allowed || !app.flag("learning.strip") || sentence.isBlank() || !Translator.supports(typingLang) || !engine.hasWords(sentence)) {
             job?.cancel()
+            // No sentence now: a model or an answer arriving later doesn't bring the old one back.
+            source = ""
             ui.strip = null
             return
         }
@@ -463,8 +465,12 @@ class Strip(private val ui: UiState) {
 
     /** The same language again, without moving on. */
     private fun redraw() {
-        job?.cancel()
-        job = app.scope.launch { show(keep = true) }
+        // From any thread (a model's download, an AI answer): the job is the main thread's.
+        app.scope.launch(Dispatchers.Main) {
+            if (source.isEmpty() || ui.strip == null) return@launch
+            job?.cancel()
+            job = app.scope.launch { show(keep = true) }
+        }
     }
 }
 

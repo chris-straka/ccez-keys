@@ -155,7 +155,8 @@ class Voice(private val ctx: Context, private val onState: (VoiceState?) -> Unit
             return
         }
         state?.let { set(it.copy(listening = false, heard = "…")) }
-        app.scope.launch {
+        pending?.cancel()
+        pending = app.scope.launch {
             val text = withContext(Dispatchers.IO) { whisper(sound, lang) }
             withContext(Dispatchers.Main) {
                 if (text == null) {
@@ -237,5 +238,12 @@ class Voice(private val ctx: Context, private val onState: (VoiceState?) -> Unit
         set(null)
     }
 
-    fun close() = finish()
+    /** Whisper's answer on its way, dropped when the keyboard closes (it was for that field). */
+    private var pending: kotlinx.coroutines.Job? = null
+
+    fun close() {
+        pending?.cancel()
+        pending = null
+        finish()
+    }
 }

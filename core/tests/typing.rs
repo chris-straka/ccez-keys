@@ -359,3 +359,14 @@ fn nothing_to_translate_without_a_real_word() {
     // Kana, hanzi: always.
     assert!(e.has_words("すき".into()));
 }
+
+#[test]
+fn a_fix_taken_back_sticks() {
+    let e = engine(&["en", "fr"]);
+    // "dont" → "don't" on English, until it's taken back once (backspace learns it strongly).
+    assert_eq!(fix(&e, "en", "dont").as_deref(), Some("don't"));
+    e.learn("en".into(), "je".into(), "dont".into(), true);
+    assert_eq!(fix(&e, "en", "dont"), None);
+    // Other fixes go on.
+    assert_eq!(fix(&e, "en", "im").as_deref(), Some("I'm"));
+}

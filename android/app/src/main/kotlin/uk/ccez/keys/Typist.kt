@@ -47,6 +47,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     /** Dictated text, spaced and capitalised like typed text. */
     private fun dictated(text: String) {
+        // Never into a password field (the field may have changed while Whisper worked).
+        if (password) return
         val ic = ic ?: return
         acted()
         endWord(correct = false)
@@ -290,6 +292,11 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     fun finish() {
         Stats.flush()
+        // An Ask chat goes with its field: left open, the next field's keys
+        // (a password's too) went into it and Enter sent them to the AI.
+        if (ui.ask != null) ask.close()
+        // A held-mic answer still on its way isn't for the next field.
+        voice.close()
         ui.review = null
         reviewSeq++
         rememberLang()
@@ -912,8 +919,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         // A fix for the word the cursor was put in: it takes that word's place.
         around?.let { (before, after) ->
             around = null
+            // Still the word it was worked out for (the cursor may have moved since).
+            val now = ic.getTextBeforeCursor(before.length, 0)?.toString() == before && ic.getTextAfterCursor(after.length, 0)?.toString() == after
+            if (!now) {
+                updateBar()
+                return
+            }
             ic.beginBatchEdit()
-            ic.deleteSurroundingText(before, after)
+            ic.deleteSurroundingText(before.length, after.length)
             ic.commitText(text, 1)
             ic.endBatchEdit()
             if (!noLearn) learn(lang, prevWord(text.length), text, true)
@@ -1057,7 +1070,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
      * fixes (owner, 2026-11-12: the cursor put in "tran|dlate", a tap fixes
      * it): letters before and after the cursor that a pick replaces.
      */
-    private var around: Pair<Int, Int>? = null
+    private var around: Pair<String, String>? = null
 
     private fun updateWords() {
         around = null
@@ -1072,7 +1085,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
                 val offered = fixes.distinctBy { it.lowercase() }.filter { !it.equals(whole, ignoreCase = true) }
                 // A word that's no word, or one with a fix: its fixes, a tap away.
                 if (offered.isNotEmpty() && (s.correction != null || !s.typedKnown)) {
-                    around = tail.length to head.length
+                    around = tail to head
                     ui.bar = Bar.Words(offered.getOrNull(1), offered[0], offered.getOrNull(2), true, null)
                     return
                 }

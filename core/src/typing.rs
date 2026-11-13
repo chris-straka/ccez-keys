@@ -236,7 +236,9 @@ pub fn suggest_in(lang: &Lang, others: &[&Lang], typed: &str, ctx: &Context, key
         }
     }
     ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    let fix = lang.fixes.get(&typed.to_lowercase()).map(|f| with_case(typed, f));
+    // A fix taken back (backspace after it) teaches the word as typed: trusted from then on.
+    let taught = lang.user.words.get(typed).or_else(|| lang.user.used.get(typed)).is_some_and(|n| *n >= ACCEPT);
+    let fix = lang.fixes.get(&typed.to_lowercase()).filter(|_| !taught).map(|f| with_case(typed, f));
     let mut words: Vec<String> = fix.iter().cloned().collect();
     for (_, word) in &ranked {
         if words.len() == 4 {
@@ -247,7 +249,8 @@ pub fn suggest_in(lang: &Lang, others: &[&Lang], typed: &str, ctx: &Context, key
             words.push(w);
         }
     }
-    let correction = if !autocorrect || leave_alone(typed) {
+    // A word taught by taking a fix back is left as typed, by the fix table and autocorrect alike.
+    let correction = if !autocorrect || leave_alone(typed) || taught {
         None
     } else if let Some(f) = fix {
         Some(f).filter(|f| f != typed)
@@ -424,7 +427,8 @@ pub fn learn(lang: &mut Lang, prev: &str, word: &str, strong: bool) {
             same.find(|w| w == word).or(first).unwrap_or_else(|| word.to_string())
         };
         let n = lang.user.used.entry(spelled.clone()).or_insert(0);
-        *n += 1;
+        // Strong (a fix taken back): trusted at once, as a new word is.
+        *n = if strong { (*n + 1).max(ACCEPT) } else { *n + 1 };
         let n = *n;
         if n >= ACCEPT {
             lang.lex.insert(&spelled, user_logf(n));
