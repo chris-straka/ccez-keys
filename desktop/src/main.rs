@@ -454,6 +454,23 @@ mod app {
             }
             return;
         }
+        // `--spots`: the spots words may take right now, as the running app
+        // finds them (the front app, the screen's visible frame, the busy map
+        // over a few looks), left to right; reads only.
+        if args.iter().any(|a| a == "--spots") {
+            let Some(main) = objc2_app_kit::NSScreen::mainScreen(mtm) else { return };
+            let vis = main.visibleFrame();
+            let primary_h = objc2_app_kit::NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(vis.size.height);
+            let screen = crate::model::Rect { x: vis.origin.x, y: primary_h - (vis.origin.y + vis.size.height), w: vis.size.width, h: vis.size.height };
+            println!("screen {screen:?}");
+            for _ in 0..3 {
+                let (free, _) = spots(screen);
+                let mut xs: Vec<(i64, i64)> = free.iter().map(|c| (c.x as i64, c.y as i64)).collect();
+                xs.sort();
+                println!("{} spots: {xs:?}", free.len());
+            }
+            return;
+        }
         // `--update-now`: one look for a newer release, replacing this app if
         // there is one (not started again), for checks.
         if args.iter().any(|a| a == "--update-now") {
@@ -540,6 +557,13 @@ mod app {
         }
         if let Some(i) = args.iter().position(|a| a == "--demo") {
             return demo(mtm, args.get(i + 1).cloned().unwrap_or_default());
+        }
+        // A flag none of the checks above knows (a newer one run by an older
+        // build) never starts a second app: two put every word up twice
+        // (2026-11-13).
+        if let Some(a) = args.iter().skip(1).find(|a| a.starts_with("--")) {
+            eprintln!("unknown flag {a}; not starting the app");
+            std::process::exit(2);
         }
         let nsapp = NSApplication::sharedApplication(mtm);
         nsapp.setActivationPolicy(NSApplicationActivationPolicy::Accessory);

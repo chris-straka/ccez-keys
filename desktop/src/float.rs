@@ -485,6 +485,11 @@ impl Floaters {
         // The pointer, in the spots' coordinates (top-left).
         let scr = *self.screen.lock().unwrap();
         let Some(cell) = next_spot(&free, &taken, &rested, (mouse.x, primary_h - mouse.y), (scr.x + scr.w / 2.0, scr.y + scr.h / 2.0)) else { return };
+        // Where it went and what was free, for checks (owner, 2026-11-13:
+        // words went right with the gap by the centre free).
+        let front = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication().and_then(|a| a.bundleIdentifier()).map(|b| b.to_string()).unwrap_or_default();
+        let mid = free.iter().filter(|c| (c.x + c.w / 2.0 - (scr.x + scr.w / 2.0)).abs() < scr.w / 4.0).count();
+        crate::app::log("info", &format!("word spot ({}, {}) in {front}: {} free, {mid} in the middle half, {} up, {} resting", cell.x as i64, cell.y as i64, free.len(), taken.len(), rested.len()));
         let up: Vec<(String, String)> = self.words.borrow().iter().map(|w| (w.lang.clone(), w.word.clone())).collect();
         let list = ccez_keys_core::review::mixed(words());
         // The first of a few that the dictionary can give a meaning to.
