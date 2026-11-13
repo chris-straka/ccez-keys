@@ -76,7 +76,37 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
             let gloss = format!("{} {}", first[..a].trim(), first[b..].trim()).trim().replace(" ;", ";");
             (format!("{word} {w}"), spelled_out(&gloss), tags)
         }
-        _ => (word.to_string(), spelled_out(&first), tags),
+        // "(reflexive, with de) to try hard to": the partner word in the
+        // sense's own labels ("s'efforcer de"; owner, 2026-11-13).
+        _ => match label_partner(&m) {
+            Some(w) => (format!("{word} {w}"), spelled_out(&first), tags),
+            None => (word.to_string(), spelled_out(&first), tags),
+        },
+    }
+}
+
+/// A word the sense's leading labels pair it with: "(reflexive, with de)" → "de".
+fn label_partner(m: &str) -> Option<String> {
+    let labels = m.trim().strip_prefix('(')?.split_once(')')?.0;
+    labels.split(',').map(str::trim).find_map(|l| l.strip_prefix("with ")).map(str::trim).filter(|w| !w.is_empty() && w.split_whitespace().count() <= 2 && !w.contains('+') && !is_somebody(w)).map(String::from)
+}
+
+/// A reflexive verb as it's used: "efforcer de" → "s'efforcer de",
+/// "erinnern" → "sich erinnern", "esforzar" → "esforzarse", "lavare" →
+/// "lavarsi", "lavar" → "lavar-se"; other languages as they are.
+pub fn reflexive(lang: &str, shown: &str) -> String {
+    let (verb, rest) = shown.split_once(' ').map(|(a, b)| (a, format!(" {b}"))).unwrap_or((shown, String::new()));
+    let base = lang.split(['-', '_']).next().unwrap_or(lang);
+    match base {
+        "fr" => {
+            let vowel = verb.chars().next().is_some_and(|c| "aeiouyhâàéèêëîïôûAEIOUYH".contains(c));
+            if vowel { format!("s'{verb}{rest}") } else { format!("se {verb}{rest}") }
+        }
+        "de" => format!("sich {verb}{rest}"),
+        "es" => format!("{verb}se{rest}"),
+        "it" => format!("{}si{rest}", verb.strip_suffix('e').unwrap_or(verb)),
+        "pt" => format!("{verb}-se{rest}"),
+        _ => shown.to_string(),
     }
 }
 
@@ -478,6 +508,19 @@ fn glosses_skip_form_lines_and_take_their_partner_word() {
 #[cfg(test)]
 mod everyday_tests {
     use super::*;
+
+    #[test]
+    fn a_reflexive_verb_shows_as_it_is_used() {
+        let none = |_: &str| vec![];
+        let (shown, meaning, tags) = short_gloss("efforcer", &["(reflexive, with de) to make efforts towards, to try hard to, to endeavour".into()], none);
+        assert_eq!((shown.as_str(), meaning.as_str()), ("efforcer de", "to make efforts towards, to try hard to"));
+        assert!(tags.contains(&"refl".to_string()));
+        assert_eq!(reflexive("fr", &shown), "s'efforcer de");
+        assert_eq!(reflexive("fr", "souvenir de"), "se souvenir de");
+        assert_eq!(reflexive("de", "erinnern"), "sich erinnern");
+        assert_eq!(reflexive("es", "esforzar por"), "esforzarse por");
+        assert_eq!(reflexive("it", "lavare"), "lavarsi");
+    }
 
     #[test]
     fn the_everyday_sense_without_its_bracketed_note() {

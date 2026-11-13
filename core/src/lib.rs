@@ -157,6 +157,12 @@ impl Engine {
             return (w, meaning, tags);
         }
         let (shown, meaning, tags) = gloss::short_gloss(&w, &meanings(&w), meanings);
+        // A reflexive verb as it's used ("s'efforcer de"), its tag then said by the word itself.
+        let (shown, tags) = if tags.iter().any(|t| t == "refl") && matches!(base, "fr" | "de" | "es" | "it" | "pt") {
+            (gloss::reflexive(base, &shown), tags.into_iter().filter(|t| t != "refl").collect())
+        } else {
+            (shown, tags)
+        };
         // What kind of word, first among its tags (owner, 2026-11-13).
         let tags = gloss::with_pos(tags, card(&w).map(|c| c.pos).unwrap_or_default(), &meaning);
         if shown != w || meaning.is_empty() {
