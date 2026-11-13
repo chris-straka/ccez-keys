@@ -151,9 +151,10 @@ impl Review {
     }
 
     /// Up to `n` of `words` (lang, word) that may show now and aren't up
-    /// already: the overdue first (longest waiting), then the never seen, in
-    /// list order from `seed` (the list takes the languages in turn: see
-    /// [`mixed`]).
+    /// already. The language with the fewest words up goes first (owner,
+    /// 2026-11-13: one language's due cards filled the screen; the screen
+    /// should mix them), and within it the overdue first (longest waiting),
+    /// then the never seen, in list order from `seed`.
     pub fn next(&self, words: &[(String, String)], up: &[(String, String)], n: usize, now: u64, seed: usize) -> Vec<(String, String)> {
         let len = words.len().max(1);
         let mut ready: Vec<(u64, usize, &(String, String))> = words
@@ -163,7 +164,19 @@ impl Review {
             .map(|(i, w)| (self.cards.get(&key(&w.0, &w.1)).map_or(u64::MAX, |c| c.due), (i + len - seed % len) % len, w))
             .collect();
         ready.sort();
-        ready.into_iter().take(n).map(|(_, _, w)| w.clone()).collect()
+        let mut count: HashMap<String, usize> = HashMap::new();
+        for (l, _) in up {
+            *count.entry(l.clone()).or_default() += 1;
+        }
+        let mut out = Vec::new();
+        while out.len() < n && !ready.is_empty() {
+            // Ready is in order, so the first with the fewest up is its language's best.
+            let at = (0..ready.len()).min_by_key(|&i| (count.get(&ready[i].2.0).copied().unwrap_or(0), i)).unwrap_or(0);
+            let (_, _, w) = ready.remove(at);
+            *count.entry(w.0.clone()).or_default() += 1;
+            out.push(w.clone());
+        }
+        out
     }
 }
 
@@ -222,6 +235,24 @@ pub fn mixed(words: Vec<(String, String)>) -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_screen_mixes_languages_even_when_one_has_all_the_due_cards() {
+        let mut r = Review::default();
+        let w = |l: &str, x: &str| (l.to_string(), x.to_string());
+        let words = vec![w("zh", "过去"), w("zh", "谈话"), w("zh", "关于"), w("fr", "balayer"), w("de", "Urteil")];
+        // The Chinese seen before and due again; the others never seen.
+        for (_, x) in &words[..3] {
+            r.grade("zh", x, Grade::Again, 0);
+        }
+        let now = 10_000_000;
+        let first = r.next(&words, &[], 3, now, 0);
+        assert_eq!(first.iter().map(|w| w.0.as_str()).collect::<Vec<_>>(), ["zh", "fr", "de"]);
+        // Chinese already up: the next is another language.
+        assert_eq!(r.next(&words, &[w("zh", "过去")], 1, now, 0)[0].0, "fr");
+        // Only Chinese left to show: Chinese.
+        assert_eq!(r.next(&words[..3], &[w("fr", "balayer")], 1, now, 0)[0].0, "zh");
+    }
 
     #[test]
     fn undo_puts_the_schedule_back() {

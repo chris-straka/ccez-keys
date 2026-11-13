@@ -426,7 +426,8 @@ impl Floaters {
         self.rested.borrow_mut().retain(|(_, at)| at.elapsed() < RESTS);
         let rested: Vec<Rect> = self.rested.borrow().iter().map(|r| r.0).collect();
         // The pointer, in the spots' coordinates (top-left).
-        let Some(cell) = next_spot(&free, &taken, &rested, (mouse.x, primary_h - mouse.y)) else { return };
+        let scr = *self.screen.lock().unwrap();
+        let Some(cell) = next_spot(&free, &taken, &rested, (mouse.x, primary_h - mouse.y), (scr.x + scr.w / 2.0, scr.y + scr.h / 2.0)) else { return };
         let up: Vec<(String, String)> = self.words.borrow().iter().map(|w| (w.lang.clone(), w.word.clone())).collect();
         let list = ccez_keys_core::review::mixed(words());
         // The first of a few that the dictionary can give a meaning to.
@@ -732,12 +733,17 @@ pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &st
     png.is_some_and(|d| std::fs::write(out, d.to_vec()).is_ok())
 }
 
-/// The spot for a new word: the first free one that no word holds, that
-/// isn't resting after a click, and that the pointer isn't in (a word never
-/// comes up under the pointer). None: the word waits.
-fn next_spot(free: &[Rect], taken: &[Rect], rested: &[Rect], pointer: (f64, f64)) -> Option<Rect> {
+/// The spot for a new word: of the free ones no word holds, that aren't
+/// resting after a click and that the pointer isn't in (a word never comes
+/// up under the pointer), the one nearest the screen's `centre` (owner,
+/// 2026-11-13: where the eyes are, not the corners). None: the word waits.
+fn next_spot(free: &[Rect], taken: &[Rect], rested: &[Rect], pointer: (f64, f64), centre: (f64, f64)) -> Option<Rect> {
     let under = |c: &Rect| pointer.0 >= c.x && pointer.0 <= c.x + c.w && pointer.1 >= c.y && pointer.1 <= c.y + c.h;
-    free.iter().find(|c| !taken.contains(c) && !rested.contains(c) && !under(c)).copied()
+    let far = |c: &&Rect| {
+        let (dx, dy) = (c.x + c.w / 2.0 - centre.0, c.y + c.h / 2.0 - centre.1);
+        dx * dx + dy * dy
+    };
+    free.iter().filter(|c| !taken.contains(c) && !rested.contains(c) && !under(c)).min_by(|a, b| far(a).total_cmp(&far(b))).copied()
 }
 
 /// Each language's colour for its words on screen (sRGB, readable on the
@@ -925,15 +931,17 @@ fn without_article(lang: &str, shown: &str) -> String {
 fn a_new_word_never_comes_where_one_was_just_clicked_or_under_the_pointer() {
     let cell = |i: usize| Rect { x: 240.0 * i as f64, y: 0.0, w: 240.0, h: 175.0 };
     let free = [cell(0), cell(1), cell(2), cell(3)];
-    let away = (5000.0, 5000.0);
-    assert_eq!(next_spot(&free, &[], &[], away), Some(cell(0)));
+    let (away, left) = ((5000.0, 5000.0), (0.0, 80.0));
+    assert_eq!(next_spot(&free, &[], &[], away, left), Some(cell(0)));
     // The first spot's word was clicked (the pointer is still there): the next free one.
-    assert_eq!(next_spot(&free, &[], &[cell(0)], (100.0, 80.0)), Some(cell(1)));
+    assert_eq!(next_spot(&free, &[], &[cell(0)], (100.0, 80.0), left), Some(cell(1)));
     // The pointer moved on to the second: neither.
-    assert_eq!(next_spot(&free, &[], &[cell(0)], (300.0, 80.0)), Some(cell(2)));
+    assert_eq!(next_spot(&free, &[], &[cell(0)], (300.0, 80.0), left), Some(cell(2)));
     // Nowhere else: the word waits.
-    assert_eq!(next_spot(&free[..1], &[], &[cell(0)], away), None);
-    assert_eq!(next_spot(&free[..2], &[cell(1)], &[cell(0)], away), None);
+    assert_eq!(next_spot(&free[..1], &[], &[cell(0)], away, left), None);
+    assert_eq!(next_spot(&free[..2], &[cell(1)], &[cell(0)], away, left), None);
+    // Nearest the middle of the screen first.
+    assert_eq!(next_spot(&free, &[], &[], away, (600.0, 80.0)), Some(cell(2)));
 }
 
 #[test]
