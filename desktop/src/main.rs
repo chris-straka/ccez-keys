@@ -509,6 +509,15 @@ mod app {
             }
             return;
         }
+        // `--say-made lang word…`: each word's sound made ahead, and where it's kept.
+        if let Some(i) = args.iter().position(|a| a == "--say-made") {
+            let lang = args.get(i + 1).cloned().unwrap_or_default();
+            for w in args.iter().skip(i + 2) {
+                let t = std::time::Instant::now();
+                println!("{w}: {:?} in {} ms", crate::speak::made(&lang, w), t.elapsed().as_millis());
+            }
+            return;
+        }
         // `--meaning lang word`: what a screen word shows (word, meaning, tags).
         if let Some(i) = args.iter().position(|a| a == "--meaning") {
             let engine = ccez_keys_core::Engine::new(dirs().to_string_lossy().into_owned());
@@ -578,6 +587,9 @@ mod app {
         let off_here = CheckMenuItem::new("Off in this app", true, false, None);
         let selection = CheckMenuItem::new("Preview selected text", true, app.prefs.borrow().selection, None);
         let copy_click = CheckMenuItem::new("Copy a word when clicked", true, app.prefs.borrow().copy_click, None);
+        // Words said aloud when clicked, or not (owner, 2026-11-13).
+        let speak = CheckMenuItem::new("Say a word when clicked", true, app.prefs.borrow().speak, None);
+        crate::speak::set_on(app.prefs.borrow().speak);
         // How many learning words float in the screen's empty spots.
         let words_menu = Submenu::new("Words on screen", true);
         let word_counts: Vec<(usize, CheckMenuItem)> =
@@ -607,7 +619,7 @@ mod app {
         let sep = PredefinedMenuItem::separator();
         let sep2 = PredefinedMenuItem::separator();
         let sep3 = PredefinedMenuItem::separator();
-        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &words_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
+        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &speak, &words_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_title("文").with_tooltip("ccez-keys").build();
         // Bold and a size up: the menu bar's regular text left 文 thin and small.
         if let Ok(t) = &tray
@@ -630,6 +642,7 @@ mod app {
         let (pause_id, lang_id, login_id, quit_id) = (pause.id().clone(), languages.id().clone(), login.id().clone(), quit.id().clone());
         let (readings_id, off_id) = (readings.id().clone(), off_here.id().clone());
         let (selection_id, copy_id, swap_id) = (selection.id().clone(), copy_click.id().clone(), chat_swap.id().clone());
+        let speak_id = speak.id().clone();
         let (typing_id, video_id, shots_id) = (words_typing.id().clone(), words_video.id().clone(), words_shots.id().clone());
         let menu_tick = Cell::new(0u32);
 
@@ -841,11 +854,13 @@ mod app {
                         app.prefs.borrow_mut().readings = readings.is_checked();
                         app.prefs.borrow().save(&dirs());
                         app.preview.borrow_mut().redo();
-                    } else if e.id == selection_id || e.id == copy_id || e.id == swap_id || e.id == typing_id || e.id == video_id || e.id == shots_id {
+                    } else if e.id == selection_id || e.id == copy_id || e.id == speak_id || e.id == swap_id || e.id == typing_id || e.id == video_id || e.id == shots_id {
                         {
                             let mut p = app.prefs.borrow_mut();
                             p.selection = selection.is_checked();
                             p.copy_click = copy_click.is_checked();
+                            p.speak = speak.is_checked();
+                            crate::speak::set_on(p.speak);
                             p.chat_swap = chat_swap.is_checked();
                             p.words_typing = words_typing.is_checked();
                             p.words_video = words_video.is_checked();

@@ -647,8 +647,9 @@ fn typing() -> bool {
 
 /// A word put up in `cell`, faint, its meaning hidden.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, cell: Rect, primary_h: f64) -> Word {
+    // Its sound made now, so a click plays it at once.
+    crate::speak::prepare(&lang, &shown);
     let w = build(mtm, id, lang, word, shown, meaning, tags, reading, cell, primary_h);
     w.on.set(true);
     w.panel.setAlphaValue(0.0);

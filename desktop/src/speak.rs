@@ -2,16 +2,32 @@
 //! installed for the language (Premium, then Enhanced, then any), one at a
 //! time (a new one stops the last).
 //!
-//! Spoken in the app by one AVSpeechSynthesizer kept for its life, so a voice
-//! loads once: a `say` process per click loaded it every time, nearly a
-//! second before a word was heard (owner, 2026-11-13: "takes a while for the
-//! TTS to kick in").
+//! A word on screen has its sound made when it comes up (`prepare`, a `say -o`
+//! in the background, kept in ~/Library/Caches), so a click only plays a
+//! file: heard at once (owner, 2026-11-13: "it should be almost
+//! instantaneous"). Anything not made ahead is spoken by one
+//! AVSpeechSynthesizer kept for the app's life, and made for next time.
+//! A `say` per click took about 0.9 s before a word was heard.
 
 use objc2::rc::Retained;
+use objc2_app_kit::NSSound;
 use objc2_avf_audio::{AVSpeechBoundary, AVSpeechSynthesisVoice, AVSpeechSynthesizer, AVSpeechUtterance};
 use objc2_foundation::NSString;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Off from the menu: nothing said, nothing made.
+static ON: AtomicBool = AtomicBool::new(true);
+
+pub fn set_on(on: bool) {
+    ON.store(on, Ordering::Relaxed);
+    if !on {
+        stop();
+    }
+}
 
 /// (identifier, locale as fr_FR, quality 1 default / 2 enhanced / 3 premium).
 type Voice = (String, String, isize);
@@ -66,13 +82,107 @@ fn with_speaker<R>(f: impl FnOnce(&mut Speaker) -> R) -> R {
     })
 }
 
-fn utterance(sp: &mut Speaker, lang: &str, text: &str) -> Retained<AVSpeechUtterance> {
+fn voice(sp: &mut Speaker, lang: &str) -> Option<Retained<AVSpeechSynthesisVoice>> {
     let voices = &sp.voices;
-    let voice = sp
-        .chosen
+    sp.chosen
         .entry(lang.to_string())
         .or_insert_with(|| voice_for(lang, voices).and_then(|id| unsafe { AVSpeechSynthesisVoice::voiceWithIdentifier(&NSString::from_str(&id)) }))
-        .clone();
+        .clone()
+}
+
+/// The voice as `say -v` names it ("Audrey (Premium)").
+fn say_name(v: &AVSpeechSynthesisVoice) -> String {
+    let (name, quality) = unsafe { (v.name().to_string(), v.quality().0) };
+    match quality {
+        _ if name.contains('(') => name,
+        3 => format!("{name} (Premium)"),
+        2 => format!("{name} (Enhanced)"),
+        _ => name,
+    }
+}
+
+fn cache_dir() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Library/Caches/uk.ccez.keys/speech")
+}
+
+/// Where a word's sound in a voice is kept.
+fn file_for(voice: &str, text: &str) -> PathBuf {
+    use sha2::Digest;
+    let h = sha2::Sha256::digest(format!("{voice}\0{text}").as_bytes());
+    let name: String = h.iter().take(12).map(|b| format!("{b:02x}")).collect();
+    cache_dir().join(format!("{name}.aiff"))
+}
+
+/// The file `text` would be kept in for `lang`'s voice.
+fn sound_path(lang: &str, text: &str) -> Option<(String, PathBuf)> {
+    let name = with_speaker(|sp| voice(sp, lang).map(|v| say_name(&v)))?;
+    let path = file_for(&name, text);
+    Some((name, path))
+}
+
+static MAKING: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+/// One `say` at a time, so a screenful of new words doesn't take every core.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// Makes `text`'s sound in the background, if it isn't kept already. Run
+/// on the main thread (the voice is looked up there).
+pub fn prepare(lang: &str, text: &str) {
+    if !ON.load(Ordering::Relaxed) || text.trim().is_empty() {
+        return;
+    }
+    let Some((name, path)) = sound_path(lang, text) else { return };
+    if path.exists() || !MAKING.lock().unwrap().get_or_insert_with(HashSet::new).insert(path.clone()) {
+        return;
+    }
+    static PRUNED: std::sync::Once = std::sync::Once::new();
+    let text = text.to_string();
+    std::thread::spawn(move || {
+        PRUNED.call_once(prune);
+        {
+            let _one = ONE_AT_A_TIME.lock().unwrap();
+            let _ = std::fs::create_dir_all(cache_dir());
+            let part = path.with_extension("part.aiff");
+            let made = std::process::Command::new("say").args(["-v", &name, "-o"]).arg(&part).arg("--").arg(&text).status().is_ok_and(|s| s.success());
+            if made {
+                let _ = std::fs::rename(&part, &path);
+            } else {
+                let _ = std::fs::remove_file(&part);
+            }
+        }
+        if let Some(m) = MAKING.lock().unwrap().as_mut() {
+            m.remove(&path);
+        }
+    });
+}
+
+/// Sounds not used in two weeks go.
+fn prune() {
+    let Ok(dir) = std::fs::read_dir(cache_dir()) else { return };
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(14 * 86_400);
+    for e in dir.flatten() {
+        if e.metadata().and_then(|m| m.accessed().or(m.modified())).is_ok_and(|t| t < old) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
+thread_local! {
+    static PLAYING: RefCell<Option<Retained<NSSound>>> = const { RefCell::new(None) };
+}
+
+fn stop() {
+    if let Some(s) = PLAYING.with(|p| p.borrow_mut().take()) {
+        s.stop();
+    }
+    SPEAKER.with(|s| {
+        if let Some(sp) = s.borrow().as_ref() {
+            unsafe { sp.synth.stopSpeakingAtBoundary(AVSpeechBoundary::Immediate) };
+        }
+    });
+}
+
+fn utterance(sp: &mut Speaker, lang: &str, text: &str) -> Retained<AVSpeechUtterance> {
+    let voice = voice(sp, lang);
     unsafe {
         let u = AVSpeechUtterance::speechUtteranceWithString(&NSString::from_str(text));
         u.setVoice(voice.as_deref());
@@ -80,9 +190,37 @@ fn utterance(sp: &mut Speaker, lang: &str, text: &str) -> Retained<AVSpeechUtter
     }
 }
 
-/// Says `text` in `lang`, stopping whatever was being said.
+/// Says `text` in `lang`, stopping whatever was being said: its kept
+/// sound if made, else spoken now and made for next time.
 pub fn say(lang: &str, text: &str) {
+    if !ON.load(Ordering::Relaxed) {
+        return;
+    }
+    stop();
+    if let Some(sound) = kept(lang, text) {
+        sound.play();
+        PLAYING.with(|p| *p.borrow_mut() = Some(sound));
+        return;
+    }
     say_at(lang, text, 1.0);
+    prepare(lang, text);
+}
+
+fn kept(lang: &str, text: &str) -> Option<Retained<NSSound>> {
+    use objc2::AllocAnyThread;
+    let (_, path) = sound_path(lang, text).filter(|(_, p)| p.exists())?;
+    NSSound::initWithContentsOfFile_byReference(NSSound::alloc(), &NSString::from_str(&path.to_string_lossy()), true)
+}
+
+/// For checks: makes `text`'s sound, waits for it, and says where it is.
+pub fn made(lang: &str, text: &str) -> Option<PathBuf> {
+    prepare(lang, text);
+    let (_, path) = sound_path(lang, text)?;
+    let t = std::time::Instant::now();
+    while !path.exists() && t.elapsed().as_secs() < 20 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    path.exists().then_some(path)
 }
 
 fn say_at(lang: &str, text: &str, volume: f32) {

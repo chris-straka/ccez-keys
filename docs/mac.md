@@ -140,7 +140,9 @@ panel, egui on Linux and Windows. What it does and when is shared code
   position on Windows (the field's frame is used), Arabic shaping (egui
   draws letters unjoined), the card's meaning-here (Apple's model only).
 
-Words are spoken in the app by one AVSpeechSynthesizer kept for its
-life (speak.rs): a voice loads once, about 150 ms, then a word starts in
-about 5 ms (a `say` per click took about 0.9 s). `--say-time lang word…`
-times it at volume 0.
+A screen word's sound is made when it comes up (`say -o`, one at a time,
+in ~/Library/Caches/uk.ccez.keys/speech, unused ones gone after two
+weeks), so a click plays a file and is heard at once. Anything not made
+ahead (a preview word, a line) is spoken by one AVSpeechSynthesizer and
+made for next time. "Say a word when clicked" in the menu turns it off.
+`--say-made lang word…` makes sounds and says where they are.
