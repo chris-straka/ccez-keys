@@ -192,24 +192,36 @@ pub fn held_back(toks: &[Tok], back: usize) -> usize {
     end
 }
 
-/// A word as a borderless button: its colour says its status (learning tinted
-/// as on the phone, known dimmed); a click opens its card.
+/// A word as a borderless button: a Learning word underlined in coral, as
+/// on the phone's strip (owner, 2026-11-13: "the underline had its own
+/// colour"), a known one dimmed; a click opens its card. Buttons that aren't
+/// words (Undo, the card's Learning) keep the coral text when on.
 fn word_button(mtm: MainThreadMarker, clicker: &Clicker, t: &Tok, size: f64, tag: isize) -> Retained<NSButton> {
     use objc2_foundation::{NSAttributedString, NSDictionary};
     let b = line_button(mtm, &t.text, clicker);
     b.setBordered(false);
     b.setTag(tag);
+    let learning_word = t.status == 1 && t.word && !t.key.is_empty();
+    let coral = rgb(0.98, 0.55, 0.45);
     let color = match t.status {
-        1 => rgb(0.98, 0.55, 0.45),
+        1 if !learning_word => coral.clone(),
         2 => rgb(0.55, 0.55, 0.58),
         _ => rgb(0.95, 0.95, 0.95),
     };
     let font = NSFont::systemFontOfSize(size);
+    let one = objc2_foundation::NSNumber::new_isize(1);
     let attrs = unsafe {
-        NSDictionary::<objc2_foundation::NSString, objc2::runtime::AnyObject>::from_slices(
-            &[objc2_app_kit::NSFontAttributeName, objc2_app_kit::NSForegroundColorAttributeName],
-            &[&*font as &objc2::runtime::AnyObject, &*color as &objc2::runtime::AnyObject],
-        )
+        if learning_word {
+            NSDictionary::<objc2_foundation::NSString, objc2::runtime::AnyObject>::from_slices(
+                &[objc2_app_kit::NSFontAttributeName, objc2_app_kit::NSForegroundColorAttributeName, objc2_app_kit::NSUnderlineStyleAttributeName, objc2_app_kit::NSUnderlineColorAttributeName],
+                &[&*font as &objc2::runtime::AnyObject, &*color as &objc2::runtime::AnyObject, &*one as &objc2::runtime::AnyObject, &*coral as &objc2::runtime::AnyObject],
+            )
+        } else {
+            NSDictionary::<objc2_foundation::NSString, objc2::runtime::AnyObject>::from_slices(
+                &[objc2_app_kit::NSFontAttributeName, objc2_app_kit::NSForegroundColorAttributeName],
+                &[&*font as &objc2::runtime::AnyObject, &*color as &objc2::runtime::AnyObject],
+            )
+        }
     };
     let title = unsafe { NSAttributedString::new_with_attributes(&NSString::from_str(&t.text), &attrs) };
     b.setAttributedTitle(&title);
@@ -219,6 +231,35 @@ fn word_button(mtm: MainThreadMarker, clicker: &Clicker, t: &Tok, size: f64, tag
     let h = b.frame().size.height;
     b.setFrame(rect(0.0, 0.0, w, h));
     b
+}
+
+/// For checks (`--preview-words`): `words` ("text:status", status 0 new,
+/// 1 learning, 2 known) drawn as the preview draws them, into a PNG;
+/// nothing comes on screen.
+pub fn words_picture(mtm: MainThreadMarker, words: &[(String, u8)], out: &std::path::Path) -> bool {
+    let clicker: Retained<Clicker> = unsafe { objc2::msg_send![Clicker::alloc(mtm), init] };
+    let bg = NSBox::new(mtm);
+    bg.setBoxType(NSBoxType::Custom);
+    bg.setTitlePosition(NSTitlePosition::NoTitle);
+    bg.setBorderWidth(0.0);
+    bg.setFillColor(&NSColor::colorWithSRGBRed_green_blue_alpha(0.12, 0.12, 0.13, 0.97));
+    bg.setContentViewMargins(NSSize::new(0.0, 0.0));
+    let Some(content) = bg.contentView() else { return false };
+    let mut x = 10.0;
+    for (text, status) in words {
+        let t = Tok { text: text.clone(), reading: String::new(), word: true, key: text.clone(), status: *status };
+        let b = word_button(mtm, &clicker, &t, TEXT, 0);
+        let f = b.frame().size;
+        b.setFrame(rect(x, 10.0, f.width, f.height));
+        content.addSubview(&b);
+        x += f.width + TEXT * 0.28;
+    }
+    bg.setFrame(rect(0.0, 0.0, x + 10.0, 50.0));
+    let bounds = bg.bounds();
+    let Some(rep) = bg.bitmapImageRepForCachingDisplayInRect(bounds) else { return false };
+    bg.cacheDisplayInRect_toBitmapImageRep(bounds, &rep);
+    let png = unsafe { rep.representationUsingType_properties(objc2_app_kit::NSBitmapImageFileType::PNG, &objc2_foundation::NSDictionary::new()) };
+    png.is_some_and(|d| std::fs::write(out, d.to_vec()).is_ok())
 }
 
 pub(crate) fn new_panel(mtm: MainThreadMarker) -> (Retained<NSPanel>, Retained<NSBox>) {

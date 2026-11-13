@@ -480,6 +480,13 @@ mod app {
             }
             return;
         }
+        // `--preview-words out.png word:status …`: preview words drawn to a file.
+        if let Some(i) = args.iter().position(|a| a == "--preview-words") {
+            let out = args.get(i + 1).cloned().unwrap_or_default();
+            let words: Vec<(String, u8)> = args[i + 2..].iter().filter_map(|w| w.rsplit_once(':').map(|(t, s)| (t.to_string(), s.parse().unwrap_or(0)))).collect();
+            println!("drawn: {}", crate::view::words_picture(mtm, &words, std::path::Path::new(&out)));
+            return;
+        }
         // `--word-picture lang word out.png`: a screen word as it looks with
         // the pointer on it, drawn to a file; nothing comes on screen.
         if let Some(i) = args.iter().position(|a| a == "--word-picture") {
