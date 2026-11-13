@@ -128,6 +128,10 @@ struct Word {
     meaning: String,
     /// Small tags beside the meaning ("tr" for a transitive sense).
     tags: Vec<String>,
+    /// Japanese and Chinese: its pieces with the furigana or pinyin over
+    /// each ("" over kana), shown while the pointer is on it (owner,
+    /// 2026-11-12). Empty for other languages.
+    reading: Vec<(String, String)>,
     /// Its spot (top-left coordinates), as the spot search gives them.
     cell: Rect,
     panel: Retained<NSPanel>,
@@ -177,6 +181,8 @@ pub struct Floaters {
     quiet_until: Cell<Option<Instant>>,
     /// The menu's "Hide in screenshots" (owner, 2026-11-11: off, to show them).
     pub hide_in_shots: Cell<bool>,
+    /// The menu's "Readings over Japanese and Chinese".
+    pub readings: Cell<bool>,
     /// When the screenshot tools were last looked for, and whether they were up.
     capture_seen: Cell<(Instant, bool)>,
     /// From the spot thread: the free spots, and whether a video is playing
@@ -239,6 +245,7 @@ impl Floaters {
             last: Cell::new(Instant::now()),
             quiet_until: Cell::new(None),
             hide_in_shots: Cell::new(true),
+            readings: Cell::new(true),
             capture_seen: Cell::new((Instant::now(), false)),
             spots,
             video: playing,
@@ -404,11 +411,21 @@ impl Floaters {
         };
         let id = self.next_id.get();
         self.next_id.set(id + 1);
-        let w = show(mtm, id, lang, word, shown, m, tags, cell, primary_h);
+        let reading = self.reading(&lang, &shown);
+        let w = show(mtm, id, lang, word, shown, m, tags, reading, cell, primary_h);
         if !self.hide_in_shots.get() {
             w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
         }
         self.words.borrow_mut().push(w);
+    }
+
+    /// A Japanese or Chinese word's pieces with their readings (none for
+    /// other languages, or with readings off in the menu).
+    fn reading(&self, lang: &str, shown: &str) -> Vec<(String, String)> {
+        if !self.readings.get() || !matches!(lang.split(['-', '_']).next(), Some("ja" | "zh")) {
+            return Vec::new();
+        }
+        pieces(self.engine.strip_words(lang.to_string(), shown.to_string()).into_iter().flat_map(|w| w.ruby).map(|r| (r.text, r.rt)).collect(), shown)
     }
 
     fn leave(&self, w: Word, revive: bool) {
@@ -462,7 +479,8 @@ impl Floaters {
         } else {
             let id = self.next_id.get();
             self.next_id.set(id + 1);
-            let w = show(mtm, id, a.lang.clone(), a.word.clone(), a.shown, a.meaning, a.tags, a.cell, primary_h);
+            let reading = self.reading(&a.lang, &a.shown);
+            let w = show(mtm, id, a.lang.clone(), a.word.clone(), a.shown, a.meaning, a.tags, reading, a.cell, primary_h);
             if !self.hide_in_shots.get() {
                 w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
             }
@@ -587,7 +605,19 @@ fn typing() -> bool {
 
 /// A word put up in `cell`, faint, its meaning hidden.
 #[allow(clippy::too_many_arguments)]
-fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, cell: Rect, primary_h: f64) -> Word {
+#[allow(clippy::too_many_arguments)]
+fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, cell: Rect, primary_h: f64) -> Word {
+    let w = build(mtm, id, lang, word, shown, meaning, tags, reading, cell, primary_h);
+    w.on.set(true);
+    w.panel.setAlphaValue(0.0);
+    w.panel.orderFrontRegardless();
+    fade_over(&w.panel, true, w.on.clone(), FADE_IN);
+    w
+}
+
+/// A word made and laid out, not yet on screen.
+#[allow(clippy::too_many_arguments)]
+fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, cell: Rect, primary_h: f64) -> Word {
     let (panel, bg) = new_panel(mtm);
     panel.setLevel(20);
     panel.setHasShadow(false);
@@ -609,6 +639,7 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
         shown,
         meaning,
         tags,
+        reading,
         cell,
         panel,
         bg,
@@ -622,12 +653,42 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
         pointed: false,
     };
     lay_out(mtm, &mut w, primary_h);
-    w.on.set(true);
-    w.panel.setAlphaValue(0.0);
-    w.panel.orderFrontRegardless();
-    fade_over(&w.panel, true, w.on.clone(), FADE_IN);
     w
 }
+
+/// For checks (`--word-picture`): a word as it looks with the pointer on
+/// it, drawn into a PNG without ever being put on screen.
+pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &str, word: &str, out: &std::path::Path) -> bool {
+    let (shown, meaning, tags) = engine.word_face(lang, word);
+    let reading = pieces(engine.strip_words(lang.to_string(), shown.clone()).into_iter().flat_map(|w| w.ruby).map(|r| (r.text, r.rt)).collect(), &shown);
+    let cell = Rect { x: 0.0, y: 0.0, w: 240.0, h: 175.0 };
+    let mut w = build(mtm, 1, lang.to_string(), word.to_string(), shown, meaning, tags, reading, cell, 1080.0);
+    w.open = true;
+    lay_out(mtm, &mut w, 1080.0);
+    let bounds = w.bg.bounds();
+    let Some(rep) = w.bg.bitmapImageRepForCachingDisplayInRect(bounds) else { return false };
+    w.bg.cacheDisplayInRect_toBitmapImageRep(bounds, &rep);
+    let png = unsafe { rep.representationUsingType_properties(objc2_app_kit::NSBitmapImageFileType::PNG, &objc2_foundation::NSDictionary::new()) };
+    png.is_some_and(|d| std::fs::write(out, d.to_vec()).is_ok())
+}
+
+/// A word's pieces as the dictionary cut them, when they have a reading and
+/// spell the word as shown (else none: nothing goes over the wrong letters).
+fn pieces(ruby: Vec<(String, String)>, shown: &str) -> Vec<(String, String)> {
+    let whole: String = ruby.iter().map(|r| r.0.as_str()).collect();
+    if whole != shown || ruby.iter().all(|r| r.1.is_empty()) { Vec::new() } else { ruby }
+}
+
+/// Readings wider than their pieces go over the whole word as one line:
+/// Japanese run together, kana standing for itself ("たべる" over 食べる);
+/// pinyin a syllable apart ("zhuāng shì" over 装饰).
+fn reading_line(lang: &str, reading: &[(String, String)]) -> String {
+    let sep = if lang.starts_with("zh") { " " } else { "" };
+    reading.iter().map(|(t, r)| if r.is_empty() { t.as_str() } else { r.as_str() }).collect::<Vec<_>>().join(sep)
+}
+
+/// The size of furigana and pinyin over a screen word.
+const READING: f64 = 11.0;
 
 /// The word (and its meaning when open) centred in its spot.
 fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
@@ -657,11 +718,43 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let pills: Vec<(Retained<NSBox>, f64, f64)> = if w.open { w.tags.iter().map(|t| pill(mtm, t)).collect() } else { Vec::new() };
     let pills_w: f64 = pills.iter().map(|(_, pw, _)| pw + 4.0).sum();
     let (mw, mh) = m.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0), l.frame().size.height)).unwrap_or((0.0, 0.0));
-    let width = (ww + 2.0 * pills_w).max(mw) + 20.0;
-    let height = wh + mh + 10.0;
+    // Japanese and Chinese, open: furigana or pinyin over each piece where
+    // every one fits over its own, else one line over the whole word.
+    let mut over: Vec<(Retained<NSTextField>, f64)> = Vec::new();
+    if w.open && !w.reading.is_empty() {
+        let width_of = |t: &str| objc2_app_kit::NSAttributedStringNSStringDrawing::size(&*unsafe { NSAttributedString::new_with_attributes(&NSString::from_str(t), &attrs) }).width;
+        let mut before = String::new();
+        let mut fits = true;
+        for (t, r) in &w.reading {
+            let (x0, tw) = (width_of(&before), width_of(t));
+            before.push_str(t);
+            if r.is_empty() {
+                continue;
+            }
+            let l = label(mtm, r, READING, true);
+            let lw = l.frame().size.width;
+            fits &= lw <= tw + 4.0;
+            // Its middle, from the word's left edge.
+            over.push((l, x0 + tw / 2.0 + 1.0 - lw / 2.0));
+        }
+        if !fits {
+            let l = label(mtm, &reading_line(&w.lang, &w.reading), READING, true);
+            let lw = l.frame().size.width;
+            over = vec![(l, ww / 2.0 - lw / 2.0)];
+        }
+    }
+    let rh = over.first().map(|(l, _)| l.frame().size.height - 3.0).unwrap_or(0.0);
+    let rw = over.iter().map(|(l, x)| 2.0 * (ww / 2.0 - x).abs().max((x + l.frame().size.width - ww / 2.0).abs())).fold(0.0, f64::max);
+    let width = (ww + 2.0 * pills_w).max(mw).max(rw) + 20.0;
+    let height = wh + mh + rh + 10.0;
     let wx = (width - ww) / 2.0;
     w.button.setFrame(rect(wx, mh + 5.0, ww, wh));
     content.addSubview(&w.button);
+    for (l, x) in &over {
+        let f = l.frame().size;
+        l.setFrame(rect(wx + x, mh + 5.0 + wh - 3.0, f.width, f.height));
+        content.addSubview(l);
+    }
     let mut x = wx + ww + 4.0;
     for (p, pw, ph) in &pills {
         p.setFrame(rect(x, mh + 5.0 + (wh - ph) / 2.0, *pw, *ph));
@@ -673,9 +766,10 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
         content.addSubview(m);
     }
     w.meaning_label = m;
-    // Its spot's middle, in Cocoa's coordinates; the top stays where it first was.
+    // Its spot's middle, in Cocoa's coordinates; the top stays where it first
+    // was, and a reading opens above it: the word never moves.
     let cx = w.cell.x + w.cell.w / 2.0;
-    let top = *w.top.get_or_insert(primary_h - (w.cell.y + w.cell.h / 2.0) + height / 2.0);
+    let top = *w.top.get_or_insert(primary_h - (w.cell.y + w.cell.h / 2.0) + (height - rh) / 2.0) + rh;
     let frame: NSRect = rect(cx - width / 2.0, top - height, width, height);
     w.panel.setFrame_display(frame, true);
     w.bg.setFrame(rect(0.0, 0.0, width, height));
@@ -701,6 +795,19 @@ fn without_article(lang: &str, shown: &str) -> String {
 }
 
 #[cfg(test)]
+#[test]
+fn readings_go_over_the_word_shown() {
+    let r = |v: &[(&str, &str)]| v.iter().map(|(t, r)| (t.to_string(), r.to_string())).collect::<Vec<_>>();
+    // Furigana over the kanji, kana standing for itself in the one line.
+    let taberu = r(&[("食", "た"), ("べる", "")]);
+    assert_eq!(pieces(taberu.clone(), "食べる"), taberu);
+    assert_eq!(reading_line("ja", &taberu), "たべる");
+    assert_eq!(reading_line("zh", &r(&[("装", "zhuāng"), ("饰", "shì")])), "zhuāng shì");
+    // Kana alone has nothing to show; pieces that spell another word: none.
+    assert!(pieces(r(&[("こんにちは", "")]), "こんにちは").is_empty());
+    assert!(pieces(r(&[("出馬", "しゅつば")]), "出馬する").is_empty());
+}
+
 #[test]
 fn a_click_copies_the_word_without_its_article() {
     assert_eq!(without_article("de", "das Urteil"), "Urteil");

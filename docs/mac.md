@@ -81,6 +81,16 @@ Learning words (float.rs) go only where the front window has no content.
 - Checks never open a browser window on the owner's Mac: a new Chromium
   takes focus and asks for the keychain password (owner, 2026-11-12).
 
+## Words on screen: readings (owner, 2026-11-12)
+
+A Japanese or Chinese word under the pointer shows its furigana or pinyin
+over it (with the menu's "Readings over Japanese and Chinese" on): over
+each piece where every reading fits over its own (た over 食 of 食べる),
+else one line over the whole word ("zhuāng shì" over 装饰). It opens
+above the word and the meaning below, so the word doesn't move.
+`ccez-keys-mac --word-picture <lang> <word> <out.png>` draws a word as
+hovered into a file, nothing on screen.
+
 ## Windows and Linux (built 2026-11-10)
 
 Owner asked for both; not Tauri: one Rust app (`desktop/`), the Mac's own

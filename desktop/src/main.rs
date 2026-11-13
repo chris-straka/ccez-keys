@@ -193,6 +193,7 @@ mod app {
         let (while_video, while_typing) = {
             let p = app.prefs.borrow();
             app.floaters.hide_in_shots.set(p.words_hide_shots);
+            app.floaters.readings.set(p.readings);
             (p.words_video, p.words_typing)
         };
         app.floaters.tick(
@@ -477,6 +478,15 @@ mod app {
                 unsafe { CGEventPost(0, CGEventCreateMouseEvent(std::ptr::null(), kind, P { x, y }, button)) };
                 std::thread::sleep(std::time::Duration::from_millis(60));
             }
+            return;
+        }
+        // `--word-picture lang word out.png`: a screen word as it looks with
+        // the pointer on it, drawn to a file; nothing comes on screen.
+        if let Some(i) = args.iter().position(|a| a == "--word-picture") {
+            NSApplication::sharedApplication(mtm).setActivationPolicy(NSApplicationActivationPolicy::Prohibited);
+            let engine = ccez_keys_core::Engine::new(dirs().to_string_lossy().into_owned());
+            let arg = |n: usize| args.get(i + n).cloned().unwrap_or_default();
+            println!("drawn: {}", crate::float::picture(mtm, &engine, &arg(1), &arg(2), std::path::Path::new(&arg(3))));
             return;
         }
         // `--meaning lang word`: what a screen word shows (word, meaning, tags).
