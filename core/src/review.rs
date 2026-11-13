@@ -4,7 +4,9 @@
 //! until recall falls to 90%) and a difficulty, updated by every answer;
 //! the next review is set for 90% recall. Again sends a word to a short
 //! relearning step (2 min); Good on a new word to a 10 min learning step,
-//! then it graduates. Kept in screen-words.json beside the settings, on the
+//! then it graduates (the maths is ccez-lang-core's `fsrs`, shared with
+//! ccez-words, which grades what the owner watches). Kept in
+//! screen-words.json beside the settings, on the
 //! Mac and the phone alike.
 //!
 //! Synced through ccez-words with the word statuses ([`sync`]): `GET
@@ -17,23 +19,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// FSRS-5's default weights (as Anki ships them).
-const W: [f64; 19] = [
-    0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575, 0.1192, 1.01925, 1.9395, 0.11, 0.29605, 2.2698, 0.2315, 2.9898,
-    0.51655, 0.6621,
-];
-const DECAY: f64 = -0.5;
-const FACTOR: f64 = 19.0 / 81.0;
-/// Reviews are set for this chance of still knowing the word.
-const RETENTION: f64 = 0.9;
-const DAY: u64 = 86_400;
-/// Good on a new word: back once more after this, then it graduates.
-const LEARN_STEP: u64 = 600;
-/// Again: back after this.
-const RELEARN: u64 = 120;
-/// Never put off longer than this, in days.
-const MAX_DAYS: f64 = 365.0;
+use ccez_lang_core::fsrs::{self, Card};
+#[cfg(test)]
+use ccez_lang_core::fsrs::DAY;
 
+/// An answer on a screen word (the shared FSRS's, for Kotlin).
 #[derive(Clone, Copy, Debug, PartialEq, uniffi::Enum)]
 pub enum Grade {
     Good,
@@ -41,132 +31,13 @@ pub enum Grade {
     Again,
 }
 
-impl Grade {
-    /// FSRS's rating: 1 Again, 3 Good, 4 Easy (Hard isn't asked).
-    fn rating(self) -> f64 {
-        match self {
-            Grade::Again => 1.0,
-            Grade::Good => 3.0,
-            Grade::Easy => 4.0,
+impl From<Grade> for fsrs::Grade {
+    fn from(g: Grade) -> fsrs::Grade {
+        match g {
+            Grade::Good => fsrs::Grade::Good,
+            Grade::Easy => fsrs::Grade::Easy,
+            Grade::Again => fsrs::Grade::Again,
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-enum State {
-    #[default]
-    New,
-    Learning,
-    Review,
-    Relearning,
-}
-
-impl State {
-    fn code(self) -> u64 {
-        match self {
-            State::New => 0,
-            State::Learning => 1,
-            State::Review => 2,
-            State::Relearning => 3,
-        }
-    }
-    fn of(n: u64) -> State {
-        match n {
-            1 => State::Learning,
-            2 => State::Review,
-            3 => State::Relearning,
-            _ => State::New,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct Card {
-    /// Unix seconds it may show again.
-    due: u64,
-    /// Unix seconds it was last answered (the newest answer wins a sync).
-    at: u64,
-    /// Days until recall falls to 90%.
-    s: f64,
-    /// 1 (easy) to 10 (hard).
-    d: f64,
-    state: State,
-    reps: u32,
-    lapses: u32,
-    /// Unix seconds of the last answer, for how long it's been.
-    last: u64,
-}
-
-fn init_s(g: f64) -> f64 {
-    W[(g as usize) - 1]
-}
-fn init_d(g: f64) -> f64 {
-    (W[4] - (W[5] * (g - 1.0)).exp() + 1.0).clamp(1.0, 10.0)
-}
-fn recall(elapsed_days: f64, s: f64) -> f64 {
-    (1.0 + FACTOR * elapsed_days / s.max(0.01)).powf(DECAY)
-}
-fn next_d(d: f64, g: f64) -> f64 {
-    let d1 = d - W[6] * (g - 3.0) * (10.0 - d) / 9.0;
-    (W[7] * init_d(4.0) + (1.0 - W[7]) * d1).clamp(1.0, 10.0)
-}
-fn recall_s(d: f64, s: f64, r: f64, g: f64) -> f64 {
-    let easy = if g == 4.0 { W[16] } else { 1.0 };
-    s * (1.0 + W[8].exp() * (11.0 - d) * s.powf(-W[9]) * ((W[10] * (1.0 - r)).exp() - 1.0) * easy)
-}
-fn forget_s(d: f64, s: f64, r: f64) -> f64 {
-    (W[11] * d.powf(-W[12]) * ((s + 1.0).powf(W[13]) - 1.0) * (W[14] * (1.0 - r)).exp()).min(s)
-}
-/// Answered again within a day (learning steps).
-fn short_s(s: f64, g: f64) -> f64 {
-    s * (W[17] * (g - 3.0 + W[18])).exp()
-}
-/// Days until recall falls to [RETENTION] (whole days, 1 to [MAX_DAYS]).
-fn interval(s: f64) -> u64 {
-    let days = s / FACTOR * (RETENTION.powf(1.0 / DECAY) - 1.0);
-    (days.round().clamp(1.0, MAX_DAYS) as u64) * DAY
-}
-
-impl Card {
-    /// FSRS on one answer at `now`.
-    fn answer(&mut self, g: Grade, now: u64) {
-        let r = g.rating();
-        match self.state {
-            State::New => {
-                self.s = init_s(r);
-                self.d = init_d(r);
-                (self.state, self.due) = match g {
-                    Grade::Again => (State::Learning, now + RELEARN),
-                    Grade::Good => (State::Learning, now + LEARN_STEP),
-                    Grade::Easy => (State::Review, now + interval(self.s)),
-                };
-            }
-            State::Learning | State::Relearning => {
-                self.s = short_s(self.s.max(0.01), r);
-                self.d = next_d(self.d, r);
-                (self.state, self.due) = match g {
-                    Grade::Again => (self.state, now + RELEARN),
-                    _ => (State::Review, now + interval(self.s)),
-                };
-            }
-            State::Review => {
-                let elapsed = now.saturating_sub(self.last) as f64 / DAY as f64;
-                let rec = recall(elapsed, self.s);
-                self.d = next_d(self.d, r);
-                if g == Grade::Again {
-                    self.s = forget_s(self.d, self.s, rec);
-                    self.lapses += 1;
-                    self.state = State::Relearning;
-                    self.due = now + RELEARN;
-                } else {
-                    self.s = if elapsed < 1.0 { short_s(self.s, r) } else { recall_s(self.d, self.s, rec, r) };
-                    self.due = now + interval(self.s);
-                }
-            }
-        }
-        self.reps += 1;
-        self.last = now;
-        self.at = now;
     }
 }
 
@@ -184,56 +55,12 @@ fn key(lang: &str, word: &str) -> String {
     format!("{lang}\t{word}")
 }
 
-/// The ladder this replaced (Good steps, in seconds): an old card's step
-/// becomes a stability of that many days.
-const OLD_STEPS: [u64; 7] = [600, 3_600, 86_400, 3 * 86_400, 7 * 86_400, 21 * 86_400, 60 * 86_400];
-
 fn cards_of(v: &serde_json::Value) -> HashMap<String, Card> {
-    let mut cards = HashMap::new();
-    if let Some(o) = v.as_object() {
-        for (k, c) in o {
-            let due = c["due"].as_u64().unwrap_or(0);
-            let at = c["at"].as_u64().unwrap_or(0);
-            let card = if let Some(s) = c["s"].as_f64() {
-                Card {
-                    due,
-                    at,
-                    s,
-                    d: c["d"].as_f64().unwrap_or(5.0),
-                    state: State::of(c["state"].as_u64().unwrap_or(2)),
-                    reps: c["reps"].as_u64().unwrap_or(1) as u32,
-                    lapses: c["lapses"].as_u64().unwrap_or(0) as u32,
-                    last: c["last"].as_u64().unwrap_or(at),
-                }
-            } else {
-                // A card from the step ladder: carried over as it stood.
-                let step = c["step"].as_u64().unwrap_or(0) as usize;
-                let s = if step == 0 { init_s(1.0) } else { (OLD_STEPS[(step - 1).min(OLD_STEPS.len() - 1)] as f64 / DAY as f64).max(0.1) };
-                let state = if step == 0 { State::Learning } else { State::Review };
-                Card { due, at, s, d: 5.0, state, reps: step as u32, lapses: 0, last: at }
-            };
-            cards.insert(k.clone(), card);
-        }
-    }
-    cards
+    v.as_object().map(|o| o.iter().map(|(k, c)| (k.clone(), Card::from_json(c))).collect()).unwrap_or_default()
 }
 
 fn json_of(cards: &HashMap<String, Card>) -> serde_json::Value {
-    let o: serde_json::Map<String, serde_json::Value> = cards
-        .iter()
-        .map(|(k, c)| {
-            (
-                k.clone(),
-                serde_json::json!({
-                    "due": c.due, "at": c.at, "s": c.s, "d": c.d, "state": c.state.code(),
-                    "reps": c.reps, "lapses": c.lapses, "last": c.last,
-                    // For apps still reading the old ladder.
-                    "step": c.reps.min(255),
-                }),
-            )
-        })
-        .collect();
-    serde_json::Value::Object(o)
+    serde_json::Value::Object(cards.iter().map(|(k, c)| (k.clone(), c.to_json())).collect())
 }
 
 impl Review {
@@ -280,7 +107,7 @@ impl Review {
     }
 
     pub fn grade(&mut self, lang: &str, word: &str, g: Grade, now: u64) {
-        self.cards.entry(key(lang, word)).or_default().answer(g, now);
+        self.cards.entry(key(lang, word)).or_default().answer(g.into(), now);
         self.save();
     }
 
