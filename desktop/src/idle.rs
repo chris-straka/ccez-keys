@@ -28,6 +28,14 @@ pub fn free_cells(screen: Rect, windows: &[Rect], cols: usize, rows: usize) -> V
     out
 }
 
+/// Where words stay off the screen: ccez-llm, whose replies are read with
+/// their own word cards (the app, `studio.ccez.app`, or its site in a
+/// browser, the address of its web page).
+pub fn words_stay_off(app: &str, url: Option<&str>) -> bool {
+    let host = url.and_then(|u| u.split("://").nth(1)).map(|r| r.split(['/', '?', '#', ':']).next().unwrap_or("")).unwrap_or("");
+    app == "studio.ccez.app" || host == "llm.ccez.uk" || host.ends_with(".personalized-llm-client.pages.dev") || host == "personalized-llm-client.pages.dev"
+}
+
 /// Free spots on a screen with the front window's content known: inside the
 /// front window, cells clear of its `content`; outside it, cells clear of the
 /// `others` (other apps' windows). Content 2 points thin or less (a
@@ -226,6 +234,14 @@ mod tests {
     use super::*;
 
     const SCREEN: Rect = Rect { x: 0.0, y: 0.0, w: 1200.0, h: 800.0 };
+
+    #[test]
+    fn no_words_over_ccez_llm() {
+        assert!(words_stay_off("studio.ccez.app", None));
+        assert!(words_stay_off("com.brave.Browser", Some("https://llm.ccez.uk/chat/1")));
+        assert!(!words_stay_off("com.brave.Browser", Some("https://www.lemonde.fr/")));
+        assert!(!words_stay_off("com.anthropic.claudefordesktop", None));
+    }
 
     #[test]
     fn words_go_only_where_no_window_is() {

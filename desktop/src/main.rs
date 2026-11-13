@@ -237,6 +237,12 @@ mod app {
         // Its videos: content however big, playing or not.
         let videos = VIDEOS.with_borrow_mut(|v| v.look(&app, &look.videos, Instant::now()));
         look.content.extend(videos.iter().map(|v| v.0));
+        // ccez-llm in front (its app, or llm.ccez.uk in a browser): no words
+        // on screen; it's reading with its own cards already (owner,
+        // 2026-11-13). No spots: those up go at once.
+        if crate::idle::words_stay_off(&app, look.url.as_deref()) {
+            return (Vec::new(), false);
+        }
         let free = crate::idle::free_spots(screen, look.window, &look.content, &crate::idle::windows(pid), 8, 6);
         // Spots this app keeps filling lately: skipped too.
         let all = crate::idle::free_cells(screen, &[], 8, 6);
@@ -443,7 +449,7 @@ mod app {
         if let Some(i) = args.iter().position(|a| a == "--look") {
             let pid = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(0);
             let look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
-            println!("window={:?} content={} videos={:?}", look.window, look.content.len(), look.videos);
+            println!("window={:?} content={} videos={:?} url={:?}", look.window, look.content.len(), look.videos, look.url.as_deref().map(|u| u.split('?').next().unwrap_or("")));
             for c in &look.content {
                 println!("  content {} {} {} {}", c.x as i64, c.y as i64, c.w as i64, c.h as i64);
             }

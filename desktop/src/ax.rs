@@ -65,6 +65,8 @@ unsafe extern "C" {
     fn CFRetain(r: Ref) -> Ref;
     fn CFGetTypeID(r: Ref) -> usize;
     fn CFStringGetTypeID() -> usize;
+    fn CFURLGetTypeID() -> usize;
+    fn CFURLGetString(url: Ref) -> Ref;
     fn CFArrayGetTypeID() -> usize;
     fn CFArrayGetCount(a: Ref) -> isize;
     fn CFArrayGetValueAtIndex(a: Ref, i: isize) -> Ref;
@@ -137,6 +139,18 @@ pub struct Layout {
     pub content: Vec<Rect>,
     /// What in it has a video's shape (idle::Videos says which are videos).
     pub videos: Vec<crate::idle::Video>,
+    /// The page's address, when it's a browser's (its web area says).
+    pub url: Option<String>,
+}
+
+/// A URL attribute as text (a CFURL, or a string).
+fn url_text(r: &Owned) -> Option<String> {
+    if unsafe { CFGetTypeID(r.0) == CFURLGetTypeID() } {
+        let s = unsafe { CFURLGetString(r.0) };
+        // Got, not copied: the URL owns it.
+        return (!s.is_null()).then(|| unsafe { &*(s as *const NSString) }.to_string());
+    }
+    string(r)
 }
 
 /// An element's children (none for a leaf or an app that won't say).
@@ -205,6 +219,7 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> Lay
     let frame = frame_of(window.0);
     let mut out = Vec::new();
     let mut videos = Vec::new();
+    let mut url = None;
     // Each element; a first child comes with its parent and how many
     // children that has (a video is told by its first child).
     let mut queue: std::collections::VecDeque<(Owned, Option<(Owned, isize)>)> = std::collections::VecDeque::new();
@@ -218,6 +233,9 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> Lay
         let kids = attr(el.0, "AXChildren").filter(|a| unsafe { CFGetTypeID(a.0) == CFArrayGetTypeID() });
         let n = kids.as_ref().map(|a| unsafe { CFArrayGetCount(a.0) }).unwrap_or(0);
         let role = attr(el.0, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
+        if url.is_none() && role == "AXWebArea" {
+            url = attr(el.0, "AXURL").and_then(|r| url_text(&r));
+        }
         // Content, and any small leaf with a size (a web page's text runs, an
         // icon). A big empty leaf is a backdrop (a web app's panes), not content.
         let small = |f: &Rect| frame.is_none_or(|w| f.w * f.h < w.w * w.h * 0.08);
@@ -255,7 +273,7 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> Lay
             }
         }
     }
-    Layout { window: frame, content: out, videos }
+    Layout { window: frame, content: out, videos, url }
 }
 
 /// A run of text's width in points in the system font at 15 pt (what web
