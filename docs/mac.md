@@ -102,13 +102,20 @@ field typed in (it followed a cursor Claude doesn't give, guessed off the
 end of a wrapped line, to the screen's right edge); a document's preview
 is centred on the cursor.
 
-A left click (Good) also says the word aloud as shown, article and all, in
-its language's voice (owner, 2026-11-12); right and middle clicks stay
-silent.
+A left click (Good) and a right click (Again) say the word aloud as shown,
+article and all, in its language's voice (owner, 2026-11-12/13); middle
+clicks stay silent.
 
 A new word never comes up in a spot whose word was clicked in the last two
 minutes, nor under the pointer (owner, 2026-11-12: the next one appeared
 right where the click was).
+
+Of the empty space left, a new word takes the spot nearest the screen's
+centre, whatever the app (owner, 2026-11-13: in Claude that's the gap
+between the sidebar and the chat). Spots are cell-sized and slide by a
+quarter cell across and half a cell down, so a gap narrower than two
+cells still counts (idle::free_cells); the next word comes from the
+language with the fewest words up.
 
 ## Windows and Linux (built 2026-11-10)
 
