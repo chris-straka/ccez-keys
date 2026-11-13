@@ -720,6 +720,7 @@ fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: St
 /// For checks (`--word-picture`): a word as it looks with the pointer on
 /// it, drawn into a PNG without ever being put on screen.
 pub fn picture(mtm: MainThreadMarker, engine: &ccez_keys_core::Engine, lang: &str, word: &str, open: bool, out: &std::path::Path) -> bool {
+    EASE.with(|e| e.set(false));
     let (shown, meaning, tags) = engine.word_face(lang, word);
     let reading = pieces(engine.strip_words(lang.to_string(), shown.clone()).into_iter().flat_map(|w| w.ruby).map(|r| (r.text, r.rt)).collect(), &shown);
     let cell = Rect { x: 0.0, y: 0.0, w: 240.0, h: 175.0 };
@@ -845,7 +846,9 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     // The word in its language's colour (owner, 2026-11-13: Chinese and
     // Japanese looked alike; colour, not flags).
     let (r, g, b) = lang_color(&w.lang);
-    let color = NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, if w.open { 1.0 } else { 0.75 });
+    // Full colour always; the word fades between faint and bright instead
+    // (owner, 2026-11-13: the colour jumped on hover, no transition).
+    let color = NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, 1.0);
     let attrs = unsafe {
         NSDictionary::<NSString, objc2::runtime::AnyObject>::from_slices(
             &[objc2_app_kit::NSFontAttributeName, objc2_app_kit::NSForegroundColorAttributeName],
@@ -863,10 +866,13 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     // built from, its radical underlined (owner, 2026-11-13).
     let parts = if matches!(w.lang.split(['-', '_']).next(), Some("zh" | "ja")) { han_parts(&w.shown) } else { Vec::new() };
     let m = (w.open && (!w.meaning.is_empty() || !parts.is_empty())).then(|| wrapped_with_parts(mtm, &w.meaning, &parts, 13.0, (w.cell.w - 24.0).max(160.0)));
-    // Its tags as small pills beside the word (owner, 2026-11-11), the word
-    // kept in the middle so it doesn't move when they come.
+    // Its tags as small pills (owner, 2026-11-11), a centred row under the
+    // word, above the meaning (owner, 2026-11-13: beside the word they hung
+    // off its end).
     let pills: Vec<(Retained<NSBox>, f64, f64)> = if w.open { w.tags.iter().map(|t| pill(mtm, t)).collect() } else { Vec::new() };
-    let pills_w: f64 = pills.iter().map(|(_, pw, _)| pw + 4.0).sum();
+    let pills_w: f64 = pills.iter().map(|(_, pw, _)| pw + 4.0).sum::<f64>() - if pills.is_empty() { 0.0 } else { 4.0 };
+    let pills_h: f64 = pills.iter().map(|(_, _, ph)| *ph).fold(0.0, f64::max);
+    let pb = if pills.is_empty() { 0.0 } else { (pills_h + 3.0).ceil() };
     let (mw, mh) = m.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0), l.frame().size.height)).unwrap_or((0.0, 0.0));
     // Japanese and Chinese, open: furigana or pinyin over each piece where
     // every one fits over its own, else one line over the whole word.
@@ -896,8 +902,8 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     // Whole points, so the word's line doesn't shift by rounding as the reading comes.
     let rh = over.first().map(|(l, _)| (l.frame().size.height - 3.0).ceil()).unwrap_or(0.0);
     let rw = over.iter().map(|(l, x)| 2.0 * (ww / 2.0 - x).abs().max((x + l.frame().size.width - ww / 2.0).abs())).fold(0.0, f64::max);
-    let width = (ww + 2.0 * pills_w).max(mw).max(rw) + 20.0;
-    let height = wh + mh + rh + 10.0;
+    let width = ww.max(pills_w).max(mw).max(rw) + 20.0;
+    let height = wh + pb + mh + rh + 10.0;
     // The word at the same whole point on screen however wide the window
     // gets: the window and the word on half points were rounded one way
     // closed and another open, and the word slipped sideways on hover
@@ -905,16 +911,16 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let cx = w.cell.x + w.cell.w / 2.0;
     let panel_x = (cx - width / 2.0).round();
     let wx = (cx - ww / 2.0).round() - panel_x;
-    w.button.setFrame(rect(wx, mh + 5.0, ww, wh));
+    w.button.setFrame(rect(wx, mh + pb + 5.0, ww, wh));
     content.addSubview(&w.button);
     for (l, x) in &over {
         let f = l.frame().size;
-        l.setFrame(rect(wx + x, mh + 5.0 + wh - 3.0, f.width, f.height));
+        l.setFrame(rect(wx + x, mh + pb + 5.0 + wh - 3.0, f.width, f.height));
         content.addSubview(l);
     }
-    let mut x = wx + ww + 4.0;
+    let mut x = (wx + ww / 2.0 - pills_w / 2.0).round();
     for (p, pw, ph) in &pills {
-        p.setFrame(rect(x, mh + 5.0 + (wh - ph) / 2.0, *pw, *ph));
+        p.setFrame(rect(x, mh + 5.0 + (pills_h - ph) / 2.0, *pw, *ph));
         content.addSubview(p);
         x += pw + 4.0;
     }
@@ -929,8 +935,57 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let frame: NSRect = rect(panel_x, top - height, width, height);
     w.panel.setFrame_display(frame, true);
     w.bg.setFrame(rect(0.0, 0.0, width, height));
+    // Opening: the word brightens and what came with it fades in; closing:
+    // the word dims. Eased, not a jump.
+    let target = if w.open { 1.0 } else { 0.75 };
+    if (w.button.alphaValue() - target).abs() > 0.01 {
+        let mut views: Vec<Retained<objc2_app_kit::NSView>> = Vec::new();
+        if w.open {
+            for (l, _) in &over {
+                views.push(Retained::into_super(Retained::into_super(l.clone())));
+            }
+            for (p, _, _) in &pills {
+                views.push(Retained::into_super(p.clone()));
+            }
+            if let Some(m) = &w.meaning_label {
+                views.push(Retained::into_super(Retained::into_super(m.clone())));
+            }
+        }
+        ease(&w.button, target, &views);
+    }
     content.addSubview(&pad(mtm, content.bounds(), w.id));
     w.bg.setCornerRadius(height.min(28.0) / 2.0);
+}
+
+thread_local! {
+    /// Off for drawings to a file, which must show the end state.
+    static EASE: Cell<bool> = const { Cell::new(true) };
+}
+
+/// How long a word takes to brighten or dim.
+const EASE_SECS: f64 = 0.18;
+
+/// `word` to `alpha` and each of `fade_in` from clear to full, eased.
+fn ease(word: &NSButton, alpha: f64, fade_in: &[Retained<objc2_app_kit::NSView>]) {
+    use objc2::Message;
+    use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
+    if !EASE.with(Cell::get) {
+        word.setAlphaValue(alpha);
+        return;
+    }
+    for v in fade_in {
+        v.setAlphaValue(0.0);
+    }
+    let word = word.retain();
+    let views: Vec<_> = fade_in.to_vec();
+    let change = block2::RcBlock::new(move |ctx: std::ptr::NonNull<NSAnimationContext>| {
+        unsafe { ctx.as_ref() }.setDuration(EASE_SECS);
+        word.animator().setAlphaValue(alpha);
+        for v in &views {
+            v.animator().setAlphaValue(1.0);
+        }
+    });
+    NSAnimationContext::runAnimationGroup(&change);
 }
 
 /// A word as shown without its article: "das Urteil" → "Urteil", "l'ardoise"
