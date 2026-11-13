@@ -1,3 +1,40 @@
+# Review, 2026-11-12 (the code against what the owner has asked for)
+
+Read-only, cut short; nothing here is checked on screen. Delete each as it ships.
+
+Fixed (v0.1.192): what the phone sends to the AI (see Privacy below).
+
+To fix:
+- The phone's review word runs on its own 1/3/7/14/30-day ladder
+  (`learn/Review.kt`), not the core's FSRS schedule the Mac uses and
+  ccez-words syncs: a word answered on one isn't known to the other, and
+  the buttons differ (Known / Later against Good / Again / Easy).
+- No per-app no-AI / no-learning setting (asked below, "No-AI /
+  no-learning is a setting (per app)").
+- Camera text: a tap shows "word · meaning", a hold sets Learning with no
+  sync; no Known, no readings (`CameraActivity.kt:167-182`).
+- `updates.self` is off and `updates.server` empty by default
+  (`core/src/settings.rs:88-93`): a fresh or restored phone never updates.
+- The language grid is fixed rows of five with "+" last
+  (`ui/KeyboardUi.kt:889-915`): twenty languages leave "+" alone.
+- The Mac card is rebuilt at a new height when its meaning-here arrives,
+  so its buttons move (`desktop/src/main.rs`, `view.rs`).
+- Linux prints the field's text to stderr under `CCEZ_DEBUG`
+  (`desktop/src/pc/app.rs:168-171`).
+- Asked and unbuilt: hover reads a preview word aloud, pinyin tone
+  numbers, searching the Add list, Arabic digits.
+
+The owner's call:
+- Sentences Muse reworded are kept as cache keys in `refined.json` (500),
+  and 500 translated sentences in the Mac's `meanings.json`: his typed
+  text on disk in plain text, by his own "answers kept on disk" note.
+- The Mac's ⌥⏎ swap puts a tap on every key-down, even switched off
+  (`desktop/src/chatswap.rs:122`); docs/mac.md says "never a key tap".
+- Phone and Mac cards differ (which form is bold, reading over or under,
+  senses unasked on the Mac, underline against tint for Learning).
+- Hold a strip word for Learning and glosses under suggestions were
+  removed (1d9c117, 57d44ae) with no note from him.
+
 # Phone: learning words on screen — removed (2026-11-11)
 
 The phone overlay (one window per word over other apps, through an
