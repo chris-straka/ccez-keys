@@ -35,7 +35,7 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
 - Each language on its own line (1/2/4/6/8/All, default 6), furigana and
   per-character pinyin, kept clear of the box being typed in (under it, or over it when there is no room), shows only once typing stops (half a second) and every language is in, all together, fading in; stays 8 s (up to 20 s for a long sentence) and while the pointer is over it, fading out; a language still coming holds its line with "…".
 - Known words are skipped: a language whose words are all known isn't shown.
-- Words are coloured by status (Learning tinted); clicking one opens a card
+- Words show their status as on the phone (a Learning word underlined in coral, a known one dimmed; owner, 2026-11-13: language colours are for the screen words); clicking one opens a card
   (meaning, Learning / Known) without taking focus. Statuses sync with
   ccez-words every 5 minutes; the server comes from
   `~/.config/ccez-keys/words-server` (one line, outside the repo).
