@@ -327,3 +327,7 @@ Donate: only in a Play Store build (CCEZ_KEYS_STORE=1, CCEZ_KEYS_DONATE_URL).
 - Settings and the personal dictionary back up to the Mac mini, so a new
   phone is set up in one step (done 2026-11-09: `keys backup` / `keys
   restore`, daily on the Mac mini).
+
+## Bug review, 2026-11-13
+
+Findings in docs/review-2026-11-13.md. Fixed that day: see the commits of 2026-11-13; everything else there is still open.
