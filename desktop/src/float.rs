@@ -199,6 +199,8 @@ struct Answer {
     cell: Rect,
     before: Snapshot,
     known: bool,
+    /// Good, Easy or Known: counted in its round.
+    recalled: bool,
     at: Instant,
 }
 
@@ -224,6 +226,14 @@ pub struct Floaters {
     pub hide_in_shots: Cell<bool>,
     /// The menu's "Readings over Japanese and Chinese".
     pub readings: Cell<bool>,
+    /// The break once every word up is answered (zero: none). A round:
+    /// words answered aren't replaced until the screen is clear, then
+    /// nothing comes for this long, then a fresh screenful.
+    pub breather: Cell<Duration>,
+    /// Words answered (not Again) in this round.
+    answered: Cell<usize>,
+    /// The break, until then.
+    break_until: Cell<Option<Instant>>,
     /// Spots whose word was clicked, and when: resting (RESTS).
     rested: RefCell<Vec<(Rect, Instant)>>,
     /// When the screenshot tools were last looked for, and whether they were up.
@@ -287,6 +297,9 @@ impl Floaters {
             seed: Cell::new((std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) % 997) as usize),
             last: Cell::new(Instant::now()),
             ticked: Cell::new(Instant::now()),
+            breather: Cell::new(Duration::ZERO),
+            answered: Cell::new(0),
+            break_until: Cell::new(None),
             quiet_until: Cell::new(None),
             hide_in_shots: Cell::new(true),
             readings: Cell::new(true),
@@ -447,7 +460,22 @@ impl Floaters {
         }
         // A new word now and then, in a spot nobody holds.
         let Some(free) = fresh else { return };
-        if self.last.get().elapsed() < EVERY || self.words.borrow().len() >= most || (!while_typing && typing()) {
+        let mut room = most;
+        if self.breather.get().is_zero() {
+            self.answered.set(0);
+            self.break_until.set(None);
+        } else {
+            match self.break_until.get() {
+                Some(t) if Instant::now() < t => return,
+                Some(_) => {
+                    self.break_until.set(None);
+                    self.answered.set(0);
+                }
+                // Answered ones keep their place in the round.
+                None => room = most.saturating_sub(self.answered.get()),
+            }
+        }
+        if self.last.get().elapsed() < EVERY || self.words.borrow().len() >= room || (!while_typing && typing()) {
             return;
         }
         self.last.set(Instant::now());
@@ -530,6 +558,11 @@ impl Floaters {
     pub fn undo(&self, mtm: MainThreadMarker) -> Option<(String, String, bool)> {
         let a = self.last_answer.borrow_mut().take().filter(|a| a.at.elapsed() < UNDO_FOR + Duration::from_secs(1))?;
         self.engine.with_review(|r| r.restore(&a.lang, &a.word, a.before, Self::now()));
+        // Its round goes on: one fewer answered, no break.
+        if a.recalled {
+            self.answered.set(self.answered.get().saturating_sub(1));
+            self.break_until.set(None);
+        }
         let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(900.0);
         // Still up (Again shows its meaning a moment): it just stays.
         let up = self.words.borrow().iter().position(|w| w.lang == a.lang && w.word == a.word);
@@ -592,6 +625,7 @@ impl Floaters {
                 cell: w.cell,
                 before: self.engine.with_review(|r| r.snapshot(&lang, &word)),
                 known: kind == 3,
+                recalled: kind != 1,
                 at: Instant::now(),
             });
         }
@@ -608,14 +642,29 @@ impl Floaters {
             3 => {
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
+                self.recalled();
                 Some(("Known".to_string(), Some((lang, word))))
             }
             k => {
                 self.engine.with_review(|r| r.grade(&lang, &word, if k == 2 { Grade::Easy } else { Grade::Good }, Self::now()));
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
+                self.recalled();
                 Some(((if k == 2 { "Easy" } else { "Good" }).to_string(), None))
             }
+        }
+    }
+
+    /// A word recalled (Good, Easy, Known): one more done this round, and
+    /// the break when it was the last up.
+    fn recalled(&self) {
+        let gap = self.breather.get();
+        if gap.is_zero() {
+            return;
+        }
+        self.answered.set(self.answered.get() + 1);
+        if self.words.borrow().is_empty() {
+            self.break_until.set(Some(Instant::now() + gap));
         }
     }
 }
@@ -880,10 +929,12 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     // Chinese and Japanese: under the meaning, what each character is
     // built from, its radical underlined (owner, 2026-11-13).
     let parts = if matches!(w.lang.split(['-', '_']).next(), Some("zh" | "ja")) { han_parts(&w.shown) } else { Vec::new() };
-    let m = (w.open && (!w.meaning.is_empty() || !parts.is_empty())).then(|| wrapped_with_parts(mtm, &w.meaning, &parts, 13.0, (w.cell.w - 24.0).max(160.0)));
+    let room = (w.cell.w - 24.0).max(160.0);
+    let m = (w.open && !w.meaning.is_empty()).then(|| wrapped(mtm, &w.meaning, 13.0, room));
+    let q = (w.open && !parts.is_empty()).then(|| wrapped_with_parts(mtm, "", &parts, 13.0, room));
     // Its tags as small pills (owner, 2026-11-11), a centred row under the
-    // word, above the meaning (owner, 2026-11-13: beside the word they hung
-    // off its end).
+    // meaning, above a character's parts (owner, 2026-11-13: beside the word
+    // they hung off its end; over the meaning, they came before it).
     // Made whenever open, so their room is there from the start; shown
     // only once `tags_up`.
     let pills: Vec<(Retained<NSBox>, f64, f64)> = if w.open { w.tags.iter().map(|t| pill(mtm, t)).collect() } else { Vec::new() };
@@ -891,7 +942,10 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let pills_h: f64 = pills.iter().map(|(_, _, ph)| *ph).fold(0.0, f64::max);
     let pb = if pills.is_empty() { 0.0 } else { (pills_h + 3.0).ceil() };
     let pills = if w.tags_up { pills } else { Vec::new() };
-    let (mw, mh) = m.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0), l.frame().size.height)).unwrap_or((0.0, 0.0));
+    let size = |l: &Option<Retained<NSTextField>>| l.as_ref().map(|l| (l.frame().size.width.min(w.cell.w - 24.0), l.frame().size.height)).unwrap_or((0.0, 0.0));
+    let ((mw, mh), (qw, qh)) = (size(&m), size(&q));
+    // The parts a little apart from what's above them.
+    let qh = if qh > 0.0 { qh + 3.0 } else { 0.0 };
     // Japanese and Chinese, open: furigana or pinyin over each piece where
     // every one fits over its own, else one line over the whole word.
     let mut over: Vec<(Retained<NSTextField>, f64)> = Vec::new();
@@ -920,8 +974,10 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     // Whole points, so the word's line doesn't shift by rounding as the reading comes.
     let rh = over.first().map(|(l, _)| (l.frame().size.height - 3.0).ceil()).unwrap_or(0.0);
     let rw = over.iter().map(|(l, x)| 2.0 * (ww / 2.0 - x).abs().max((x + l.frame().size.width - ww / 2.0).abs())).fold(0.0, f64::max);
-    let width = ww.max(pills_w).max(mw).max(rw) + 20.0;
-    let height = wh + pb + mh + rh + 10.0;
+    let width = ww.max(pills_w).max(mw).max(qw).max(rw) + 20.0;
+    // Bottom up: parts, tags, meaning, the word, its reading.
+    let below = qh + pb + mh;
+    let height = wh + below + rh + 10.0;
     // The word at the same whole point on screen however wide the window
     // gets: the window and the word on half points were rounded one way
     // closed and another open, and the word slipped sideways on hover
@@ -929,22 +985,26 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
     let cx = w.cell.x + w.cell.w / 2.0;
     let panel_x = (cx - width / 2.0).round();
     let wx = (cx - ww / 2.0).round() - panel_x;
-    w.button.setFrame(rect(wx, mh + pb + 5.0, ww, wh));
+    w.button.setFrame(rect(wx, below + 5.0, ww, wh));
     content.addSubview(&w.button);
     for (l, x) in &over {
         let f = l.frame().size;
-        l.setFrame(rect(wx + x, mh + pb + 5.0 + wh - 3.0, f.width, f.height));
+        l.setFrame(rect(wx + x, below + 5.0 + wh - 3.0, f.width, f.height));
         content.addSubview(l);
     }
     let mut x = (wx + ww / 2.0 - pills_w / 2.0).round();
     for (p, pw, ph) in &pills {
-        p.setFrame(rect(x, mh + 5.0 + (pills_h - ph) / 2.0, *pw, *ph));
+        p.setFrame(rect(x, 4.0 + qh + 1.0 + (pills_h - ph) / 2.0, *pw, *ph));
         content.addSubview(p);
         x += pw + 4.0;
     }
     if let Some(m) = &m {
-        m.setFrame(rect((width - mw) / 2.0, 4.0, mw, mh));
+        m.setFrame(rect((width - mw) / 2.0, 4.0 + qh + pb, mw, mh));
         content.addSubview(m);
+    }
+    if let Some(l) = &q {
+        l.setFrame(rect((width - qw) / 2.0, 4.0, qw, qh - 3.0));
+        content.addSubview(l);
     }
     w.meaning_label = m;
     // Its spot's middle, in Cocoa's coordinates; the top stays where it first
@@ -962,8 +1022,8 @@ fn lay_out(mtm: MainThreadMarker, w: &mut Word, primary_h: f64) {
             for (l, _) in &over {
                 views.push(Retained::into_super(Retained::into_super(l.clone())));
             }
-            if let Some(m) = &w.meaning_label {
-                views.push(Retained::into_super(Retained::into_super(m.clone())));
+            for l in w.meaning_label.iter().chain(q.iter()) {
+                views.push(Retained::into_super(Retained::into_super(l.clone())));
             }
         }
         ease(&w.button, target, &views);

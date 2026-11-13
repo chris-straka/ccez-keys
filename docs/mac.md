@@ -113,6 +113,16 @@ was; 2026-11-13: two minutes over every overlapping spot sent words to
 the far right). A word stays 3 minutes of time the Mac is in use (input
 in the last minute): away or reading, words don't turn over unseen.
 
+"Break after clearing" (menu; Off to start, 10 s to 5 min): words come in
+rounds. A word recalled (Good, Easy, Known) isn't replaced; one answered
+Again or timed out is. Once the screen is clear, nothing comes for the
+break, then a fresh screenful (owner, 2026-11-13: "a breather after
+clearing the screen"). Undo puts the word back and cancels the break.
+
+Hovered, a word shows its reading, its meaning, then (1.5 s later, faded
+in) its tags, the first being its kind (v, n, a, adv…), then for Chinese
+and Japanese a line per character with its parts.
+
 Of the empty space left, a new word takes the spot nearest the screen's
 centre, whatever the app (owner, 2026-11-13: in Claude that's the gap
 between the sidebar and the chat). Spots are cell-sized and slide by a

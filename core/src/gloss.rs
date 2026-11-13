@@ -325,30 +325,6 @@ fn drop_long_bracket(m: &str) -> String {
     t.to_string()
 }
 
-/// A meaning without a bracketed note at its end ("to sap (to subvert by
-/// digging)" → "to sap"); kept whole when that's all there is.
-fn drop_trailing_note(m: &str) -> String {
-    let t = m.trim_end();
-    if !t.ends_with(')') {
-        return t.to_string();
-    }
-    let mut depth = 0i32;
-    for (i, ch) in t.char_indices().rev() {
-        match ch {
-            ')' => depth += 1,
-            '(' => {
-                depth -= 1;
-                if depth == 0 {
-                    let before = t[..i].trim_end().trim_end_matches(',').trim_end();
-                    return if before.is_empty() { t.to_string() } else { before.to_string() };
-                }
-            }
-            _ => {}
-        }
-    }
-    t.to_string()
-}
-
 /// The short tags a meaning's leading labels make ("(transitive)" → "tr",
 /// "(reflexive, figuratively)" → "refl", "fig"), in order.
 pub fn tags_of(meaning: &str) -> Vec<String> {
@@ -421,7 +397,7 @@ mod everyday_tests {
         let (shown, meaning, tags) = short_gloss("sapons", &forms, base);
         assert_eq!((shown.as_str(), meaning.as_str()), ("sapons", "to sap, do sapping work on"));
         assert_eq!(tags, ["tr"]);
-        assert_eq!(drop_trailing_note("to sap (to subvert by digging (slowly))"), "to sap");
+        assert_eq!(split_note("to sap (to subvert by digging (slowly))"), Some(("to sap".into(), "to subvert by digging (slowly)".into())));
         let none = |_: &str| vec![];
         assert_eq!(short_gloss("cap", &["(geography) cape".into(), "(archaic) head".into()], none).1, "cape");
         let cap = ["(geography) cape".into(), "(archaic) head".into(), "(nautical) heading".into(), "(figuratively) goal, direction, course".into()];

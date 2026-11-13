@@ -194,6 +194,7 @@ mod app {
             let p = app.prefs.borrow();
             app.floaters.hide_in_shots.set(p.words_hide_shots);
             app.floaters.readings.set(p.readings);
+            app.floaters.breather.set(std::time::Duration::from_secs(p.words_break));
             (p.words_video, p.words_typing)
         };
         app.floaters.tick(
@@ -600,6 +601,16 @@ mod app {
         for (_, c) in &word_counts {
             let _ = words_menu.append(c);
         }
+        // A break once every word on screen is answered (owner, 2026-11-13:
+        // "a breather after clearing the screen"; off to start, short).
+        let break_menu = Submenu::new("Break after clearing", true);
+        let breaks: Vec<(u64, CheckMenuItem)> = [(0u64, "Off"), (10, "10 s"), (20, "20 s"), (60, "1 min"), (300, "5 min")]
+            .into_iter()
+            .map(|(n, t)| (n, CheckMenuItem::new(t, true, app.prefs.borrow().words_break == n, None)))
+            .collect();
+        for (_, c) in &breaks {
+            let _ = break_menu.append(c);
+        }
         // How many languages they come from (the first few, in the owner's order).
         let langs_menu = Submenu::new("Languages on screen", true);
         let lang_counts: Vec<(usize, CheckMenuItem)> = std::iter::once(0usize)
@@ -622,7 +633,7 @@ mod app {
         let sep = PredefinedMenuItem::separator();
         let sep2 = PredefinedMenuItem::separator();
         let sep3 = PredefinedMenuItem::separator();
-        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &speak, &words_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
+        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &speak, &words_menu, &break_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_title("文").with_tooltip("ccez-keys").build();
         // Bold and a size up: the menu bar's regular text left 文 thin and small.
         if let Ok(t) = &tray
@@ -888,6 +899,12 @@ mod app {
                         app.prefs.borrow_mut().words_langs = *n;
                         app.prefs.borrow().save(&dirs());
                         for (m, c) in &lang_counts {
+                            c.set_checked(m == n);
+                        }
+                    } else if let Some((n, _)) = breaks.iter().find(|(_, c)| *c.id() == e.id) {
+                        app.prefs.borrow_mut().words_break = *n;
+                        app.prefs.borrow().save(&dirs());
+                        for (m, c) in &breaks {
                             c.set_checked(m == n);
                         }
                     } else if let Some((n, _)) = word_counts.iter().find(|(_, c)| *c.id() == e.id) {
