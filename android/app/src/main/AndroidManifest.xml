@@ -23,6 +23,10 @@
             <action android:name="android.speech.RecognitionService" />
         </intent>
         <package android:name="studio.ccez.app" />
+        <!-- The owner's apps the keyring serves, seen before they ask
+             (`keys keyring allow`, their names in Settings). -->
+        <package android:name="uk.ccez.tube" />
+        <package android:name="uk.ccez.translate" />
     </queries>
 
     <application
