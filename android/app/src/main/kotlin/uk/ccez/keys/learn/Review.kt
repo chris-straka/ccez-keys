@@ -99,7 +99,10 @@ object Review {
         // the meaning (its word's, if need be) the line. Only a form of the
         // card's own word is tagged ("gare" is a word, though also a form of "garer").
         val pointer = lemma?.let { l -> meanings.firstOrNull { uk.ccez.keys.core.formTag(it).endsWith(" · $l") } }
-        val meaning = meanings.firstOrNull { !isForm(it) }
+        // The card's meaning, as the Mac shows it ("to reach", not "to reach
+        // [with à]"; the owner's own wording first), else the dictionary's.
+        val meaning = runCatching { app.engine.cardMeaning(lang, word) }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: meanings.firstOrNull { !isForm(it) }
             ?: lemma?.let { l -> runCatching { app.engine.wordCard(lang, l, "") }.getOrNull()?.meanings?.firstOrNull { !isForm(it) } }
             ?: withTimeoutOrNull(4000) { Translator.translate(word, lang, app.text("languages.default"), download = false) }
             ?: ""

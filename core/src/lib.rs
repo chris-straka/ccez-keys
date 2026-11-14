@@ -647,6 +647,13 @@ impl Engine {
         self.review.lock().unwrap_or_else(|e| e.into_inner()).grade(&lang, &word, grade, now);
     }
 
+    /// A word's meaning as its card says it (word_face): the phone's review
+    /// line shows the same words as the Mac's cards, the owner's own
+    /// (data/meanings.tsv) included. Empty when the dictionary has none.
+    pub fn card_meaning(&self, lang: String, word: String) -> String {
+        self.word_face(&lang, &word).1
+    }
+
     /// May this learning word be asked now (never graded, or its time has
     /// come)? The phone's review line uses the screen words' schedule.
     pub fn review_due(&self, lang: String, word: String) -> bool {
