@@ -141,5 +141,8 @@ fn settled_meanings_read_as_agreed() {
     if e.dictionary_ready("zh".into()) {
         assert_eq!(e.word_face("zh", "发言").1, "to make a speech; a statement");
     }
+    if e.dictionary_ready("fr".into()) {
+        assert_eq!(e.word_face("fr", "emballer").1, "to wrap, to pack; to thrill");
+    }
     let _ = std::fs::remove_dir_all(&tmp);
 }
