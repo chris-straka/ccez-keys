@@ -57,8 +57,11 @@ pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<S
         && let Some(next) = second_sense(&if meanings.iter().all(|x| form_of(x).is_some()) { senses.clone() } else { meanings.iter().take_while(|x| form_of(x).is_none()).cloned().collect::<Vec<_>>() }, &m)
     {
         let (_, more) = clean_sense(&next);
-        let more = first_item(&more);
-        if !more.is_empty() && !first.contains(&more) && first.chars().count() + more.chars().count() + 2 <= 48 {
+        // "election (process of choosing a leader…)": the word, not its explanation.
+        let more = without_explanation(&first_item(&more));
+        // Already there as one of its items ("selection" isn't "election").
+        let there = first.split([',', ';']).any(|x| x.trim() == more);
+        if !more.is_empty() && !there && first.chars().count() + more.chars().count() + 2 <= 48 {
             first = format!("{first}; {more}");
         }
     }
@@ -300,6 +303,85 @@ fn first_item(m: &str) -> String {
         }
     }
     m.trim().to_string()
+}
+
+/// The owner's own meaning for a word (data/meanings.tsv), when there is one.
+pub fn chosen(lang: &str, word: &str) -> Option<&'static str> {
+    static ALL: std::sync::OnceLock<Vec<(&'static str, &'static str, &'static str)>> = std::sync::OnceLock::new();
+    ALL.get_or_init(|| {
+        include_str!("../../data/meanings.tsv")
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .filter_map(|l| {
+                let mut it = l.split('\t');
+                Some((it.next()?, it.next()?, it.next()?))
+            })
+            .collect()
+    })
+    .iter()
+    .find(|(l, w, _)| *l == lang && *w == word)
+    .map(|(_, _, m)| *m)
+}
+
+#[test]
+fn the_owners_meanings_come_first() {
+    assert_eq!(chosen("de", "Wahl"), Some("election, vote; choice"));
+    assert_eq!(chosen("de", "Wahlen"), None);
+}
+
+/// A trailing explanation in round brackets, three words or more, goes
+/// ("election (process of choosing a leader)" → "election"); "(with à)" stays.
+fn without_explanation(m: &str) -> String {
+    let t = m.trim_end();
+    if let Some(i) = t.rfind(" (")
+        && t.ends_with(')')
+        && t[i + 2..t.len() - 1].split_whitespace().count() >= 3
+        && !t[i + 2..].starts_with("with ")
+    {
+        return t[..i].trim_end().to_string();
+    }
+    t.to_string()
+}
+
+/// A verb's meaning joined with a noun's ("to make a speech; statement"
+/// read as one verb): the noun gets its "a" (owner, 2026-11-14:
+/// "to make a speech; a statement"). Only for a word that is (or may be,
+/// with no word class given) a noun, and a short plain noun after "; ".
+pub fn noun_after_verb(meaning: &str, pos: &[String]) -> String {
+    let Some((verb, noun)) = meaning.split_once("; ") else { return meaning.to_string() };
+    let may_be_noun = pos.is_empty() || pos.iter().any(|p| p == "noun");
+    let n = noun.trim();
+    let plain = !n.is_empty()
+        && n.split_whitespace().count() <= 2
+        && !n.contains([',', '(', '['])
+        && !["to ", "a ", "an ", "the ", "one's ", "someone"].iter().any(|p| n.starts_with(p))
+        && !["ly", "ed", "ing", "ful", "ous", "ive", "able", "ible", "al", "ic", "less", "y", "s"].iter().any(|e| n.ends_with(e));
+    if !verb.starts_with("to ") || !may_be_noun || !plain {
+        return meaning.to_string();
+    }
+    let a = if n.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" };
+    format!("{verb}; {a} {n}")
+}
+
+#[test]
+fn a_noun_after_a_verb_gets_its_article() {
+    let none: Vec<String> = Vec::new();
+    let noun = vec!["noun".to_string(), "verb".to_string()];
+    let verb = vec!["verb".to_string()];
+    assert_eq!(noun_after_verb("to make a speech; statement", &none), "to make a speech; a statement");
+    assert_eq!(noun_after_verb("to speak; utterance", &noun), "to speak; an utterance");
+    // Another verb, an adjective, a verb-only word: as they are.
+    assert_eq!(noun_after_verb("to conclude, end; to resolve", &none), "to conclude, end; to resolve");
+    assert_eq!(noun_after_verb("to tire; sleepy", &none), "to tire; sleepy");
+    assert_eq!(noun_after_verb("to make a speech; statement", &verb), "to make a speech; statement");
+    assert_eq!(noun_after_verb("choice, selection; election", &noun), "choice, selection; election");
+}
+
+#[test]
+fn a_second_sense_comes_without_its_explanation() {
+    let none = |_: &str| Vec::new();
+    let w: Vec<String> = ["choice, selection", "a surname", "election (process of choosing a leader or representatives)", "quality level"].iter().map(|s| s.to_string()).collect();
+    assert_eq!(short_gloss("Wahl", &w, none).1, "choice, selection; election");
 }
 
 /// A label that marks a sense as out of everyday use, anywhere in it
@@ -571,4 +653,5 @@ mod everyday_tests {
         assert_eq!(short_gloss("répercuter", &["of sound".into(), "of light".into(), "figurative senses".into()], none).1, "");
     }
 }
+
 

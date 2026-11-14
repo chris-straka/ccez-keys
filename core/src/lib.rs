@@ -164,7 +164,11 @@ impl Engine {
             (shown, tags)
         };
         // What kind of word, first among its tags (owner, 2026-11-13).
-        let tags = gloss::with_pos(tags, card(&w).map(|c| c.pos).unwrap_or_default(), &meaning);
+        let pos = card(&w).map(|c| c.pos).unwrap_or_default();
+        let tags = gloss::with_pos(tags, pos.clone(), &meaning);
+        // The owner's own wording first (data/meanings.tsv), else a noun
+        // after a verb gets its article.
+        let meaning = gloss::chosen(base, &w).map(str::to_string).unwrap_or_else(|| gloss::noun_after_verb(&meaning, &pos));
         if shown != w || meaning.is_empty() {
             return (shown, meaning, tags);
         }

@@ -122,3 +122,24 @@ fn card_faces_from_the_dictionaries() {
     face("ja", "駅");
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// Meanings the owner settled (2026-11-14), from this Mac's dictionaries.
+#[cfg(all(test, unix))]
+#[test]
+fn settled_meanings_read_as_agreed() {
+    let dict = crate::paths::data().join("dict");
+    if !dict.exists() {
+        return;
+    }
+    let tmp = std::env::temp_dir().join(format!("ccez-keys-settled-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&tmp);
+    let _ = std::os::unix::fs::symlink(&dict, tmp.join("dict"));
+    let e = ccez_keys_core::Engine::new(tmp.to_string_lossy().into_owned());
+    if e.dictionary_ready("de".into()) {
+        assert_eq!(e.word_face("de", "Wahl").1, "election, vote; choice");
+    }
+    if e.dictionary_ready("zh".into()) {
+        assert_eq!(e.word_face("zh", "发言").1, "to make a speech; a statement");
+    }
+    let _ = std::fs::remove_dir_all(&tmp);
+}
