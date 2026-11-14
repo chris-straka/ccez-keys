@@ -9,13 +9,13 @@ import uk.ccez.keys.ui.Langs
 /**
  * Words to review, one at a time: the owner's Learning words (from every app,
  * through ccez-words) in a shuffled round kept in prefs, so each comes up.
- * The keyboard shows one in the strip on an empty field; Later puts it off
- * for 1, 3, 7, 14, then 30 days. (The prefs are still called "widget": they
- * kept the home-screen widget's round, replaced by the words on screen.)
+ * The keyboard shows one in the strip on an empty field, answered easy,
+ * medium or hard on the screen words' FSRS schedule (the core's review,
+ * synced through ccez-words, so the Mac and the phone share it; owner,
+ * 2026-11-14). (The prefs are still called "widget": they kept the
+ * home-screen widget's round, replaced by the words on screen.)
  */
 object Review {
-    private val DAYS = listOf(1L, 3L, 7L, 14L, 30L)
-    private const val DAY = 24 * 3600 * 1000L
 
     /** A word to show: its flag, article, reading, form tag and meaning. */
     data class Face(
@@ -29,16 +29,17 @@ object Review {
     )
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("widget", Context.MODE_PRIVATE)
-    /** "lang|word" → "due millis,step" for words put off with Later. */
+    /** "lang|word" → "due millis,step": words put off with the old Later, kept off until then. */
     private fun later(ctx: Context) = ctx.getSharedPreferences("widget-later", Context.MODE_PRIVATE)
 
-    /** The Learning words due now (not put off). */
+    /** The Learning words due now. */
     fun due(ctx: Context): List<Pair<String, String>> {
         val now = System.currentTimeMillis()
         val off = later(ctx)
-        return App.instance.engine.learningWords()
+        val e = App.instance.engine
+        return e.learningWords()
             .map { it.lang to it.word }
-            .filter { (l, w) -> (off.getString("$l|$w", null)?.substringBefore(',')?.toLongOrNull() ?: 0L) <= now }
+            .filter { (l, w) -> (off.getString("$l|$w", null)?.substringBefore(',')?.toLongOrNull() ?: 0L) <= now && e.reviewDue(l, w) }
     }
 
     /** The next word of the round (not `shown`, unless it's the only one), left in the round until [seen]; null with none due. */
@@ -71,12 +72,11 @@ object Review {
         later(ctx).edit().remove("$lang|$word").apply()
     }
 
-    /** Later: out of the round for longer each time (1, 3, 7, 14, 30 days). */
-    fun later(ctx: Context, lang: String, word: String) {
-        val p = later(ctx)
-        val step = (p.getString("$lang|$word", null)?.substringAfter(',')?.toIntOrNull() ?: -1) + 1
-        val days = DAYS[step.coerceAtMost(DAYS.lastIndex)]
-        p.edit().putString("$lang|$word", "${System.currentTimeMillis() + days * DAY},$step").apply()
+    /** Easy, medium or hard: FSRS's Easy, Good and Again (hard comes back in minutes). Synced with the statuses. */
+    fun grade(ctx: Context, lang: String, word: String, g: uk.ccez.keys.core.Grade) {
+        App.instance.engine.gradeScreenWord(lang, word, g)
+        later(ctx).edit().remove("$lang|$word").apply()
+        WordSync.soon()
     }
 
     /** Articles a saved word may already start with ("l'ardoise", "la gare"): no second one goes before it. */

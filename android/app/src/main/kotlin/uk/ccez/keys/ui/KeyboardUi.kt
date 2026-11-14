@@ -1106,6 +1106,10 @@ internal object Icons {
     )
     val face = stroke("M21 12a9 9 0 1 1 -18 0a9 9 0 1 1 18 0z", "M8.5 14.5a4.5 4.5 0 0 0 7 0", "M9 9.5h.01M15 9.5h.01")
     val check = stroke("M4 12l5 5L20 6")
+    // The review line's answers: a smile, a straight mouth, a frown.
+    val easy = stroke("M21 12a9 9 0 1 1 -18 0a9 9 0 1 1 18 0z", "M8 13.5a4.8 4.8 0 0 0 8 0", "M9 9.5h.01M15 9.5h.01")
+    val medium = stroke("M21 12a9 9 0 1 1 -18 0a9 9 0 1 1 18 0z", "M8.5 15h7", "M9 9.5h.01M15 9.5h.01")
+    val hard = stroke("M21 12a9 9 0 1 1 -18 0a9 9 0 1 1 18 0z", "M8 16.5a4.8 4.8 0 0 1 8 0", "M9 9.5h.01M15 9.5h.01")
     val capital = stroke("M5 19l6-14 6 14", "M7.5 13.5h7", "M19 9V5M17 7l2-2 2 2")
     val dot = stroke("M4 17h3M10 17h3", "M18 17h.01")
     val vibrate = stroke("M10 4h4a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1 -1.5 1.5h-4a1.5 1.5 0 0 1 -1.5 -1.5v-13a1.5 1.5 0 0 1 1.5 -1.5z", "M4 9v6M20 9v6")

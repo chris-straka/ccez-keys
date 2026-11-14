@@ -640,6 +640,13 @@ impl Engine {
         self.review.lock().unwrap_or_else(|e| e.into_inner()).grade(&lang, &word, grade, now);
     }
 
+    /// May this learning word be asked now (never graded, or its time has
+    /// come)? The phone's review line uses the screen words' schedule.
+    pub fn review_due(&self, lang: String, word: String) -> bool {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        self.review.lock().unwrap_or_else(|e| e.into_inner()).due(&lang, &word, now)
+    }
+
     // --- Japanese and Chinese ---
 
     pub fn has_converter(&self, lang: String) -> bool {

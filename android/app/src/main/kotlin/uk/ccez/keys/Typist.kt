@@ -276,8 +276,8 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     fun reviewOpen() = ui.review?.let { strip.openWord(it.lang, it.word) }
     /** Known (everywhere), then the next word. */
     fun reviewKnown() = ui.review?.let { f -> ui.review = null; uk.ccez.keys.learn.Review.known(service, f.lang, f.word); buzz(HapticFeedbackConstants.CONFIRM); review(f.lang to f.word) }
-    /** Later (1, 3, 7, 14, 30 days), then the next word. (The word goes at once: a second tap can't count twice.) */
-    fun reviewLater() = ui.review?.let { f -> ui.review = null; uk.ccez.keys.learn.Review.later(service, f.lang, f.word); buzz(HapticFeedbackConstants.CONFIRM); review(f.lang to f.word) }
+    /** Easy, medium or hard, then the next word. (The word goes at once: a second tap can't count twice.) */
+    fun reviewGrade(g: uk.ccez.keys.core.Grade) = ui.review?.let { f -> ui.review = null; uk.ccez.keys.learn.Review.grade(service, f.lang, f.word, g); buzz(HapticFeedbackConstants.CONFIRM); review(f.lang to f.word) }
     /** Another word (a swipe). */
     fun reviewNext() = ui.review?.let { f -> ui.review = null; review(f.lang to f.word) }
 

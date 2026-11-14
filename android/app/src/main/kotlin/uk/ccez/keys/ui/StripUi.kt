@@ -505,7 +505,8 @@ fun AskPanel(a: uk.ccez.keys.learn.AskState, typist: Typist) {
 /**
  * One of the owner's Learning words, on an empty field (the keyboard just
  * opened): flag, the word with its article (furigana or pinyin over it), its
- * meaning, Known and Later. Tap the word: its card. Swipe: another word.
+ * meaning, then easy, medium and hard as faces (hold easy: Known). Tap the
+ * word: its card. Swipe: another word.
  */
 @Composable
 fun ReviewRow(f: uk.ccez.keys.learn.Review.Face, typist: Typist) {
@@ -544,18 +545,20 @@ fun ReviewRow(f: uk.ccez.keys.learn.Review.Face, typist: Typist) {
                 modifier = Modifier.alignBy(androidx.compose.ui.layout.LastBaseline),
             )
         }
-        ReviewButton("Known") { typist.reviewKnown() }
-        Spacer(Modifier.width(6.dp))
-        ReviewButton("Later") { typist.reviewLater() }
+        ReviewButton(Icons.easy, "Easy", Color(0xFF8FD3A8), onLongClick = { typist.reviewKnown() }) { typist.reviewGrade(uk.ccez.keys.core.Grade.EASY) }
+        Spacer(Modifier.width(4.dp))
+        ReviewButton(Icons.medium, "Medium", Color(0xFFE6C979)) { typist.reviewGrade(uk.ccez.keys.core.Grade.GOOD) }
+        Spacer(Modifier.width(4.dp))
+        ReviewButton(Icons.hard, "Hard", Color(0xFFFF8A80)) { typist.reviewGrade(uk.ccez.keys.core.Grade.AGAIN) }
     }
 }
 
 @Composable
-private fun ReviewButton(label: String, onClick: () -> Unit) {
-    Text(
-        label,
-        color = Colors.fg,
-        fontSize = 13.sp,
-        modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF2A2A2C)).combinedClickable(onClick = onClick).padding(horizontal = 11.dp, vertical = 5.dp),
-    )
+private fun ReviewButton(icon: androidx.compose.ui.graphics.vector.ImageVector, name: String, tint: Color, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    Box(
+        Modifier.size(34.dp).clip(RoundedCornerShape(50)).background(Color(0xFF2A2A2C)).combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, name, tint = tint, modifier = Modifier.size(20.dp))
+    }
 }
