@@ -169,6 +169,9 @@ impl Engine {
         // The owner's own wording first (data/meanings.tsv), else a noun
         // after a verb gets its article.
         let meaning = gloss::chosen(base, &w).map(str::to_string).unwrap_or_else(|| gloss::noun_after_verb(&meaning, &pos));
+        if let Some(shown) = gloss::chosen_shown(base, &w) {
+            return (shown.to_string(), meaning, tags);
+        }
         if shown != w || meaning.is_empty() {
             return (shown, meaning, tags);
         }

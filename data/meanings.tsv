@@ -1,4 +1,176 @@
 # Meanings the owner chose for a word, over what the dictionary gives first.
-# lang<TAB>word<TAB>meaning (the word as the card shows it, its capitals kept)
+# lang<TAB>word<TAB>meaning[<TAB>word as shown] (the word as the card looks it
+# up, its capitals kept; the last column only when the card should show
+# another form, such as the phrase it lives in)
 de	Wahl	election, vote; choice
+de	Anklage	charge, indictment; accusation
+de	Beweis	proof, evidence
+de	Regierung	government, administration
+de	Richter	judge
+de	Spur	trace, trail; lane
+de	Urteil	verdict, sentence; judgement
+de	Zeuge	witness
+de	allerdings	however, though; indeed
+de	beschließen	to decide, to resolve; to end
+de	eigentlich	actually, really; actual
+de	fressen	to eat (of animals); to devour
+de	löschen	to delete; to put out (a fire)
+de	trotzdem	nevertheless, anyway, still
+de	verhaften	to arrest
+de	vorwerfen	to accuse of, to reproach; to throw at
+de	überzeugen	to convince; to be convincing
 fr	emballer	to wrap, to pack; to thrill
+fr	NBC	nuclear, biological, chemical
+fr	aborder	to tackle, to address; to approach
+fr	acheter	to buy
+fr	aliéné	lunatic, insane person
+fr	aller	to go
+fr	ancré	anchored; deep-rooted
+fr	angoisse	anxiety, anguish
+fr	apparaître	to appear
+fr	ardoise	slate; tab (money owed)
+fr	astucieux	clever, smart, astute
+fr	avoir	to have
+fr	beaucoup	a lot, much, many
+fr	bien	well; good, fine
+fr	bienvenue	welcome
+fr	bonus	bonus
+fr	cacahuète	peanut
+fr	cap	course, direction; milestone; cape
+fr	chambre	bedroom, room; chamber
+fr	consister	to consist (of, in)
+fr	couche	layer; diaper
+fr	dans	in, inside; into
+fr	de	of, from; some
+fr	destituer	to dismiss, to remove from office
+fr	dieu	god
+fr	digne	worthy; dignified
+fr	débattre	to debate, to discuss; to negotiate
+fr	déchu	fallen, deposed
+fr	démarche	approach, step; gait, walk
+fr	déplaire	to displease, to be disliked
+fr	déposé	filed, deposited; registered (trademark)
+fr	désavouer	to disown, to disavow; to retract
+fr	détenir	to hold, to possess; to detain
+fr	efforcer	to try hard to, to strive to
+fr	encaisser	to cash, to collect; to take (a blow)
+fr	enfreindre	to break (a rule), to infringe
+fr	entamer	to begin, to start; to cut into
+fr	entente	agreement, understanding
+fr	farouche	fierce; shy, wild
+fr	fauché	broke (no money); mown down
+fr	fausser	to distort, to skew; to falsify
+fr	fois	time (as in once, twice)
+fr	freiner	to brake; to slow down, to curb
+fr	fulgurer	to flash, to blaze
+fr	gens	people
+fr	gênant	embarrassing, awkward; annoying
+fr	il	he; it
+fr	imbriquer	to interlock, to nest
+fr	impossible	impossible
+fr	infraction	offence, violation
+fr	insouciance	carefreeness, unconcern
+fr	intérieur	inside, interior; domestic
+fr	inédit	new, unprecedented; unpublished
+fr	la	the; her, it
+fr	le	the; him, it
+fr	lorgner	to eye, to ogle
+fr	lorsque	when
+fr	maintenant	now
+fr	mais	but
+fr	marchander	to haggle (over)
+fr	marre	to be fed up	en avoir marre
+fr	maussade	sullen, glum; dull (weather)
+fr	mec	guy, dude; boyfriend
+fr	moment	moment
+fr	mon	my
+fr	monde	world; people
+fr	monnaie	currency; change (coins)
+fr	même	even; same
+fr	ne	not (ne … pas)
+fr	nous	we; us
+fr	nouveau	new
+fr	ouais	yeah
+fr	parvenir	to reach; to manage to
+fr	pompé	pumped; worn out
+fr	pour	for; in order to
+fr	problème	problem
+fr	promesse	promise
+fr	promouvoir	to promote
+fr	présentation	presentation; introduction
+fr	prévenir	to warn; to prevent
+fr	que	that; what; than
+fr	quelconque	any, some; ordinary
+fr	quoi	what
+fr	refondre	to overhaul, to recast
+fr	refonte	overhaul, redesign
+fr	remettre	to put back; to hand in; to postpone
+fr	remise	discount; handing over
+fr	remporter	to win; to take back
+fr	resserrer	to tighten; to strengthen (ties)
+fr	ressort	spring (coil); remit, competence
+fr	rédiger	to write, to draft
+fr	répercuter	to pass on (costs); to echo
+fr	républicain	republican
+fr	saper	to undermine; to sap
+fr	savoir	to know; knowledge
+fr	si	if, whether; so
+fr	sinistré	disaster-stricken, devastated
+fr	soupçonner	to suspect
+fr	sur	on, upon; about
+fr	ton	your
+fr	tout	all, whole; everything
+fr	trucage	rigging, fixing; special effects
+fr	tutelle	guardianship; supervision
+fr	un	a, an; one
+fr	vacherie	nastiness, dirty trick
+fr	voici	here is, here are
+fr	waouh	wow
+fr	y	there
+fr	à	to, at; in
+fr	ça	that, it
+fr	écouter	to listen to
+fr	éloge	praise
+fr	éloigner	to move away, to distance
+fr	époustouflant	breathtaking, amazing
+ja	出馬	running (for election)
+ja	大豆	soybean
+ja	守る	to protect; to keep (a promise)
+ja	得る	to get, to obtain; can
+ja	情報を得る	to get information
+ja	支持	support
+ja	明らか	clear, obvious
+ja	有権者	voter
+ja	殴る	to hit, to punch
+ja	治療	treatment
+ja	渡る	to cross (over)
+ja	状況	situation
+ja	背後	behind; background
+ja	認める	to admit; to recognize
+ja	責任	responsibility; liability
+ja	首相	prime minister
+ja	騙す	to deceive, to trick
+ko	결정하다	to decide
+ko	대통령	president
+ko	사람	person
+ko	시간	time; hour
+ko	이해하다	to understand
+ko	정부	government
+zh	关于	about, concerning
+zh	减少	to reduce, to decrease
+zh	回复	to reply; to recover
+zh	回答	to answer; an answer
+zh	增加	to increase
+zh	宣布	to announce, to declare
+zh	将	will, shall
+zh	情况	situation, circumstances
+zh	推文	a tweet, a post
+zh	政府	government
+zh	新闻	news
+zh	清楚	clear
+zh	职位	position, post
+zh	要点	main point
+zh	观点	point of view
+zh	解决	to solve, to resolve
+zh	过去	the past; to go over
+zh	造成	to cause, to bring about

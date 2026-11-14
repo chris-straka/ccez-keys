@@ -101,6 +101,7 @@ pub fn reflexive(lang: &str, shown: &str) -> String {
     let (verb, rest) = shown.split_once(' ').map(|(a, b)| (a, format!(" {b}"))).unwrap_or((shown, String::new()));
     let base = lang.split(['-', '_']).next().unwrap_or(lang);
     match base {
+        "fr" if verb.starts_with("s'") || verb.starts_with("s’") || verb == "se" => shown.to_string(),
         "fr" => {
             let vowel = verb.chars().next().is_some_and(|c| "aeiouyhâàéèêëîïôûAEIOUYH".contains(c));
             if vowel { format!("s'{verb}{rest}") } else { format!("se {verb}{rest}") }
@@ -265,6 +266,7 @@ fn clean_sense(m: &str) -> (Vec<String>, String) {
     // end goes; a qualifier stays ("to talk (with sb)"), and a rare English
     // word gives way to its explanation.
     let body = keep_note(&body);
+    let body = body.strip_suffix('.').filter(|b| !b.ends_with('.')).map(str::to_string).unwrap_or(body);
     (tags, cap(&body, 48))
 }
 
@@ -307,26 +309,36 @@ fn first_item(m: &str) -> String {
 
 /// The owner's own meaning for a word (data/meanings.tsv), when there is one.
 pub fn chosen(lang: &str, word: &str) -> Option<&'static str> {
-    static ALL: std::sync::OnceLock<Vec<(&'static str, &'static str, &'static str)>> = std::sync::OnceLock::new();
+    chosen_entry(lang, word).map(|(m, _)| m)
+}
+
+/// The word as the owner's entry shows it ("marre" → "en avoir marre"), when it says.
+pub fn chosen_shown(lang: &str, word: &str) -> Option<&'static str> {
+    chosen_entry(lang, word).and_then(|(_, s)| s)
+}
+
+fn chosen_entry(lang: &str, word: &str) -> Option<(&'static str, Option<&'static str>)> {
+    static ALL: std::sync::OnceLock<Vec<(&'static str, &'static str, &'static str, Option<&'static str>)>> = std::sync::OnceLock::new();
     ALL.get_or_init(|| {
         include_str!("../../data/meanings.tsv")
             .lines()
-            .filter(|l| !l.starts_with('#'))
+            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
             .filter_map(|l| {
                 let mut it = l.split('\t');
-                Some((it.next()?, it.next()?, it.next()?))
+                Some((it.next()?, it.next()?, it.next()?, it.next().filter(|s| !s.is_empty())))
             })
             .collect()
     })
     .iter()
-    .find(|(l, w, _)| *l == lang && *w == word)
-    .map(|(_, _, m)| *m)
+    .find(|(l, w, _, _)| *l == lang && *w == word)
+    .map(|(_, _, m, s)| (*m, *s))
 }
 
 #[test]
 fn the_owners_meanings_come_first() {
     assert_eq!(chosen("de", "Wahl"), Some("election, vote; choice"));
     assert_eq!(chosen("de", "Wahlen"), None);
+    assert_eq!(chosen_shown("fr", "marre"), Some("en avoir marre"));
 }
 
 /// A trailing explanation in round brackets, three words or more, goes
@@ -392,6 +404,26 @@ fn niche_label(l: &str) -> bool {
     OUT.iter().any(|w| l.split(|c: char| !c.is_alphabetic()).any(|x| x == *w))
 }
 
+/// A line about the word, not a meaning of it: "CL:種|种", "variant of
+/// 回覆", "alternative of oui", "A with grave accent", "accusative of il".
+fn dictionary_note(s: &str) -> bool {
+    let t = untagged(s).trim();
+    const NOTES: [&str; 9] = ["variant of", "alternative of", "initialism of", "abbreviation of", "acronym of", "accusative of", "possessive of", "with grave accent", "similar in colo"];
+    t.starts_with("CL:") || NOTES.iter().any(|n| t.to_lowercase().contains(n)) || t.starts_with("Substitutes for")
+}
+
+#[test]
+fn notes_are_not_second_meanings() {
+    let none = |_: &str| Vec::new();
+    let senses = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(short_gloss("政府", &senses(&["government", "CL:個|个[ge4]"]), none).1, "government");
+    assert_eq!(short_gloss("à", &senses(&["to (destination)", "A with grave accent"]), none).1, "to (destination)");
+    assert_eq!(short_gloss("chambre", &senses(&["a room."]), none).1, "a room");
+    // Already reflexive as saved: not "se s'attarder".
+    assert_eq!(reflexive("fr", "s'attarder"), "s'attarder");
+    assert_eq!(reflexive("fr", "attarder"), "s'attarder");
+}
+
 /// The next sense worth adding after `chosen`: among the first four, not
 /// out of use, not a narrowing of the one before ("(specifically) …").
 fn second_sense(senses: &[String], chosen: &str) -> Option<String> {
@@ -403,6 +435,7 @@ fn second_sense(senses: &[String], chosen: &str) -> Option<String> {
         labels.iter().all(|l| GRAMMAR.contains(&l.as_str()))
             && form_of(s).is_none()
             && !untagged(s).trim().is_empty()
+            && !dictionary_note(s)
             // A name, not a meaning ("a surname", "a male given name").
             && !["surname", "given name", "placename", "place name"].iter().any(|n| untagged(s).contains(n))
     }).cloned()
