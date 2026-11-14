@@ -43,6 +43,10 @@ Read `~/AGENTS.md` and `~/SWE/AGENTS.md` first, then `PLAN.md`.
   mInputShown=true doesn't mean the owner is typing (the keyboard stays
   up in an idle app); in a session with the owner, go ahead (owner,
   2026-11-08: "just cut me off, I'm not using it").
+- An emulator on the Mac can reach the owner's real word list (the Mac's
+  ccez-words through 10.0.2.2): `keys get words.server` first and set it to
+  `""` before a check that changes words or grades (2026-11-14: a check
+  marked a real word Known).
 - Never `am force-stop uk.ccez.keys` while it's the chosen keyboard:
   Android falls back to Samsung Keyboard. ccez-keys is the owner's
   keyboard: if a check switched away, put it back
