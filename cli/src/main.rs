@@ -11,6 +11,8 @@
 //!     keys log [-n 50]             the keyboard's events and errors
 //!     keys key < file              the AI key, from stdin (empty removes it);
 //!                                  it never appears on a command line
+//!     keys keyring [allow|deny|drop <package>]   apps given the AI key
+//!                                  (docs/keyring.md); no argument lists them
 //!
 //! The phone: $KEYS_SERIAL, else the only device adb sees. Output is
 //! JSON (except log, JSON lines). Errors are plain words, exit code 1.
@@ -34,6 +36,8 @@ fn main() {
         // The word may be a phrase, in one argument ("parvenir à") or several.
         ["word", lang, rest @ ..] if !rest.is_empty() => ("word", Some(format!("{lang} {}", rest.join(" "))), None),
         ["forget", lang, rest @ ..] if !rest.is_empty() => ("forget", Some(format!("{lang} {}", rest.join(" "))), None),
+        ["keyring"] => ("keyring", Some("list".to_string()), None),
+        ["keyring", rest @ ..] => ("keyring", Some(rest.join(" ")), None),
         ["log"] => ("log", Some("50".to_string()), None),
         ["log", "-n", n] => ("log", Some(n.to_string()), None),
         ["backup"] | ["backup", _] => {
@@ -68,7 +72,7 @@ fn main() {
             return;
         }
         _ => {
-            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key < file | backup [dir] | restore <file>");
+            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key < file | keyring [allow|deny|drop <package>] | backup [dir] | restore <file>");
             exit(2);
         }
     };

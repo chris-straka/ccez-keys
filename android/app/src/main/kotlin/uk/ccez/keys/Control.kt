@@ -138,6 +138,21 @@ class Control : ContentProvider() {
                     app.log("info", "ai-key", "set" to value.isNotBlank())
                     if (value.isBlank()) "removed" else "saved"
                 }
+                // Apps given the AI key: `keys keyring` lists them, `keys keyring allow|deny|drop <package>`.
+                "keyring" -> {
+                    val parts = (arg ?: "list").split(' ').filter { it.isNotEmpty() }
+                    val k = uk.ccez.keys.keyring.Keyring
+                    when (parts.getOrNull(0)) {
+                        "list" -> JSONArray(k.decided(app).map { (p, ok) -> JSONObject().put("app", p).put("allowed", ok).put("signed_as_allowed", if (ok) k.allowed(app, p) else null) }).toString(2)
+                        "allow", "deny" -> {
+                            val p = parts.getOrNull(1) ?: error("keyring ${parts[0]} needs a package")
+                            if (!k.decide(app, p, parts[0] == "allow")) error("$p isn't installed")
+                            (if (parts[0] == "allow") "allowed " else "denied ") + p
+                        }
+                        "drop" -> parts.getOrNull(1)?.let { k.forget(app, it); "dropped $it" } ?: error("keyring drop needs a package")
+                        else -> error("keyring list | allow <package> | deny <package> | drop <package>")
+                    }
+                }
                 "log" -> engine.logTail((arg?.toIntOrNull() ?: 50).coerceIn(1, 5000).toUInt())
                 else -> error("no command called $method")
             }

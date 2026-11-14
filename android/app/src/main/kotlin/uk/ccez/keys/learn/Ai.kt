@@ -46,11 +46,15 @@ object Secrets {
     fun set(ctx: Context, value: String?) {
         cached = value?.trim()?.ifEmpty { null }
         loaded = true
-        if (value.isNullOrBlank()) { prefs(ctx).edit().remove("ai").apply(); return }
+        // Bumped on every change: apps given the key (keyring/) see it's new.
+        val next = version(ctx) + 1
+        if (value.isNullOrBlank()) { prefs(ctx).edit().remove("ai").putInt("version", next).apply(); return }
         val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val data = c.iv + c.doFinal(value.trim().toByteArray())
-        prefs(ctx).edit().putString("ai", Base64.encodeToString(data, Base64.NO_WRAP)).apply()
+        prefs(ctx).edit().putString("ai", Base64.encodeToString(data, Base64.NO_WRAP)).putInt("version", next).apply()
     }
+
+    fun version(ctx: Context): Int = prefs(ctx).getInt("version", 1)
 
     fun get(ctx: Context): String? {
         if (loaded) return cached

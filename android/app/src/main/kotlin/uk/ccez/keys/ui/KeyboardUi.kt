@@ -890,6 +890,15 @@ private fun AiSettings(version: Int) {
         }
         if (hint != null) Action("Remove") { uk.ccez.keys.learn.Secrets.set(ctx, null); hint = null }
     }
+    // Apps given the key (keyring/), or refused it: Remove makes one ask again.
+    var apps by remember(version) { mutableStateOf(uk.ccez.keys.keyring.Keyring.decided(ctx)) }
+    apps.forEach { (pkg, ok) ->
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(uk.ccez.keys.keyring.Keyring.label(ctx, pkg), color = if (ok) Colors.fg else Colors.dim, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+            if (!ok) Text("Refused", color = Colors.dim, fontSize = 12.sp)
+            Action("Remove") { uk.ccez.keys.keyring.Keyring.forget(ctx, pkg); apps = uk.ccez.keys.keyring.Keyring.decided(ctx) }
+        }
+    }
     TwoColumns(listOf(Triple(Icons.spark, "Corrections", "ai.tips")), version)
 }
 

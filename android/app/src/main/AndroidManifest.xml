@@ -13,6 +13,8 @@
     <!-- Installs its own updates (from the GitHub releases). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- The keyring's yes/no screen hides anything drawn over it. -->
+    <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
 
     <queries>
         <!-- ccez-whisper hears held dictation; Android's recogniser hears the rest. -->
@@ -77,5 +79,20 @@
             android:name=".Control"
             android:authorities="uk.ccez.keys.control"
             android:exported="true" />
+
+        <!-- The AI key for the owner's other apps (docs/keyring.md): each
+             app allowed once, by its signing certificate. -->
+        <provider
+            android:name=".keyring.Provider"
+            android:authorities="uk.ccez.keys.keyring"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+
+        <activity
+            android:name=".keyring.Approve"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
     </application>
 </manifest>
