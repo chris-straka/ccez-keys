@@ -919,13 +919,6 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val action = (info?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
         val noAction = (info?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0
         val multiLine = (info?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0
-        // Apps whose box is a query, though it takes lines: ⏎ puts the keyboard away
-        // (owner, 2026-11-15: Google Translate made a new line).
-        if (info?.packageName in ENTER_CLOSES) {
-            service.requestHideSelf(0)
-            updateBar()
-            return
-        }
         if (!noAction && !multiLine && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             ic.performEditorAction(action)
             updateShift()
@@ -1439,9 +1432,6 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_URI,
         )
-
-        /** Apps where ⏎ puts the keyboard away instead of starting a line. */
-        private val ENTER_CLOSES = setOf("com.google.android.apps.translate")
 
         fun isWordChar(c: Char) = c.isLetterOrDigit() || c == '\'' || c == '’' || c == '-' || isMark(c)
 

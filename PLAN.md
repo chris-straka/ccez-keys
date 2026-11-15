@@ -15,8 +15,8 @@
 - Typing in front of a word ("dictatio|n") suggests from the whole word
   ("dictation"), and taking it lands after it with a space.
 - The preview line's grade buttons: icons other than smiley faces.
-- Google Translate: ⏎ closes the keyboard instead of a new line. (Its
-  lensless camera is Google's own tab icon, not ours.)
+- ccez-translate (the owner's own app, not Google's): ⏎ closes the
+  keyboard, and its camera tab gets a lens: both fixed in that app (v0.1.37).
 - Muse key list in the keyboard: it is the keyring (ccez-keys holds the key
   for the owner's apps); the rows are the apps allowed to use it.
 
