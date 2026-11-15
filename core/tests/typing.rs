@@ -370,3 +370,24 @@ fn a_fix_taken_back_sticks() {
     // Other fixes go on.
     assert_eq!(fix(&e, "en", "im").as_deref(), Some("I'm"));
 }
+
+#[test]
+fn rarer_real_words_are_left_alone() {
+    // Owner, 2026-11-15: "dictation" typed in full was offered as "citation".
+    let e = engine(&["en"]);
+    assert_eq!(fix(&e, "en", "dictation"), None);
+    assert!(e.suggest("en".into(), "dictation".into()).typed_known);
+}
+
+#[test]
+fn letters_typed_in_front_of_a_word() {
+    // "dictatio|n" and "dict|n": the n after the cursor counts.
+    let e = engine(&["en", "fr"]);
+    let w = e.suggest_around("en".into(), "dictatio".into(), "n".into(), 3);
+    assert_eq!(w.first().map(String::as_str), Some("dictation"));
+    let w = e.suggest_around("en".into(), "dict".into(), "n".into(), 3);
+    assert!(w.iter().any(|x| x == "dictation"), "{w:?}");
+    assert!(w.iter().all(|x| x.starts_with("dict") && x.ends_with('n')), "{w:?}");
+    let w = e.suggest_around("fr".into(), "mais".into(), "on".into(), 3);
+    assert_eq!(w.first().map(String::as_str), Some("maison"));
+}

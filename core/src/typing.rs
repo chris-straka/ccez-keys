@@ -260,6 +260,45 @@ pub fn suggest_in(lang: &Lang, others: &[&Lang], typed: &str, ctx: &Context, key
     Suggestions { words, correction, typed_known }
 }
 
+/// Words that start like `typed` and end in `after` (the letters after
+/// the cursor), commonest first: the whole when it's a word, then
+/// completions of `typed` that keep `after` as their end.
+pub fn around(lang: &Lang, typed: &str, after: &str, keys: &Neighbours, n: usize) -> Vec<String> {
+    if typed.is_empty() || after.is_empty() {
+        return vec![];
+    }
+    let whole = format!("{typed}{after}");
+    let tail = crate::words::fold(after);
+    let min = crate::words::fold(&whole).chars().count();
+    let mut found: Vec<(f32, &str)> = lang
+        .lex
+        .search(typed, 0.0, 2000, keys)
+        .into_iter()
+        .map(|c| &lang.lex.entries[c.id as usize])
+        .filter(|e| !lang.removed(&e.word))
+        .filter(|e| {
+            let f = crate::words::fold(&e.word);
+            f.ends_with(&tail) && f.chars().count() >= min
+        })
+        .map(|e| (e.logf, &*e.word))
+        .collect();
+    found.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out: Vec<String> = Vec::new();
+    if is_word(lang, &whole) {
+        out.push(whole.clone());
+    }
+    for (_, w) in found {
+        let w = with_case(typed, w);
+        if out.len() >= n {
+            break;
+        }
+        if !out.iter().any(|x| x.to_lowercase() == w.to_lowercase()) {
+            out.push(w);
+        }
+    }
+    out
+}
+
 struct Scored<'a> {
     score: f32,
     logf: f32,
@@ -287,6 +326,13 @@ pub fn fit(lang: &Lang, words: &[String]) -> f32 {
 /// Among the language's 3000 commonest words, as written (case aside).
 pub fn very_common(lang: &Lang, word: &str) -> bool {
     own_logf(lang, word).is_some_and(|f| f > -(3_000f32).ln())
+}
+
+/// Among the language's 30000 commonest words (case aside): a word of the
+/// lists' core, not one of the rarer ones kept only so they're never
+/// corrected (English goes to 60000, and "bonjour" and "merci" are in it).
+pub fn listed(lang: &Lang, word: &str) -> bool {
+    own_logf(lang, word).is_some_and(|f| f > -(30_000f32).ln())
 }
 
 /// Whether `w` is a word here, as written (case aside).

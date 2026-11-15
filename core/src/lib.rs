@@ -327,6 +327,17 @@ impl Engine {
         self.suggest_in(lang, typed, String::new())
     }
 
+    /// Words for letters typed in front of the rest of a word ("dictatio|n",
+    /// "dict|n"): commonest first, each starting like `typed` and ending in
+    /// `after`, the whole as typed first when it's a word. At most `n`.
+    pub fn suggest_around(&self, lang: String, typed: String, after: String, n: u32) -> Vec<String> {
+        let s = self.lock();
+        let Some(l) = s.langs.get(&lang) else { return vec![] };
+        let empty = words::Neighbours::default();
+        let keys = s.keys.get(&lang).unwrap_or(&empty);
+        typing::around(l, &typed, &after, keys, n as usize)
+    }
+
     /// Suggestions for the word being typed, ordered with the text before
     /// it in mind (`before`: up to the cursor, the word at its end): the
     /// word before, and the paragraph's words.
@@ -371,7 +382,7 @@ impl Engine {
         // ("chez", "merci", "gracias" on English).
         if let [w] = words.as_slice() {
             let here = s.langs.get(&current)?;
-            if w.chars().count() < 3 || typing::is_word(here, w) {
+            if w.chars().count() < 3 || typing::listed(here, w) {
                 return None;
             }
             let found: Vec<String> = self.typing_languages_of(&s.settings).into_iter().filter(|l| *l != current).filter(|l| s.langs.get(l).is_some_and(|x| typing::very_common(x, w))).collect();
