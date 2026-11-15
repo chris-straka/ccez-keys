@@ -1,34 +1,73 @@
 # Han character parts: cjk-decomp (MIT) and Unihan (© 1991-2026 Unicode, Inc., Unicode License V3, https://www.unicode.org/license.txt)
+丈	十|ten| 乂|cross|
+三	一|one|r 二|two|
+上	卜|divine| 一|one|r
+下	一|one|r 卜|fortune_telling|
 不	丆|kwukyel| 卜|fortune_telling|
+与	己|self| 一|one|r
 丑	刀|knife| 二|two|
 专	二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 龴||
+且	月|moon| 一|one|r
+丘	斤|a_catty_(approximately_600_g)| 一|one|r
+丙	一|one|r 内|inside|
+业	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 一|one|r
+丛	从|from| 一|one|r
 东	七|seven| 小|small|
+両	一|one|r 山|mountain| 冂|borders|
 丢	壬|ninth_heavenly_stem| 厶|private|
+两	一|one|r 从|from| 冂|borders|
 严	亚|Asia| 厂|factory|
 並	䒑|| 业|profession|
+丧	土|soil| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 乚|hook| 冫|ice|
 个	人|man| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|r
 中	口|mouth| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|r
 丰	三|three| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|r
+丸	九|nine| 丶|dot|r
+丹	冂|borders| 亠|head|
+为	力|power| 冫|ice|
+主	王|king| 丶|dot|r
+丼	井|well| 丶|dot|r
 举	兴|thrive| 二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
+久	勹|wrap| 乀|stroke|r
+么	丿|slash|r 厶|private|
+义	乂|cross| 丶|dot|r
+乏	丿|slash|r 之|marks_preceding_phrase_as_modifier_of_following_phrase|
 乔	夭|young| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 乗	禾|grain_still_on_stalk| 龷||
 乘	禾|grain_still_on_stalk| 北|north|
+也	乚|hook|r 乛|hook|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
+习	乛|hook|r 亠|head|
+书	乛|hook|r 乛|hook|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丶|dot|
+乱	舌|tongue| 乚|hook|r
+乳	孚|brood_over_eggs| 乚|hook|r
 乾	龺|| 乞|beg|
+亀	刀|knife| 田|field| 电|electricity|
+争	刀|knife| 彐|snout| 亅|hook|r
+事	十|ten| 中|central| 聿|brush| 亅|hook|r
+于	干|oppose| 亅|hook|
 云	二|two|r 厶|private|
+互	一|one| 彑|snout|
+五	一|one| 力|power| 一|one|
 井	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 二|two|r
+亚	一|one| 业|profession|
 些	此|this| 二|two|r
 亜	二|two|r 口|mouth| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
+亡	匸|box| 丶|dot|
+交	六|number_six| 乂|cross|
+亦	亠|head|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 亅|hook| 八|eight|
 产	立|stand| 厂|factory|
 享	亠|head|r 口|mouth| 子|offspring|
 京	亠|head|r 口|mouth| 小|small|
 亭	亠|head|r 口|mouth| 冖|cover| 丁|male_adult|
 亮	亠|head|r 口|mouth| 冖|cover| 几|small_table|
 亲	立|stand| 朩|kwukyel:_rank|
+亿	亻||r 乙|second|
 什	亻||r 十|ten|
 仁	亻||r 二|two|
 仅	亻||r 又|and|
 仆	亻||r 卜|fortune_telling|
 仇	亻||r 九|nine|
+今	亽|kwukyel| 乛|hook|
 介	人|man|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 仍	亻||r 乃|then|
 从	人|man|r 人|man|r
@@ -42,6 +81,7 @@
 仙	亻||r 山|mountain|
 代	亻||r 弋|catch|
 令	亽|kwukyel| 龴||
+以	乚|hook| 丶|dot| 人|man|r
 仪	亻||r 义|right_conduct|
 们	亻||r 门|gate|
 仮	亻||r 反|reverse|
@@ -99,6 +139,8 @@
 侧	亻||r 则|rule|
 侮	亻||r 每|every|
 侯	亻||r 匚|box| 矢|arrow|
+侵	亻||r 彐|snout| 冖|cover| 又|and|
+侶	亻||r 口|mouth| 丿|slash| 口|mouth|
 便	亻||r 更|more|
 係	亻||r 系|system|
 促	亻||r 足|foot|
@@ -108,6 +150,7 @@
 保	亻||r 呆|dull|
 信	亻||r 言|words|
 俩	亻||r 两|two|
+修	亻||r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 攵|strike| 彡|hair|
 俱	亻||r 具|tool|
 俳	亻||r 非|not|
 俵	亻||r 表|show|
@@ -162,7 +205,10 @@
 兄	口|mouth| 儿|son|r
 充	亠|head| 允|to_grant|
 兆	儿|son|r 冫|ice| 冫|ice|
+先	牛|cow| 儿|son|r
+光	小|small| 兀|to_cut_off_the_feet|
 克	古|old| 儿|son|r
+免	刀|knife| 中|central| 乚|hook|
 児	旧|old| 儿|son|r
 党	龸|| 兄|elder_brother|
 全	人|man| 王|king|
@@ -171,14 +217,23 @@
 兰	丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 三|three|
 共	龷|| 八|eight|r
 关	丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 天|sky|
+兴	小|small| 一|one| 八|eight|r
+其	甘|sweetness| 一|one| 八|eight|r
+具	目|eye| 一|one| 八|eight|r
 典	曲|crooked| 八|eight|r
 养	羊|sheep| 八|eight|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
+兼	䒑|| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 八|eight|r 彐|snout|
+内	人|man| 冂|borders|r
+円	冂|borders|r 丄|above|
+册	冂|borders|r 一|one| 冂|borders|r 一|one|
+再	一|one| 冉|tender|
 冒	冃|| 目|eye|
 冗	冖|cover|r 几|small_table|
 写	冖|cover|r 与|and|
 军	冖|cover|r 车|cart|
 冠	冖|cover|r 㝴||
 冥	冖|cover|r 昗||
+冬	夊|go_slowly| 冫|ice|r
 冯	冫|ice|r 马|horse|
 冰	冫|ice|r 水|water|
 冲	冫|ice|r 中|central|
@@ -194,14 +249,18 @@
 凍	冫|ice|r 東|east|
 减	冫|ice|r 咸|together|
 凝	冫|ice|r 疑|doubt|
+凡	几|small_table|r 丶|dot|
 凤	几|small_table|r 又|and|
 処	夊|go_slowly| 几|small_table|r
 凭	任|trust_to| 几|small_table|r
 凯	岂|how?_what?| 几|small_table|r
+凶	凵|receptacle|r 乂|cross|
 击	二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 山|mountain|
 函	凵|receptacle|r 了|to_finish| 冫|ice| 冫|ice|
+刃	刀|knife|r 丶|dot|
 分	八|eight| 刀|knife|r
 切	七|seven| 刀|knife|r
+刈	乂|cross| 刂|knife|r
 刊	干|oppose| 刂|knife|r
 刑	开|open| 刂|knife|r
 划	戈|halberd| 刂|knife|r
@@ -212,6 +271,7 @@
 创	仓|granary| 刂|knife|r
 初	衤|clothes| 刀|knife|r
 判	半|half| 刂|knife|r
+別	口|mouth| 丿|slash| 乛|hook| 刂|knife|r
 利	禾|grain_still_on_stalk| 刂|knife|r
 别	另|another| 刂|knife|r
 到	至|reach| 刂|knife|r
@@ -251,6 +311,7 @@
 励	厉|whetstone| 力|power|r
 劲	龴|| 工|labor| 力|power|r
 劳	艹|grass| 冖|cover| 力|power|r
+労	小|small| 冖|cover| 力|power|r
 効	交|mix| 力|power|r
 劾	亥|twelfth_earthly_branch| 力|power|r
 势	执|hold_in_hand| 力|power|r
@@ -270,22 +331,36 @@
 勾	勹|wrap|r 厶|private|
 匂	勹|wrap|r 匕|spoon|
 包	勹|wrap|r 巳|sixth_earthly_branch|
+匆	勿|must_not| 丶|dot|
 化	亻|| 匕|spoon|r
 北	匕|spoon|r 匕|spoon|r
 匠	匚|box|r 斤|a_catty_(approximately_600_g)|
 匹	匚|box| 儿|son|
+区	匚|box| 乂|cross|
 医	匚|box| 矢|arrow|
 匿	匚|box| 若|if|
+十	一|one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
+千	丿|slash| 十|ten|r
+升	艹|grass| 丿|slash|
+午	干|oppose| 丿|slash|
 半	二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example|
 华	化|change| 十|ten|r
 协	十|ten|r 办|manage|
+卑	甲|armor| 丶|dot| 十|ten|r
 卒	亠|head| 从|from| 十|ten|r
+卓	卜|divine| 早|early|
 協	十|ten|r 劦|(variant_of_協)_cooperate|
 单	丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 甲|armor| 十|ten|r
 卖	十|ten|r 买|buy|
+単	小|small| 甲|armor| 十|ten|r
 博	十|ten|r 尃|to_state_to|
+卜	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丶|dot|
+占	卜|divine|r 口|mouth|
 卡	上|top| 卜|fortune_telling|r
+卢	卜|divine|r 尸|corpse|
 卧	臣|minister| 卜|fortune_telling|r
+卫	乛|hook| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 一|one|
+危	刀|knife| 厄|adversity|
 却	去|go_away| 卩|seal|r
 卵	卪|kwukyel| 卪|kwukyel|
 卷	龹|| 㔾||
@@ -297,13 +372,17 @@
 厌	厂|factory|r 犬|dog|
 厘	厂|factory|r 里|unit_of_distance|
 厚	厂|factory|r 日|sun| 子|offspring|
+厳	小|small| 厂|factory|r 敢|to_dare|
 去	土|soil| 厶|private|r
 县	且|moreover| 厶|private|r
 参	厶|private|r 大|big| 彡|hair|
+及	乃|then| 乀|stroke|
 双	又|and|r 又|and|r
+反	厂|cliff| 又|and|r
 収	丩|to_join_or_connect_the_vine| 又|and|r
 叔	尗|younger_of_brothers| 又|and|r
 取	耳|ear| 又|and|r
+受	爫|claw| 冖|cover| 又|and|r
 变	亦|also| 又|and|r
 叙	余|I| 又|and|r
 叛	半|half| 反|reverse|
@@ -315,6 +394,7 @@
 召	刀|knife| 口|mouth|r
 可	丁|male_adult| 口|mouth|r
 台	厶|private| 口|mouth|r
+史	中|central| 乂|cross|
 叶	口|mouth|r 十|ten|
 号	口|mouth|r 丂|obstruction_of_breath_(qi)_as_it_seeks_release|
 叹	口|mouth|r 又|and|
@@ -323,6 +403,7 @@
 合	亼|to_assemble._to_gather_together| 口|mouth|r
 吉	士|scholar| 口|mouth|r
 名	夕|evening| 口|mouth|r
+吏	十|ten| 中|central| 乂|cross|
 吐	口|mouth|r 土|soil|
 向	宀|roof| 口|mouth|r
 吓	口|mouth|r 下|under|
@@ -342,8 +423,10 @@
 吻	口|mouth|r 勿|must_not|
 吾	五|five| 口|mouth|r
 呀	口|mouth|r 牙|tooth|
+呂	口|mouth|r 囗|erect| 丶|dot|
 呆	口|mouth|r 木|tree|
 呈	口|mouth|r 王|king|
+告	牛|cow| 口|mouth|r
 员	口|mouth|r 贝|sea_shell|
 呢	口|mouth|r 尼|Buddhist_nun|
 周	田|field| 口|mouth|r
@@ -372,6 +455,7 @@
 唄	口|mouth|r 貝|sea_shell|
 唆	口|mouth|r 夋|to_dawdle|
 唇	辰|early_morning| 口|mouth|r
+唐	广|wide| 聿|brush| 口|mouth|r
 唤	口|mouth|r 奂|be_numerous|
 售	隹|short-tailed_bird| 口|mouth|r
 唯	口|mouth|r 隹|short-tailed_bird|
@@ -391,6 +475,7 @@
 喝	口|mouth|r 曷|why?_what?_where?|
 喩	口|mouth|r 兪|surname|
 喫	口|mouth|r 契|deed|
+営	小|small| 冖|cover| 吕|surname|
 喷	口|mouth|r 贲|forge_ahead|
 嗅	口|mouth|r 臭|smell|
 嘆	口|mouth|r 廿|twenty| 中|central| 夫|man|
@@ -410,6 +495,7 @@
 园	囗|erect|r 元|first|
 困	囗|erect|r 木|tree|
 囲	囗|erect|r 井|well|
+図	囗|erect|r 冫|ice| 乂|cross|
 围	囗|erect|r 韦|tanned_leather|
 固	囗|erect|r 古|old|
 国	囗|erect|r 玉|jade|
@@ -418,6 +504,7 @@
 圈	囗|erect|r 卷|scroll|
 圏	囗|erect|r 巻|scroll|
 園	囗|erect|r 袁|robe|
+土	十|ten| 一|one|
 圣	又|and| 土|soil|r
 圧	厂|factory| 土|soil|r
 地	土|soil|r 也|also|
@@ -476,6 +563,7 @@
 壁	辟|law| 土|soil|r
 壇	土|soil|r 亶|sincere|
 壊	土|soil|r 十|ten| 罒|| 衣|clothes|
+士	十|ten| 一|one|
 壮	丬|half_of_tree_trunk| 士|scholar|r
 壱	士|scholar|r 冖|cover| 匕|spoon|
 売	士|scholar|r 冖|cover| 儿|son|
@@ -484,9 +572,16 @@
 备	夊|go_slowly| 田|field|
 変	亦|also| 夊|go_slowly|r
 外	夕|evening|r 卜|fortune_telling|
+夜	亠|head| 亻|| 夊|go_slowly| 丶|dot|
 够	句|sentence| 多|much|
 夢	艹|grass| 罒|| 冖|cover| 夕|evening|r
+大	人|man| 一|one|
+天	一|one| 大|big|r
+太	大|big|r 丶|dot|
 夫	人|man| 二|two|
+央	大|big|r 冂|borders|
+失	夫|man| 丿|slash|
+头	大|big|r 冫|ice|
 夸	大|big|r 亏|lose|
 夹	夫|man| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example|
 夺	大|big|r 寸|inch|
@@ -509,13 +604,16 @@
 如	女|woman|r 口|mouth|
 妃	女|woman|r 己|self|
 妄	亡|death| 女|woman|r
+妇	女|woman|r 彐|snout|
 妈	女|woman|r 马|horse|
 妊	女|woman|r 壬|ninth_heavenly_stem|
 妖	女|woman|r 夭|young|
 妙	女|woman|r 少|few|
+妥	爫|claw| 女|woman|r
 妨	女|woman|r 方|a_square|
 妬	女|woman|r 石|stone|
 妹	女|woman|r 未|not_yet|
+妻	十|ten| 聿|brush| 女|woman|r
 姆	女|woman|r 母|mother|
 姉	女|woman|r 巿|revolve|
 始	女|woman|r 台|platform|
@@ -542,11 +640,15 @@
 嫉	女|woman|r 疾|illness|
 嫌	女|woman|r 兼|unite|
 嫡	女|woman|r 啇|to_stalk|
+子	了|to_finish| 一|one|
+孔	子|offspring|r 乚|hook|
 字	宀|roof| 子|offspring|r
 孙	子|offspring|r 小|small|
+孝	耂|old| 子|offspring|r
 孟	子|offspring|r 皿|shallow_container|
 季	禾|grain_still_on_stalk| 子|offspring|r
 孤	子|offspring|r 瓜|melon|
+学	小|small| 冖|cover| 子|offspring|r
 孩	子|offspring|r 亥|twelfth_earthly_branch|
 孫	子|offspring|r 系|system|
 宁	宀|roof|r 丁|male_adult|
@@ -571,6 +673,7 @@
 室	宀|roof|r 至|reach|
 宪	宀|roof|r 先|first|
 宫	宀|roof|r 吕|surname|
+宮	宀|roof|r 口|mouth| 丿|slash| 口|mouth|
 宰	宀|roof|r 辛|bitter|
 害	宀|roof|r 丰|abundant| 口|mouth|
 宴	宀|roof|r 妟||
@@ -584,6 +687,7 @@
 寄	宀|roof|r 奇|strange|
 富	宀|roof|r 畐|to_fill|
 寛	宀|roof|r 莧|edible_greens|
+寝	宀|roof|r 丬|half_of_tree_trunk| 彐|snout| 冖|cover| 又|and|
 察	宀|roof|r 祭|sacrifice_to|
 寡	宀|roof|r 丆|kwukyel| 且|moreover| 八|eight| 刀|knife|
 寧	寍|used_as_a_term_of_comparison:-rather| 丁|male_adult|
@@ -591,6 +695,7 @@
 寮	宀|roof|r 尞|fuel_used_for_sacrifices|
 对	又|and| 寸|inch|r
 寺	土|soil| 寸|inch|r
+寻	彐|snout| 寸|inch|r
 导	巳|sixth_earthly_branch| 寸|inch|r
 対	文|literature| 寸|inch|r
 寿	丰|abundant| 寸|inch|r
@@ -598,22 +703,32 @@
 射	身|body| 寸|inch|r
 尉	尸|corpse| 示|show| 寸|inch|r
 尊	酋|chief_of_tribe| 寸|inch|r
+尋	彐|snout| 工|labor| 口|mouth| 寸|inch|r
 導	道|path| 寸|inch|r
+小	亅|hook| 八|eight|
+少	小|small|r 丿|slash|
+尔	刀|knife| 小|small|r
 尖	小|small|r 大|big|
 尘	小|small|r 土|soil|
+尚	小|small|r 冂|borders| 口|mouth|
 尝	龸|| 云|say|
+尤	尢|weak|r 丶|dot|
 就	京|capital_city| 尤|especially|
 尸	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 匚|box|
+尺	尸|corpse|r 乀|stroke|
 尻	尸|corpse|r 九|nine|
 尼	尸|corpse|r 匕|spoon|
+尽	尺|Chinese_measure_approx._'foot'| 冫|ice|
 尾	尸|corpse|r 毛|hair|
 尿	尸|corpse|r 水|water|
+局	尸|corpse|r 乛|hook| 口|mouth|
 层	尸|corpse|r 云|say|
 居	尸|corpse|r 古|old|
 屈	尸|corpse|r 出|go_out|
 届	尸|corpse|r 由|cause|
 屋	尸|corpse|r 至|reach|
 屏	尸|corpse|r 并|combine|
+展	尸|corpse|r 龷|| 乚|hook| 冫|ice|
 属	尸|corpse|r 禹|legendary_hsia_dynasty_founder|
 層	尸|corpse|r 曾|already|
 履	尸|corpse|r 復|return|
@@ -622,6 +737,7 @@
 岂	山|mountain|r 己|self|
 岐	山|mountain|r 支|disperse|
 岗	山|mountain|r 冈|ridge_or_crest_of_hill|
+岡	冂|borders| 䒑|| 山|mountain|r
 岩	山|mountain|r 石|stone|
 岬	山|mountain|r 甲|armor|
 岳	丘|hill| 山|mountain|r
@@ -635,14 +751,20 @@
 嵐	山|mountain|r 風|wind|
 川	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 巡	辶|walk|r 巛|river|
+巣	小|small| 果|fruit|
+工	一|one| 丄|above|
 巧	工|labor|r 丂|obstruction_of_breath_(qi)_as_it_seeks_release|
 巨	匚|box| 匚|box|
 差	羊|sheep| 工|labor|r
+己	匚|box| 乚|hook|
 巻	龹|| 己|self|r
+巾	冂|borders| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
+币	丿|slash| 巾|kerchief|r
 市	亠|head| 巾|kerchief|r
 帅	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 巾|kerchief|r
 帆	巾|kerchief|r 凡|all|
 师	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 帀|to_go_round|
+希	乂|cross| 布|cotton_cloth|
 帐	巾|kerchief|r 长|long|
 帕	巾|kerchief|r 白|white|
 帝	亠|head| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 冖|cover| 巾|kerchief|r
@@ -657,10 +779,13 @@
 幅	巾|kerchief|r 畐|to_fill|
 幕	艹|grass| 旲|| 巾|kerchief|r
 幣	敝|break| 巾|kerchief|r
+干	一|one| 十|ten|
 平	干|oppose|r 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example|
 并	丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 开|open|
 幹	龺|| 人|man| 干|oppose|r
+幻	幺|one|r 乛|hook|
 幼	幺|one|r 力|power|
+广	厂|factory| 丶|dot|
 庁	广|wide|r 丁|male_adult|
 広	广|wide|r 厶|private|
 庄	广|wide|r 土|soil|
@@ -668,6 +793,7 @@
 床	广|wide|r 木|tree|
 序	广|wide|r 予|I|
 库	广|wide|r 车|cart|
+应	广|wide|r 小|small| 一|one|
 底	广|wide|r 氐|name_of_an_ancient_tribe|
 店	广|wide|r 占|divine|
 庙	广|wide|r 由|cause|
@@ -680,17 +806,21 @@
 庭	广|wide|r 廷|court|
 庶	广|wide|r 廿|twenty| 灬|fire|
 康	广|wide|r 隶|subservient|
+庸	广|wide|r 聿|brush| 用|use|
 廃	广|wide|r 発|issue|
 廉	广|wide|r 兼|unite|
 廊	广|wide|r 郎|gentleman|
+延	廴|go|r 丿|slash| 止|stop|
 廷	廴|go|r 壬|ninth_heavenly_stem|
 建	廴|go|r 聿|writing_brush|
+开	一|one| 艹|grass|
 弁	厶|private| 艹|grass|
 异	巳|sixth_earthly_branch| 艹|grass|
 弃	亠|head| 厶|private| 艹|grass|
 弄	王|king| 艹|grass|
 弊	敝|break| 艹|grass|
 式	弋|catch|r 工|labor|
+弐	一|one| 弋|catch|r 二|two|
 弔	弓|bow|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 引	弓|bow|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 弗	弓|bow|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
@@ -704,6 +834,9 @@
 弹	弓|bow|r 单|single|
 强	弓|bow|r 虽|although|
 弾	弓|bow|r 単|(same_as_單)_single|
+归	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 彐|snout|r
+当	小|small| 彐|snout|r
+录	彐|snout|r 氺||
 彙	彑|snout|r 冖|cover| 果|fruit|
 形	开|open| 彡|hair|r
 彩	采|collect| 彡|hair|r
@@ -728,7 +861,12 @@
 御	彳|step_with_left_foot|r 卸|lay_down|
 復	彳|step_with_left_foot|r 复|return|
 循	彳|step_with_left_foot|r 盾|shield|
+微	彳|step_with_left_foot|r 山|mountain| 攵|strike| 一|one| 几|small_table|
 徳	彳|step_with_left_foot|r 十|ten| 罒|| 心|heart|
+徴	彳|step_with_left_foot|r 山|mountain| 攵|strike| 王|king|
+徹	彳|step_with_left_foot|r 育|produce| 攵|strike|
+必	心|heart|r 丿|slash|
+忆	忄|heart|r 乙|second|
 忌	己|self| 心|heart|r
 忍	刃|edged_tool| 心|heart|r
 志	士|scholar| 心|heart|r
@@ -774,6 +912,7 @@
 患	串|string| 心|heart|r
 悦	忄|heart|r 兑|cash|
 您	你|you| 心|heart|r
+悩	忄|heart|r 小|small| 凶|culprit|
 悪	亜|Asia| 心|heart|r
 悬	且|moreover| 厶|private| 心|heart|r
 悲	非|not| 心|heart|r
@@ -794,6 +933,7 @@
 愉	忄|heart|r 俞|surname|
 意	音|sound| 心|heart|r
 愚	禺|district| 心|heart|r
+愛	爫|claw| 冖|cover| 心|heart|r 夊|go_slowly|
 感	咸|together| 心|heart|r
 愤	忄|heart|r 贲|forge_ahead|
 愿	原|source| 心|heart|r
@@ -821,20 +961,26 @@
 懂	忄|heart|r 董|direct|
 懇	貇|to_root| 心|heart|r
 懐	忄|heart|r 亠|head| 罒|| 衣|clothes|
+懲	彳|step_with_left_foot| 山|mountain| 攵|strike| 一|one| 王|king| 心|heart|r
 懸	縣|county| 心|heart|r
 戏	又|and| 戈|halberd|r
 成	万|ten_thousand| 戈|halberd|r
 我	手|hand| 戈|halberd|r
 戒	戈|halberd|r 艹|grass|
+或	戓|| 一|one|
 战	占|divine| 戈|halberd|r
 戚	戊|5th_heavenly_stem| 尗|younger_of_brothers|
 戦	単|(same_as_單)_single| 戈|halberd|r
 戯	虚|false| 戈|halberd|r
+户	尸|corpse| 丶|dot|
+戸	一|one| 尸|corpse|
 戻	户|door|r 大|big|
 房	户|door|r 方|a_square|
 所	戶|door|r 斤|a_catty_(approximately_600_g)|
 扇	户|door|r 羽|feather|
 扉	户|door|r 非|not|
+手	丿|slash| 扌|hand|r
+扎	扌|hand|r 乚|hook|
 扑	扌|hand|r 卜|fortune_telling|
 打	扌|hand|r 丁|male_adult|
 扔	扌|hand|r 乃|then|
@@ -843,6 +989,7 @@
 扣	扌|hand|r 口|mouth|
 执	扌|hand|r 丸|small_round_object|
 扩	扌|hand|r 广|wide|
+扫	扌|hand|r 彐|snout|
 扭	扌|hand|r 丑|clown|
 扮	扌|hand|r 分|divide|
 扰	扌|hand|r 尤|especially|
@@ -883,7 +1030,10 @@
 拘	扌|hand|r 句|sentence|
 拙	扌|hand|r 出|go_out|
 招	扌|hand|r 召|imperial_decree|
+拜	龵||r 一|one| 丰|abundant|
+拝	扌|hand|r 一|one| 丰|abundant|
 拟	扌|hand|r 以|by_means_of|
+拠	扌|hand|r 攵|strike| 几|small_table|
 拡	扌|hand|r 広|broad|
 拥	扌|hand|r 用|use|
 拦	扌|hand|r 兰|orchid|
@@ -957,6 +1107,7 @@
 摂	扌|hand|r 耳|ear| 冫|ice| 冫|ice|
 摄	扌|hand|r 聂|whisper|
 摆	扌|hand|r 罢|cease|
+摇	扌|hand|r 爫|claw| 缶|earthen_crock_or_jar|
 摘	扌|hand|r 啇|to_stalk|
 摩	麻|hemp| 手|hand|r
 摯	執|hold_in_hand| 手|hand|r
@@ -964,6 +1115,7 @@
 撃	軗|| 手|hand|r
 撒	扌|hand|r 散|scatter|
 撞	扌|hand|r 童|child|
+撤	扌|hand|r 育|produce| 攵|strike|
 播	扌|hand|r 番|to_take_turns|
 撮	扌|hand|r 最|most|
 撲	扌|hand|r 菐|a_thicket|
@@ -972,18 +1124,45 @@
 擦	扌|hand|r 察|examine|
 擬	扌|hand|r 疑|doubt|
 支	十|ten| 又|and|
+收	丩|to_join_or_connect_the_vine| 攵|strike|r
+改	己|self| 攵|strike|r
+攻	工|labor| 攵|strike|r
+放	方|a_square| 攵|strike|r
+政	正|right| 攵|strike|r
+故	古|old| 攵|strike|r
+效	交|mix| 攵|strike|r
+敌	舌|tongue| 攵|strike|r
+敏	每|every| 攵|strike|r
+救	求|seek| 攵|strike|r
+敗	貝|sea_shell| 攵|strike|r
+教	孝|filial_piety| 攵|strike|r
+敢	匚|box| 耳|ear| 攵|strike|r
+散	龷|| 月|moon| 攵|strike|r
+敦	享|enjoy| 攵|strike|r
+敬	苟|careless| 攵|strike|r
+数	娄|surname| 攵|strike|r
 敲	高|high| 攴|rap|r
 整	敕|an_imperial_order_or_decree| 正|right|
+敵	六|number_six| 冂|borders| 古|old| 攵|strike|r
+敷	旉|to_state_to| 攵|strike|r
+文	亠|head| 乂|cross|
 斉	文|literature|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 二|two|
 斎	文|literature|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 示|show|
 斑	玨|two_pieces_of_jade_joined_together| 文|literature|r
+斗	十|ten| 冫|ice|
 料	米|hulled_or_husked_uncooked_rice| 斗|a_dipper|r
 斜	余|I| 斗|a_dipper|r
+斤	厂|cliff| 丅|under|
+斥	斤|a_catty_(approximately_600_g)|r 丶|dot|
 斬	車|cart| 斤|a_catty_(approximately_600_g)|r
 斯	其|his| 斤|a_catty_(approximately_600_g)|r
 新	亲|relatives| 斤|a_catty_(approximately_600_g)|r
+方	亠|head| 丿|slash| 乛|hook|
 施	方|a_square|r 㐌||
 旁	亠|head| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 冖|cover| 方|a_square|r
+无	一|one| 尢|weak|
+日	口|mouth| 一|one|
+旦	日|sun|r 一|one|
 旧	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 日|sun|r
 旨	匕|spoon| 日|sun|r
 早	日|sun|r 十|ten|
@@ -1010,6 +1189,7 @@
 晓	日|sun|r 尧|a_legendary_ancient_emperor-sage|
 晚	日|sun|r 免|spare|
 晨	日|sun|r 辰|early_morning|
+晩	日|sun|r 刀|knife| 口|mouth| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 儿|son|
 普	並|equal_to| 日|sun|r
 景	日|sun|r 京|capital_city|
 晴	日|sun|r 青|blue|
@@ -1027,7 +1207,9 @@
 曇	日|sun|r 雲|clouds|
 曖	日|sun|r 愛|love|
 曜	日|sun|r 翟|surname|
+曰	口|mouth| 一|one|
 曲	井|well| 凵|receptacle|
+更	一|one| 申|to_state_to_a_superior| 乂|cross|
 書	聿|writing_brush| 日|sun|
 曹	艹|grass| 曲|crooked| 日|sun|
 曼	日|sun| 罒|| 又|and|
@@ -1035,16 +1217,24 @@
 曾	丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 口|mouth| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 日|sun|
 替	㚘|| 日|sun|
 最	日|sun| 取|take|
+月	冂|borders| 二|two|
 朋	月|moon|r 月|moon|r
 朕	月|moon|r 关|frontier_pass|
 望	肓|region_between_heart_and_diaphragm| 王|king|
 朝	龺|| 月|moon|r
 期	其|his| 月|moon|r
 木	十|ten| 八|eight|
+未	木|tree|r 一|one|
+末	木|tree|r 一|one|
+本	木|tree|r 一|one|
+札	木|tree|r 乚|hook|
+术	木|tree|r 丶|dot|
+朱	未|not_yet| 丿|slash|
 朴	木|tree|r 卜|fortune_telling|
 朵	几|small_table| 木|tree|r
 机	木|tree|r 几|small_table|
 朽	木|tree|r 丂|obstruction_of_breath_(qi)_as_it_seeks_release|
+杀	乂|cross| 朩|kwukyel:_rank|r
 杂	九|nine| 朩|kwukyel:_rank|r
 权	木|tree|r 又|and|
 杉	木|tree|r 彡|hair|
@@ -1065,6 +1255,7 @@
 析	木|tree|r 斤|a_catty_(approximately_600_g)|
 枕	木|tree|r 冘|to_move_on|
 林	木|tree|r 木|tree|r
+枚	木|tree|r 攵|strike|
 果	田|field| 木|tree|r
 枝	木|tree|r 支|disperse|
 枠	木|tree|r 卆|soldier|
@@ -1086,6 +1277,8 @@
 柵	木|tree|r 冊|book|
 査	木|tree|r 且|moreover|
 柿	木|tree|r 市|market|
+栃	木|tree|r 厂|cliff| 万|ten_thousand|
+栄	小|small| 冖|cover| 木|tree|r
 标	木|tree|r 示|show|
 树	木|tree|r 对|correct|
 栓	木|tree|r 全|maintain|
@@ -1099,7 +1292,9 @@
 桂	木|tree|r 圭|jade_pointed_at_top|
 桃	木|tree|r 兆|omen|
 案	安|peaceful| 木|tree|r
+桌	卜|divine| 日|sun| 木|tree|r
 桑	叒|obedient| 木|tree|r
+桜	木|tree|r 小|small| 女|woman|
 桟	木|tree|r 㦮||
 档	木|tree|r 当|bear|
 桥	木|tree|r 乔|tall|
@@ -1139,6 +1334,7 @@
 橋	木|tree|r 喬|tall|
 機	木|tree|r 幾|how_many?_how_much?|
 欄	木|tree|r 闌|door_screen|
+欠	刀|knife| 人|man|
 次	冫|ice| 欠|owe|r
 欢	又|and| 欠|owe|r
 欣	斤|a_catty_(approximately_600_g)| 欠|owe|r
@@ -1148,7 +1344,10 @@
 款	士|scholar| 示|show| 欠|owe|r
 歇	曷|why?_what?_where?| 欠|owe|r
 歌	哥|elder_brother| 欠|owe|r
+止	卜|divine| 丄|above|
+正	一|one| 止|stop|r
 此	止|stop|r 匕|spoon|
+武	一|one| 弋|catch| 止|stop|r
 歩	止|stop|r 少|few|
 歯	止|stop|r 米|hulled_or_husked_uncooked_rice| 凵|receptacle|
 死	歹|bad|r 匕|spoon|
@@ -1158,6 +1357,7 @@
 残	歹|bad|r 戋|small|
 殖	歹|bad|r 直|straight|
 殴	区|area| 殳|name_of_old_weapon|r
+段	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 一|one| 殳|name_of_old_weapon|r
 殺	杀|kill| 殳|name_of_old_weapon|r
 殻	士|scholar| 殳|name_of_old_weapon|r 冗|excessive|
 毀	臼|mortar| 土|soil| 殳|name_of_old_weapon|r
@@ -1166,8 +1366,13 @@
 毒	龶|| 母|mother|
 比	匕|spoon| 匕|spoon|
 毕	比|to_compare|r 十|ten|
+毛	丿|slash| 二|two| 乚|hook|
 毫	亠|head| 口|mouth| 冖|cover| 毛|hair|r
+気	气|steam|r 乂|cross|
 氧	气|steam|r 羊|sheep|
+水	亅|hook| 乛|hook| 冫|ice|
+氷	水|water|r 丶|dot|
+永	乛|hook| 乛|hook| 冫|ice| 丶|dot|
 氾	氵|water|r 㔾||
 汁	氵|water|r 十|ten|
 汇	氵|water|r 匚|box|
@@ -1219,6 +1424,7 @@
 洪	氵|water|r 共|together_with|
 洲	氵|water|r 州|administrative_division|
 活	氵|water|r 舌|tongue|
+派	氵|water|r 厂|cliff| 匚|box| 冫|ice|
 流	氵|water|r 㐬||
 浄	氵|water|r 争|dispute|
 浅	氵|water|r 戋|small|
@@ -1233,6 +1439,7 @@
 浮	氵|water|r 孚|brood_over_eggs|
 浴	氵|water|r 谷|valley|
 海	氵|water|r 每|every|
+浸	氵|water|r 彐|snout| 冖|cover| 又|and|
 涂	氵|water|r 余|I|
 消	氵|water|r 肖|look_like|
 涉	氵|water|r 步|step|
@@ -1255,6 +1462,7 @@
 渉	氵|water|r 歩|step|
 渋	氵|water|r 止|stop| 冫|ice| 冫|ice|
 渐	氵|water|r 斩|cut|
+渓	氵|water|r 爫|claw| 夫|man|
 渔	氵|water|r 鱼|fish|
 減	氵|water|r 咸|together|
 渡	氵|water|r 度|degree|
@@ -1309,7 +1517,10 @@
 濫	氵|water|r 監|supervise|
 濯	氵|water|r 翟|surname|
 瀬	氵|water|r 頼|rely|
+火	丿|slash| 丶|dot| 冫|ice|
+灭	一|one| 火|fire|r
 灯	火|fire|r 丁|male_adult|
+灵	彐|snout| 火|fire|r
 災	巛|river| 火|fire|r
 灾	宀|roof| 火|fire|r
 炉	火|fire|r 户|door|
@@ -1318,6 +1529,8 @@
 炮	火|fire|r 包|wrap|
 炸	火|fire|r 乍|first_time|
 点	占|divine| 灬|fire|r
+為	丿|slash| 丶|dot| 乛|hook| 乛|hook| 乛|hook| 灬|fire|r
+炼	火|fire|r 七|seven| 乛|hook| 八|eight|
 烂	火|fire|r 兰|orchid|
 烈	列|a_line| 灬|fire|r
 烟	火|fire|r 因|cause|
@@ -1340,18 +1553,25 @@
 燕	廿|twenty| 北|north| 口|mouth| 灬|fire|r
 燥	火|fire|r 喿|chirping_of_birds|
 爆	火|fire|r 暴|violent|
+爪	厂|cliff| 乀|stroke| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 爬	爪|claw|r 巴|greatly_desire|
+爱	爫|claw|r 冖|cover| 友|friend|
+父	八|eight| 乂|cross|
+爷	父|father|r 乛|hook| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 爸	父|father|r 巴|greatly_desire|
 爽	大|big| 㸚||
 版	片|slice|r 反|reverse|
 牌	片|slice|r 卑|humble|
+牛	二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丿|slash|
 牢	宀|roof| 牛|cow|r
+牧	牛|cow|r 攵|strike|
 物	牛|cow|r 勿|must_not|
 牲	牛|cow|r 生|life|
 牵	大|big| 冖|cover| 牛|cow|r
 特	牛|cow|r 寺|court|
 牺	牛|cow|r 西|west(ern)|
 犠	牛|cow|r 義|right_conduct|
+犬	大|big| 丶|dot|
 犯	犭|dog|r 㔾||
 状	丬|half_of_tree_trunk| 犬|dog|r
 犹	犭|dog|r 尤|especially|
@@ -1377,6 +1597,8 @@
 獲	犭|dog|r 蒦|to_measure|
 玄	亠|head| 幺|one|
 率	亠|head| 幺|one| 冫|ice| 冫|ice| 十|ten|
+玉	王|king| 丶|dot|
+王	一|one| 土|soil|
 玛	王|king| 马|horse|
 玩	王|king| 元|first|
 环	王|king| 不|no|
@@ -1385,6 +1607,7 @@
 玻	王|king| 皮|skin|
 珍	王|king| 㐱||
 珠	王|king| 朱|cinnabar|
+班	玨|two_pieces_of_jade_joined_together| 丿|slash| 丶|dot|
 現	王|king| 見|see|
 球	王|king| 求|seek|
 理	王|king| 里|unit_of_distance|
@@ -1396,15 +1619,23 @@
 璧	辟|law| 玉|jade|r
 環	王|king| 睘|round|
 璽	爾|you| 玉|jade|r
+瓜	厂|cliff| 乀|stroke| 厶|private|
 瓶	并|combine| 瓦|tile|r
 甘	艹|grass| 二|two|
 甚	甘|sweetness|r 匹|bolt_of_cloth|
+生	龶|| 丿|slash|
 産	产|give_birth| 生|life|r
+用	冂|borders| 二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
+田	冂|borders| 土|soil|
 由	二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 凵|receptacle|
+甲	冂|borders| 二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 申	日|sun| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
+电	申|to_state_to_a_superior|r 乚|hook|
 男	田|field|r 力|power|
 町	田|field|r 丁|male_adult|
+画	一|one| 田|field|r 凵|receptacle|
 界	田|field|r 介|forerunner|
+畏	田|field|r 一|one| 乚|hook| 冫|ice|
 畑	火|fire| 田|field|r
 畔	田|field|r 半|half|
 留	卯|fourth_earthly_branch| 田|field|r
@@ -1414,6 +1645,8 @@
 番	釆|distinguish| 田|field|r
 異	田|field|r 共|together_with|
 畳	田|field|r 冝|suitable|
+疎	疋|cloth|r 束|bind|
+疏	疋|cloth|r 㐬||
 疗	疒|sick|r 了|to_finish|
 疫	疒|sick|r 殳|name_of_old_weapon|
 疯	疒|sick|r 风|wind|
@@ -1434,10 +1667,14 @@
 癌	疒|sick|r 嵒|cliff|
 癒	疒|sick|r 愈|more_and_more|
 癖	疒|sick|r 辟|law|
+発	癶|legs|r 开|open| 乚|hook|
 登	癶|legs|r 豆|beans|
+白	日|sun| 丿|slash|
+百	一|one| 白|white|r
 的	白|white|r 勺|spoon|
 皆	比|to_compare| 白|white|r
 皇	白|white|r 王|king|
+皮	丿|slash| 乛|hook| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 又|and|
 皱	刍|mow| 皮|skin|r
 盆	分|divide| 皿|shallow_container|r
 益	䒑|| 八|eight| 皿|shallow_container|r
@@ -1451,6 +1688,7 @@
 目	口|mouth| 二|two|
 盯	目|eye|r 丁|male_adult|
 盲	亡|death| 目|eye|r
+直	十|ten| 目|eye|r 一|one|
 相	木|tree| 目|eye|r
 省	少|few| 目|eye|r
 看	龵|| 目|eye|r
@@ -1496,6 +1734,7 @@
 礁	石|stone|r 焦|burned|
 礎	石|stone|r 楚|name_of_feudal_state|
 示	二|two| 小|small|
+礼	礻|cult|r 乚|hook|
 社	礻|cult|r 土|soil|
 祈	礻|cult|r 斤|a_catty_(approximately_600_g)|
 祉	礻|cult|r 止|stop|
@@ -1529,10 +1768,12 @@
 税	禾|grain_still_on_stalk|r 兑|cash|
 稚	禾|grain_still_on_stalk|r 隹|short-tailed_bird|
 種	禾|grain_still_on_stalk|r 重|heavy|
+稲	禾|grain_still_on_stalk|r 爫|claw| 旧|old|
 稳	禾|grain_still_on_stalk|r 急|quick|
 稼	禾|grain_still_on_stalk|r 家|house|
 稽	禾|grain_still_on_stalk|r 尤|especially| 旨|purpose|
 稿	禾|grain_still_on_stalk|r 高|high|
+穀	士|scholar| 冖|cover| 一|one| 殳|name_of_old_weapon| 禾|grain_still_on_stalk|r
 穂	禾|grain_still_on_stalk|r 恵|favor|
 穆	禾|grain_still_on_stalk|r 㣎||
 積	禾|grain_still_on_stalk|r 責|one's_responsibility|
@@ -1561,6 +1802,35 @@
 竭	立|stand|r 曷|why?_what?_where?|
 端	立|stand|r 耑|specialized|
 競	竞|contend| 竞|contend|
+笑	竹|bamboo|r 夭|young|
+笔	竹|bamboo|r 毛|hair|
+笛	竹|bamboo|r 由|cause|
+符	竹|bamboo|r 付|give|
+笼	竹|bamboo|r 龙|dragon|
+筆	竹|bamboo|r 聿|writing_brush|
+等	竹|bamboo|r 寺|court|
+筋	竹|bamboo|r 肋|ribs|
+筑	竹|bamboo|r 巩|bind|
+筒	竹|bamboo|r 同|same|
+答	竹|bamboo|r 合|combine|
+策	竹|bamboo|r 朿|stab|
+筹	竹|bamboo|r 寿|old_age|
+签	竹|bamboo|r 佥|all|
+简	竹|bamboo|r 间|midpoint|
+箇	竹|bamboo|r 固|to_become_solid|
+箋	竹|bamboo|r 戔|small|
+管	竹|bamboo|r 官|official|
+箭	竹|bamboo|r 前|in_front|
+箱	竹|bamboo|r 相|mutual|
+箸	竹|bamboo|r 者|that_which|
+節	竹|bamboo|r 即|promptly|
+範	竹|bamboo|r 車|cart| 㔾||
+篇	竹|bamboo|r 扁|flat|
+篤	竹|bamboo|r 馬|horse|
+簡	竹|bamboo|r 間|interval|
+簿	竹|bamboo|r 溥|big|
+籍	竹|bamboo|r 耤|plough|
+籠	竹|bamboo|r 龍|dragon|
 米	木|tree| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example|
 类	米|hulled_or_husked_uncooked_rice|r 大|big|
 粉	米|hulled_or_husked_uncooked_rice|r 分|divide|
@@ -1577,6 +1847,7 @@
 糟	米|hulled_or_husked_uncooked_rice|r 曹|ministry_officials|
 糧	米|hulled_or_husked_uncooked_rice|r 量|measure|
 糸	幺|one| 小|small|
+系	丿|slash| 糸|silk|r
 糾	糹|silk|r 丩|to_join_or_connect_the_vine|
 紀	糹|silk|r 己|self|
 約	糹|silk|r 勺|spoon|
@@ -1621,6 +1892,7 @@
 線	糹|silk|r 泉|spring|
 締	糹|silk|r 帝|supreme_ruler|
 編	糹|silk|r 扁|flat|
+緩	糹|silk|r 爫|claw| 于|in| 又|and|
 緯	糹|silk|r 韋|tanned_leather|
 練	糹|silk|r 柬|letter|
 緻	糹|silk|r 致|send|
@@ -1633,6 +1905,7 @@
 繁	敏|fast| 糸|silk|r
 織	糹|silk|r 音|sound| 戈|halberd|
 繕	糹|silk|r 善|good|
+繭	艹|grass| 冂|borders| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 糹|silk|r 虫|insects|
 繰	糹|silk|r 喿|chirping_of_birds|
 纠	纟|silk|r 丩|to_join_or_connect_the_vine|
 红	纟|silk|r 工|labor|
@@ -1648,6 +1921,7 @@
 纹	纟|silk|r 文|literature|
 纽	纟|silk|r 丑|clown|
 线	纟|silk|r 戋|small|
+练	纟|silk|r 七|seven| 乛|hook| 八|eight|
 组	纟|silk|r 且|moreover|
 细	纟|silk|r 田|field|
 织	纟|silk|r 只|only|
@@ -1676,6 +1950,7 @@
 缴	纟|silk|r 敫|ancient_musical_instrument|
 缶	午|seventh_earthly_branch| 山|mountain|
 缺	缶|earthen_crock_or_jar|r 夬|parted|
+网	冂|borders| 爻|diagrams_for_divination|
 罗	罒||r 夕|evening|
 罚	罒||r 讠|| 刂|knife|
 罢	罒||r 去|go_away|
@@ -1687,6 +1962,7 @@
 罵	罒||r 馬|horse|
 罷	罒||r 能|to_be_able|
 羅	罒||r 維|maintain|
+羊	一|one| 二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example|
 美	羊|sheep|r 大|big|
 羞	羊|sheep|r 丑|clown|
 群	君|sovereign| 羊|sheep|r
@@ -1700,6 +1976,9 @@
 翻	番|to_take_turns| 羽|feather|r
 翼	羽|feather|r 異|different|
 耀	光|light| 翟|surname|
+老	耂|old| 匕|spoon|
+考	耂|old| 丂|obstruction_of_breath_(qi)_as_it_seeks_release|
+者	耂|old| 日|sun|
 耐	而|and|r 寸|inch|
 耕	耒|handle_of_plow|r 井|well|
 耗	耒|handle_of_plow|r 毛|hair|
@@ -1713,7 +1992,10 @@
 聪	耳|ear|r 总|collect|
 聴	耳|ear|r 十|ten| 罒|| 心|heart|
 職	耳|ear|r 音|sound| 戈|halberd|
+肃	聿|brush|r 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 小|small|
+肉	仌|| 冂|borders|
 肌	月|moon| 几|small_table|
+肖	小|small| 月|moon|
 肘	月|moon| 寸|inch|
 肚	月|moon| 土|soil|
 肝	月|moon| 干|oppose|
@@ -1749,6 +2031,7 @@
 脑	月|moon| 亠|head| 凶|culprit|
 脚	月|moon| 却|still|
 脱	月|moon| 兑|cash|
+脳	月|moon| 小|small| 凶|culprit|
 脸	月|moon| 佥|all|
 腊	月|moon| 昔|formerly|
 腎	臤|hard| 月|moon|
@@ -1772,12 +2055,17 @@
 臆	月|moon| 意|thought|
 臓	月|moon| 蔵|hide|
 臣	匚|box| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 匚|box|
+自	目|eye| 丶|dot|
 臭	自|self|r 犬|dog|
+致	至|reach|r 攵|strike|
+臼	彐|snout| 彐|snout|
+興	臼|mortar|r 同|same| 一|one| 八|eight|
 舌	千|thousand| 口|mouth|
 舍	人|man| 干|oppose| 口|mouth|
 舎	人|man| 土|soil| 口|mouth|
 舒	舍|house| 予|I|
 舗	舎|house| 甫|begin|
+舟	冂|borders| 丶|dot| 冫|ice| 一|one|
 航	舟|boat|r 亢|high|
 般	舟|boat|r 殳|name_of_old_weapon|
 舰	舟|boat|r 见|see|
@@ -1788,8 +2076,13 @@
 艇	舟|boat|r 廷|court|
 艘	舟|boat|r 叟|old_man|
 艦	舟|boat|r 監|supervise|
+良	艮|trigram_☶|r 丶|dot|
 艰	又|and| 艮|trigram_☶|r
+色	刀|knife| 巴|greatly_desire|
 艶	豊|abundant| 色|color|r
+艺	艹|grass|r 乙|second|
+艾	艹|grass|r 乂|cross|
+节	艹|grass|r 乛|hook| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 芋	艹|grass|r 于|in|
 芝	艹|grass|r 之|marks_preceding_phrase_as_modifier_of_following_phrase|
 芬	艹|grass|r 分|divide|
@@ -1827,6 +2120,7 @@
 菌	艹|grass|r 囷|round-shaped_storage_bin_for_grain|
 菓	艹|grass|r 果|fruit|
 菜	艹|grass|r 采|collect|
+華	艹|grass|r 一|one| 二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 艹|grass|r
 菲	艹|grass|r 非|not|
 萎	艹|grass|r 委|appoint|
 营	艹|grass|r 冖|cover| 吕|surname|
@@ -1858,6 +2152,7 @@
 藩	艹|grass|r 潘|surname|
 藻	艹|grass|r 澡|wash|
 虎	虍|tiger|r 几|small_table|
+虐	虍|tiger|r 彐|snout|
 虑	虍|tiger|r 心|heart|
 虚	虍|tiger|r 业|profession|
 虜	虍|tiger|r 男|male|
@@ -1868,17 +2163,21 @@
 蚕	天|sky| 虫|insects|r
 蛇	虫|insects|r 它|it|
 蛋	疋|roll| 虫|insects|r
+蛍	小|small| 冖|cover| 虫|insects|r
 蛮	亦|also| 虫|insects|r
 蜂	虫|insects|r 夆|resist|
 蜜	宀|roof| 必|surely| 虫|insects|r
 融	鬲|type_of_caldron_with_three_hollow_legs| 虫|insects|r
+血	皿|shallow_container| 丶|dot|
 衆	血|blood|r 乑|stand_side_by_side|
 行	彳|step_with_left_foot| 亍|to_take_small_steps|
 術	行|go|r 术|art|
 街	行|go|r 圭|jade_pointed_at_top|
 衛	行|go|r 韋|tanned_leather|
 衝	行|go|r 重|heavy|
+衡	行|go|r 刀|knife| 田|field| 大|big|
 补	衤|clothes|r 卜|fortune_telling|
+衰	衣|clothes|r 囗|erect| 一|one|
 衷	衣|clothes|r 中|central|
 袋	代|replace| 衣|clothes|r
 袖	衤|clothes|r 由|cause|
@@ -1904,10 +2203,14 @@
 見	目|eye| 儿|son|
 規	夫|man| 見|see|r
 視	礻|cult|r 見|see|
+覚	小|small| 冖|cover| 見|see|r
 親	亲|relatives| 見|see|r
+见	冂|borders| 儿|son|
 观	又|and| 见|see|r
 规	夫|man| 见|see|r
 视	礻|cult|r 见|see|
+觉	小|small| 冖|cover| 见|see|r
+角	刀|knife| 用|use|
 解	角|horn|r 刀|knife| 牛|cow|
 触	角|horn|r 虫|insects|
 言	亠|head| 二|two| 口|mouth|
@@ -1970,6 +2273,7 @@
 謙	言|words|r 兼|unite|
 講	言|words|r 冓|a_secluded_place|
 謝	言|words|r 射|shoot|
+謡	言|words|r 爫|claw| 缶|earthen_crock_or_jar|
 謹	言|words|r 堇|yellow_loam|
 識	言|words|r 音|sound| 戈|halberd|
 譜	言|words|r 普|universal|
@@ -2029,6 +2333,8 @@
 豫	予|I| 象|elephant|
 貌	豸|legless_insect-like_animal|r 皃|countenance|
 貝	目|eye| 八|eight|
+貞	卜|divine| 貝|sea_shell|r
+負	刀|knife| 貝|sea_shell|r
 財	貝|sea_shell|r 才|talent|
 貢	工|labor| 貝|sea_shell|r
 貧	分|divide| 貝|sea_shell|r
@@ -2059,10 +2365,13 @@
 賭	貝|sea_shell|r 者|that_which|
 購	貝|sea_shell|r 冓|a_secluded_place|
 贈	貝|sea_shell|r 曾|already|
+贝	冂|borders| 人|man|
+负	刀|knife| 贝|sea_shell|r
 贡	工|labor| 贝|sea_shell|r
 财	贝|sea_shell|r 才|talent|
 责	龶|| 贝|sea_shell|r
 贤	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 又|and| 贝|sea_shell|r
+败	贝|sea_shell|r 攵|strike|
 货	化|change| 贝|sea_shell|r
 贪	今|now| 贝|sea_shell|r
 贫	分|divide| 贝|sea_shell|r
@@ -2079,9 +2388,12 @@
 赔	贝|sea_shell|r 咅|to_spit_out|
 赖	束|bind| 负|load|
 赞	兟|to_advance| 贝|sea_shell|r
+赤	土|soil| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 亅|hook| 八|eight|
+赦	赤|red|r 攵|strike|
 赫	赤|red|r 赤|red|r
 走	土|soil| 龰||
 赴	走|walk|r 卜|fortune_telling|
+赵	走|walk|r 乂|cross|
 赶	走|walk|r 干|oppose|
 起	走|walk|r 己|self|
 超	走|walk|r 召|imperial_decree|
@@ -2089,6 +2401,21 @@
 趋	走|walk|r 刍|mow|
 趣	走|walk|r 取|take|
 足	口|mouth| 龰||
+跃	足|foot|r 夭|young|
+跌	足|foot|r 失|lose|
+跑	足|foot|r 包|wrap|
+距	足|foot|r 巨|large|
+跟	足|foot|r 艮|trigram_☶|
+跡	足|foot|r 亦|also|
+跨	足|foot|r 夸|extravagant|
+路	足|foot|r 各|each|
+跳	足|foot|r 兆|omen|
+践	足|foot|r 戋|small|
+踊	足|foot|r 甬|path|
+踏	足|foot|r 沓|connected|
+踪	足|foot|r 宗|lineage|
+蹴	足|foot|r 就|just|
+躍	足|foot|r 翟|surname|
 躲	身|body|r 朵|cluster_of_flowers|
 躺	身|body|r 尚|still|
 車	二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 日|sun|
@@ -2122,6 +2449,7 @@
 辛	立|stand| 十|ten|
 辞	舌|tongue| 辛|bitter|r
 辣	辛|bitter|r 束|bind|
+辨	辡|recrimination| 丿|slash| 丶|dot|
 辩	辡|recrimination| 讠||
 辱	辰|early_morning|r 寸|inch|
 農	曲|crooked| 辰|early_morning|r
@@ -2186,6 +2514,7 @@
 遜	辶|walk|r 孫|grandchild|
 遠	辶|walk|r 袁|robe|
 遡	辶|walk|r 朔|first_day_of_lunar_month|
+遥	辶|walk|r 缶|earthen_crock_or_jar| 爫|claw|
 適	辶|walk|r 啇|to_stalk|
 遭	辶|walk|r 曹|ministry_officials|
 遮	辶|walk|r 庶|numerous|
@@ -2197,6 +2526,7 @@
 邀	辶|walk|r 敫|ancient_musical_instrument|
 還	辶|walk|r 睘|round|
 邓	又|and| 阝|place|
+那	乛|hook| 二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 阝|place|
 邦	丰|abundant| 阝|place|
 邪	牙|tooth| 阝|place|
 邮	由|cause| 阝|place|
@@ -2224,11 +2554,13 @@
 醉	酉|a_wine_vessel|r 卒|soldier|
 醒	酉|a_wine_vessel|r 星|a_star|
 醜	酉|a_wine_vessel|r 鬼|ghost|
+采	爫|claw| 木|tree|
 釈	釆|distinguish|r 尺|Chinese_measure_approx._'foot'|
 释	釆|distinguish|r 又|and| 二|two| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 里	田|field| 土|soil|
 重	千|thousand| 里|unit_of_distance|r
 野	里|unit_of_distance|r 予|I|
+量	日|sun| 一|one| 里|unit_of_distance|r
 金	全|maintain| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example|
 釜	父|father| 金|gold|r
 針	金|gold|r 十|ten|
@@ -2257,6 +2589,7 @@
 鍛	金|gold|r 段|section|
 鍵	金|gold|r 建|build|
 鎌	金|gold|r 兼|unite|
+鎖	金|gold|r 小|small| 貝|sea_shell|
 鎮	金|gold|r 真|real|
 鏡	金|gold|r 竟|finally|
 鐘	金|gold|r 童|child|
@@ -2272,6 +2605,7 @@
 银	钅|gold|r 艮|trigram_☶|
 铺	钅|gold|r 甫|begin|
 销	钅|gold|r 肖|look_like|
+锁	钅|gold|r 小|small| 贝|sea_shell|
 锋	钅|gold|r 夆|resist|
 锐	钅|gold|r 兑|cash|
 错	钅|gold|r 昔|formerly|
@@ -2279,6 +2613,8 @@
 键	钅|gold|r 建|build|
 镇	钅|gold|r 真|real|
 镜	钅|gold|r 竟|finally|
+長	彐|snout| 一|one| 乚|hook| 冫|ice|
+长	乚|hook| 冫|ice| 一|one|
 閉	門|gate|r 才|talent|
 開	門|gate|r 开|open|
 閑	門|gate|r 木|tree|
@@ -2289,6 +2625,7 @@
 閲	門|gate|r 兑|cash|
 闇	門|gate|r 音|sound|
 闘	門|gate|r 豆|beans| 寸|inch|
+门	丶|dot| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 乛|hook|
 闪	门|gate|r 人|man|
 闭	门|gate|r 才|talent|
 问	门|gate|r 口|mouth|
@@ -2319,6 +2656,7 @@
 院	阝|place|r 完|complete|
 陣	阝|place|r 車|cart|
 除	阝|place|r 余|I|
+陥	阝|place|r 刀|knife| 旧|old|
 险	阝|place|r 佥|all|
 陪	阝|place|r 咅|to_spit_out|
 陰	阝|place|r 侌||
@@ -2330,6 +2668,7 @@
 険	阝|place|r 㑒||
 陽	阝|place|r 昜|to_open_out|
 隅	阝|place|r 禺|district|
+隆	阝|place|r 夊|go_slowly| 一|one| 生|life|
 隊	阝|place|r 㒸||
 階	阝|place|r 皆|all|
 随	阝|place|r 迶||
@@ -2339,6 +2678,7 @@
 際	阝|place|r 祭|sacrifice_to|
 障	阝|place|r 章|composition|
 隣	阝|place|r 粦|phosphorus_(element_15|
+隶	聿|brush| 氺||
 隷	士|scholar| 示|show| 隶|subservient|r
 隻	隹|short-tailed_bird|r 又|and|
 难	又|and| 隹|short-tailed_bird|r
@@ -2352,6 +2692,7 @@
 離	离|rare_beast| 隹|short-tailed_bird|r
 難	廿|twenty| 中|central| 夫|man| 隹|short-tailed_bird|r
 雨	帀|to_go_round| 冫|ice| 冫|ice|
+雪	雨|rain|r 彐|snout|
 雰	雨|rain|r 分|divide|
 雲	雨|rain|r 云|say|
 零	雨|rain|r 令|command|
@@ -2369,11 +2710,13 @@
 青	龶|| 月|moon|
 静	青|blue|r 争|dispute|
 非	丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 三|three| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 三|three|
+靠	牛|cow| 啡|morphine|
 面	丆|kwukyel| 囬|to_return_to_or_from|
 革	廿|twenty| 中|central| 十|ten|
 靴	革|leather|r 化|change|
 鞋	革|leather|r 圭|jade_pointed_at_top|
 韓	龺|| 韋|tanned_leather|r
+韦	三|three| 乛|hook| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 韩	龺|| 韦|tanned_leather|r
 音	立|stand| 日|sun|
 韻	音|sound|r 員|member|
@@ -2417,7 +2760,9 @@
 额	客|guest| 页|page|r
 颤	亶|sincere| 页|page|r
 風	几|small_table| 䖝||
+风	几|small_table| 乂|cross|
 飘	票|slip_of_paper_or_bamboo| 风|wind|r
+飞	乙|second| 冫|ice|
 食	亽|kwukyel| 艮|trigram_☶|
 飢	食|eat|r 几|small_table|
 飯	食|eat|r 反|reverse|
@@ -2460,15 +2805,19 @@
 高	亠|head| 口|mouth| 冋|a_desert|
 髪	髟|hair|r 友|friend|
 鬱	林|forest| 缶|earthen_crock_or_jar| 冖|cover| 鬯|sacrificial_wine|r 彡|hair|
+鬼	甲|armor| 丶|dot| 乚|hook| 厶|private|
 魂	云|say| 鬼|ghost|r
 魅	鬼|ghost|r 未|not_yet|
 魏	委|appoint| 鬼|ghost|r
 魔	麻|hemp| 鬼|ghost|r
+魚	刀|knife| 田|field| 灬|fire|
 鮮	魚|fish|r 羊|sheep|
 鯨	魚|fish|r 京|capital_city|
+鱼	刀|knife| 田|field| 一|one|
 鲁	鱼|fish|r 日|sun|
 鲜	鱼|fish|r 羊|sheep|
 鳴	口|mouth| 鳥|bird|r
+鶏	爫|claw| 夫|man| 鳥|bird|r
 鶴	隺|a_bird_flying_high_ambition| 鳥|bird|r
 鸡	又|and| 鸟|bird|r
 鸣	口|mouth| 鸟|bird|r
@@ -2482,11 +2831,13 @@
 麺	麦|wheat|r 面|face|
 麻	广|wide| 林|forest|
 黄	龷|| 由|cause| 八|eight|
+黎	禾|grain_still_on_stalk| 勹|wrap| 丿|slash| 人|man| 氺||
 黑	口|mouth| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丷|“ears-out”_component_used_in_some_Chinese_characters_(for_example| 土|soil| 灬|fire|
 黒	里|unit_of_distance| 灬|fire|
 默	黑|black|r 犬|dog|
 黙	里|unit_of_distance| 犬|dog| 灬|fire|r
 鼓	壴|| 支|disperse|
+鼠	臼|mortar| 乚|hook| 乚|hook| 乚|hook| 冫|ice| 冫|ice|
 鼻	自|self| 畀|to_give|
 齐	文|literature| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one| 丨|(same_as_〡_HANGZHOU_NUMERAL_ONE)_number_one|
 齿	止|stop| 凵|receptacle| 人|man|
