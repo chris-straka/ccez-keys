@@ -1,3 +1,25 @@
+# Owner notes, 2026-11-15 (from ccez-keeps)
+
+- Kaomoji: ⌫ right after one deletes all of it; a tap on one buzzes; it
+  gets a space on each side. Add your own and remove any.
+- Faces panel: just faces (no 👍 ❤️ 🐱 🍕 ⚽ tabs), more of them (😵‍💫);
+  `:pizza` in a field shows 🍕 in the suggestions; the clipboard row stays
+  as it was when the panel opens; the ⏎ icon there is too small.
+- Settings: First/Earlier/Later/Remove show under the language tapped
+  (they were below the last row, off screen); buzz on every button there;
+  long labels ("Telex (Tiếng Việt)") readable, not cut off.
+- Dictation (and the other buttons) switched on in settings show in the bar
+  at once.
+- "dictation" typed in full offered "citation" as the correction: a known
+  word is never corrected.
+- Typing in front of a word ("dictatio|n") suggests from the whole word
+  ("dictation"), and taking it lands after it with a space.
+- The preview line's grade buttons: icons other than smiley faces.
+- Google Translate: ⏎ closes the keyboard instead of a new line. (Its
+  lensless camera is Google's own tab icon, not ours.)
+- Muse key list in the keyboard: it is the keyring (ccez-keys holds the key
+  for the owner's apps); the rows are the apps allowed to use it.
+
 # Bug review, 2026-11-13: left for later
 
 - Mac: the ⌥⏎ key tap runs on the main run loop beside the 0.15 s tick's
