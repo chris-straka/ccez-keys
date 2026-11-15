@@ -130,6 +130,8 @@ class App : Application() {
 
     /** Hides the clipboard chip (after the AI key was pasted from it). */
     @Volatile var clearClipChip: (() -> Unit)? = null
+    /** A light tick for a tapped button, when Vibrate is on (set by the keyboard). */
+    @Volatile var tick: (() -> Unit)? = null
 
     /** The keyboard resets its typing state after a recovered error. */
     @Volatile var onRecovered: (() -> Unit)? = null

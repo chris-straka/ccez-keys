@@ -473,6 +473,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         ui.tools = false
         swiped = null
         if (key.kind != KeyKind.BACKSPACE) romajiSwitch = null
+        if (key.kind != KeyKind.BACKSPACE) lastFace = null
         if (key.kind != KeyKind.BACKSPACE) fix = null
         when (key.kind) {
             KeyKind.CHAR -> type(if (shift != Shift.OFF && key.alt.isNotEmpty()) key.alt else key.text)
@@ -556,6 +557,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
 
     fun type(text: String) {
         acted()
+        lastFace = null
         ui.ask?.let { a ->
             val t = if (caps) text.uppercase() else text
             ui.ask = a.copy(input = a.input + t)
@@ -681,6 +683,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         if (word.isEmpty()) return null
         val ic = ic ?: return null
         val resumedWord = resumed
+        // Letters after the cursor: the word goes on there, and isn't corrected as if it ended here.
+        val inside = ic.getTextAfterCursor(1, 0)?.toString().orEmpty().let { it.isNotEmpty() && isWordChar(it[0]) }
+        @Suppress("NAME_SHADOWING") val correct = correct && !inside
         val (head, typed) = lastWordOf(word.toString())
         val prev = if (head.isNotEmpty()) lastWordOf(head).second else prevWord(word.length)
         val fixed = if (correct && !noCorrect) suggestFor(typed).correction?.let { head + it } else null
@@ -828,6 +833,14 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             return
         }
         autoSpace = false
+        val face = lastFace
+        lastFace = null
+        if (face != null && word.isEmpty() && ic.getTextBeforeCursor(face.length, 0)?.toString() == face) {
+            ic.deleteSurroundingText(face.length, 0)
+            updateShift()
+            updateBar()
+            return
+        }
         val f = fix
         fix = null
         if (f != null && word.isEmpty()) {
@@ -906,6 +919,13 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         val action = (info?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
         val noAction = (info?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0
         val multiLine = (info?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0
+        // Apps whose box is a query, though it takes lines: ⏎ puts the keyboard away
+        // (owner, 2026-11-15: Google Translate made a new line).
+        if (info?.packageName in ENTER_CLOSES) {
+            service.requestHideSelf(0)
+            updateBar()
+            return
+        }
         if (!noAction && !multiLine && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             ic.performEditorAction(action)
             updateShift()
@@ -925,6 +945,40 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     fun pick(text: String, isTyped: Boolean) {
         val ic = ic ?: return
         acted()
+        lastFace = null
+        colon?.let { name ->
+            colon = null
+            if (word.toString() == name && ic.getTextBeforeCursor(name.length + 1, 0)?.toString() == ":$name") {
+                ic.beginBatchEdit()
+                ic.setComposingText("", 1)
+                ic.deleteSurroundingText(1, 0)
+                ic.commitText(text, 1)
+                ic.endBatchEdit()
+                clearWord()
+                buzz(HapticFeedbackConstants.KEYBOARD_TAP)
+                updateShift()
+                updateBar()
+                return
+            }
+        }
+        runsInto?.let { after ->
+            runsInto = null
+            if (word.isNotEmpty() && ic.getTextAfterCursor(after.length, 0)?.toString() == after) {
+                val prev = prevWord(word.length)
+                ic.beginBatchEdit()
+                ic.setComposingText("", 1)
+                // The word's end goes, and a space after it, so the cursor lands after the word and one space.
+                val space = ic.getTextAfterCursor(after.length + 1, 0)?.toString()?.getOrNull(after.length) == ' '
+                ic.deleteSurroundingText(0, after.length + if (space) 1 else 0)
+                ic.commitText("$text ", 1)
+                ic.endBatchEdit()
+                clearWord()
+                if (learnsHere()) learn(lang, prev, text, true)
+                updateShift()
+                updateBar()
+                return
+            }
+        }
         // A fix for the word the cursor was put in: it takes that word's place.
         around?.let { (before, after) ->
             around = null
@@ -1014,6 +1068,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /** A copy tapped in the bar or the clipboard: in it goes, with a tick (owner, 2026-11-12). */
     fun paste(text: String) {
         acted()
+        lastFace = null
         buzz(HapticFeedbackConstants.KEYBOARD_TAP)
         endWord(correct = false)
         ic?.commitText(text, 1)
@@ -1021,18 +1076,32 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         updateBar()
     }
 
+    /** The face just put in, as it went in (spaces too): backspace right after takes it all. */
+    private var lastFace: String? = null
+
     fun insertFace(text: String) {
         acted()
         endWord(correct = false)
-        val before = ic?.getTextBeforeCursor(1, 0)?.toString().orEmpty()
-        // A kaomoji wants a space before it, an emoji doesn't: one character
-        // as seen (a flag, a skin tone, a joined family) is an emoji, however
-        // many UTF-16 units it takes.
-        val gap = if (graphemes(text) > 1 && before.isNotEmpty() && !before[0].isWhitespace()) " " else ""
-        ic?.commitText(gap + text, 1)
+        val ic = ic ?: return
+        buzz(HapticFeedbackConstants.KEYBOARD_TAP)
+        val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+        val after = ic.getTextAfterCursor(1, 0)?.toString().orEmpty()
+        // A kaomoji gets a space on each side (owner, 2026-11-15), an emoji
+        // none: one character as seen (a flag, a skin tone, a joined family)
+        // is an emoji, however many UTF-16 units it takes.
+        val kaomoji = graphemes(text) > 1
+        val gap = if (kaomoji && before.isNotEmpty() && !before[0].isWhitespace()) " " else ""
+        val tail = if (kaomoji && (after.isEmpty() || !after[0].isWhitespace())) " " else ""
+        val out = gap + text + tail
+        ic.commitText(out, 1)
+        lastFace = out
         uk.ccez.keys.ui.Faces.used(service, text)
+        updateShift()
         updateBar()
     }
+
+    /** A tick for a button tapped in a panel or settings. */
+    fun tick() = buzz(HapticFeedbackConstants.KEYBOARD_TAP)
 
     private fun graphemes(t: String): Int {
         val it = android.icu.text.BreakIterator.getCharacterInstance()
@@ -1052,6 +1121,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
     /** For the face panel's own bottom row. */
     fun press(kind: KeyKind) {
         acted()
+        if (kind != KeyKind.BACKSPACE) lastFace = null
         when (kind) {
             KeyKind.SPACE -> space()
             KeyKind.BACKSPACE -> backspace()
@@ -1091,8 +1161,38 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
      */
     private var around: Pair<String, String>? = null
 
+    /** ":pizza": the name typed after a colon, while the bar offers its emoji. */
+    private var colon: String? = null
+    /** Letters after the cursor the word being typed runs into ("dictatio|n"), while the bar offers whole words. */
+    private var runsInto: String? = null
+
     private fun updateWords() {
         around = null
+        colon = null
+        runsInto = null
+        if (word.isNotEmpty() && !password && !numeric) {
+            val ic = ic
+            val typed = word.toString()
+            // ":pizza" (owner, 2026-11-15): the emoji by that name, a tap away.
+            if (ic?.getTextBeforeCursor(typed.length + 1, 0)?.toString() == ":$typed") {
+                val found = uk.ccez.keys.learn.Emoji.named(typed)
+                if (found.isNotEmpty()) {
+                    colon = typed
+                    ui.bar = Bar.Words(found.getOrNull(1), found[0], found.getOrNull(2), false, null)
+                    return
+                }
+            }
+            // Typed in front of a word's end (owner, 2026-11-15: "dictatio|n"): whole words, the end in mind.
+            val after = ic?.getTextAfterCursor(40, 0)?.toString().orEmpty().takeWhile(::isWordChar)
+            if (after.isNotEmpty() && after.length < 40 && !noSpaces() && !noCorrect) {
+                val w = engine.suggestAround(lang, lastWordOf(typed).second, after, 3u)
+                if (w.isNotEmpty()) {
+                    runsInto = after
+                    ui.bar = Bar.Words(w.getOrNull(1), w[0], w.getOrNull(2), false, null)
+                    return
+                }
+            }
+        }
         if (word.isEmpty() && !password && !numeric && !noCorrect && !noSpaces()) {
             val ic = ic
             val tail = ic?.getTextBeforeCursor(40, 0)?.toString().orEmpty().takeLastWhile(::isWordChar)
@@ -1206,6 +1306,7 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
         }
         // The cursor really moved: what was about the last word no longer applies.
         fix = null
+        lastFace = null
         autoSpace = false
         swiped = null
         recent.clear()
@@ -1338,6 +1439,9 @@ class Typist(private val service: KeysService, private val ui: UiState) : Keyboa
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_URI,
         )
+
+        /** Apps where ⏎ puts the keyboard away instead of starting a line. */
+        private val ENTER_CLOSES = setOf("com.google.android.apps.translate")
 
         fun isWordChar(c: Char) = c.isLetterOrDigit() || c == '\'' || c == '’' || c == '-' || isMark(c)
 

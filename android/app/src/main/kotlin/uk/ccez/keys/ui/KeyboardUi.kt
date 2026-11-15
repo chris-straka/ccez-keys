@@ -122,7 +122,7 @@ fun KeyboardUi(ui: UiState, typist: Typist) {
         if (ask == null && ui.panel == Panel.KEYS && !ui.password && stripOn) StripBand(ui, typist)
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
-            if (ui.ask == null) BarArea(ui, typist)
+            if (ui.ask == null) BarArea(ui, typist, version)
             AnimatedContent(ui.panel, transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(90)) }, label = "panel") { panel ->
                 when (panel) {
                     Panel.KEYS -> AndroidView(
@@ -166,8 +166,8 @@ private fun StripBand(ui: UiState, typist: Typist) {
 }
 
 @Composable
-private fun BarArea(ui: UiState, typist: Typist) {
-    Crossfade(ui.bar is Bar.Words && ui.panel == Panel.KEYS, animationSpec = tween(90), label = "bar") { _ -> BarRow(ui, typist) }
+private fun BarArea(ui: UiState, typist: Typist, version: Int) {
+    Crossfade(ui.bar is Bar.Words && ui.panel == Panel.KEYS, animationSpec = tween(90), label = "bar") { _ -> BarRow(ui, typist, version) }
 }
 
 @Composable
@@ -183,8 +183,13 @@ private fun PopupLayer(ui: UiState) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BarRow(ui: UiState, typist: Typist) {
+private fun BarRow(ui: UiState, typist: Typist, version: Int) {
     val bar = ui.bar
+    // The buttons switched on or off in settings show at once (owner, 2026-11-15:
+    // Dictation on, no mic): the flags come from the core, which Compose can't watch.
+    val clipOn = remember(version) { App.instance.flag("buttons.clipboard") }
+    val camOn = remember(version) { App.instance.flag("buttons.camera") }
+    val micOn = remember(version) { App.instance.flag("buttons.mic") }
     var drag by remember { mutableFloatStateOf(0f) }
     Row(
         Modifier.fillMaxWidth().height(BAR_H).pointerInput(Unit) {
@@ -247,7 +252,7 @@ private fun BarRow(ui: UiState, typist: Typist) {
             if (face != null) FaceCell(face, typist) else Cell(bar.right, false, bar.typed, typist, 1f)
             return@Row
         }
-        if (!ui.password && App.instance.flag("buttons.clipboard")) {
+        if (!ui.password && clipOn) {
             val on = ui.panel == Panel.CLIPS
             Box(
                 Modifier.padding(start = 8.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Colors.line else Color.Transparent)
@@ -259,7 +264,8 @@ private fun BarRow(ui: UiState, typist: Typist) {
             // on the left (a word, a phrase, a picture or screenshot; owner, 2026-11-12: "multiple
             // clipboard items so I can tap them all"). Tap: in it goes. Hold: the clipboard.
             val clip = ui.clip
-            val recent = if (ui.panel == Panel.KEYS) ui.recent else emptyList()
+            // The same copies whichever panel is open (owner, 2026-11-15: they went when the faces opened).
+            val recent = if (ui.panel != Panel.CLIPS) ui.recent else emptyList()
             val texts = recent.filterIsInstance<uk.ccez.keys.learn.Latest.Text>().map { it.text }
             Row(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -298,13 +304,13 @@ private fun BarRow(ui: UiState, typist: Typist) {
                     .combinedClickable(onClick = { typist.insertFace(face) }).padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
-        if (!ui.password && App.instance.flag("buttons.camera")) {
+        if (!ui.password && camOn) {
             Box(
                 Modifier.padding(end = 4.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = { typist.openCamera() }),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.cam, "Camera text", tint = Colors.muted, modifier = Modifier.size(20.dp)) }
         }
-        if (!ui.password && App.instance.flag("buttons.mic")) MicButton(typist)
+        if (!ui.password && micOn) MicButton(typist)
         val on = ui.panel == Panel.SETTINGS
         Box(
             Modifier.padding(end = 8.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Colors.line else Color.Transparent)
@@ -422,35 +428,78 @@ internal object Faces {
         emoji = lists("emoji")
     }
 
-    fun recent(ctx: Context): List<String> =
-        ctx.getSharedPreferences("faces", Context.MODE_PRIVATE).getString("recent", "").orEmpty().split('\n').filter { it.isNotEmpty() }
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("faces", Context.MODE_PRIVATE)
+    private fun list(ctx: Context, key: String) = prefs(ctx).getString(key, "").orEmpty().split('\n').filter { it.isNotEmpty() }
+    private fun put(ctx: Context, key: String, l: List<String>) = prefs(ctx).edit().putString(key, l.joinToString("\n")).apply()
 
-    fun used(ctx: Context, face: String) {
-        val list = (listOf(face) + recent(ctx).filter { it != face }).take(24)
-        ctx.getSharedPreferences("faces", Context.MODE_PRIVATE).edit().putString("recent", list.joinToString("\n")).apply()
+    fun recent(ctx: Context): List<String> = list(ctx, "recent") - hidden(ctx).toSet()
+
+    fun used(ctx: Context, face: String) = put(ctx, "recent", (listOf(face) + list(ctx, "recent").filter { it != face }).take(24))
+
+    /** Faces taken out of the panel (held, Remove). */
+    fun hidden(ctx: Context): List<String> = list(ctx, "hidden")
+
+    /** Faces the owner added to a tab (by its label), newest first. */
+    fun added(ctx: Context, tab: String): List<String> = list(ctx, "added.$tab")
+
+    /** A tab's faces: the owner's own first, then its own, less those taken out. */
+    fun of(ctx: Context, tab: List<String>): List<String> {
+        val gone = hidden(ctx).toSet()
+        return (added(ctx, tab.first()) + tab.drop(1)).distinct().filter { it !in gone }
+    }
+
+    fun add(ctx: Context, tab: String, face: String) {
+        put(ctx, "hidden", hidden(ctx) - face)
+        put(ctx, "added.$tab", listOf(face) + added(ctx, tab).filter { it != face })
+    }
+
+    fun remove(ctx: Context, tab: String?, face: String) {
+        if (tab != null && face in added(ctx, tab)) put(ctx, "added.$tab", added(ctx, tab) - face)
+        else put(ctx, "hidden", (hidden(ctx) + face).distinct())
+        put(ctx, "recent", list(ctx, "recent") - face)
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FacePanel(ui: UiState, typist: Typist) {
     val ctx = LocalContext.current
     Faces.load(ctx)
     val groups = if (ui.chatApp) Faces.kaomoji + Faces.emoji else Faces.emoji + Faces.kaomoji
-    var recent by remember { mutableStateOf(Faces.recent(ctx)) }
+    var change by remember { mutableStateOf(0) }
+    val recent = remember(change) { Faces.recent(ctx) }
     var tab by remember { mutableStateOf(if (recent.isEmpty()) 1 else 0) }
     val tabs = listOf("recent") + groups.map { it.first() }
-    val items = if (tab == 0) recent else groups[tab - 1].drop(1)
+    val group = groups.getOrNull(tab - 1)
+    val items = remember(change, tab) { if (group == null) recent else Faces.of(ctx, group) }
+    // A face held: Remove takes it out (owner, 2026-11-15: "add and remove emoticons").
+    var holding by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxWidth().height(ui.keysHeightDp.dp).padding(start = 5.dp, end = 5.dp, top = 6.dp)) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            tabs.forEachIndexed { i, t ->
-                Text(
-                    t,
-                    color = if (i == tab) Colors.fg else Colors.muted,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (i == tab) Colors.key else Color.Transparent)
-                        .combinedClickableCompat { tab = i }.padding(horizontal = 8.dp, vertical = 5.dp),
-                )
+        val held = holding
+        if (held != null) {
+            Row(
+                Modifier.fillMaxWidth().height(28.dp).combinedClickableCompat { holding = null }.padding(start = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(held, color = Colors.fg, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Action("Remove") {
+                    Faces.remove(ctx, group?.first(), held)
+                    holding = null
+                    change++
+                }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().height(28.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                tabs.forEachIndexed { i, t ->
+                    Text(
+                        t,
+                        color = if (i == tab) Colors.fg else Colors.muted,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (i == tab) Colors.key else Color.Transparent)
+                            .combinedClickableCompat { tab = i }.padding(horizontal = 8.dp, vertical = 5.dp),
+                    )
+                }
             }
         }
         FlowRow(
@@ -459,19 +508,44 @@ private fun FacePanel(ui: UiState, typist: Typist) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             items.forEach { f ->
-                val emoji = f.codePointCount(0, f.length) <= 3 && f.any { Character.isSurrogate(it) || it.code > 0x2000 }
+                val emoji = f.codePointCount(0, f.length) <= 4 && f.any { Character.isSurrogate(it) || it.code > 0x2000 } && !f.any { it.isLetterOrDigit() && it.code < 0x2000 }
                 Text(
                     f,
                     color = Colors.fg,
                     fontSize = if (emoji) 24.sp else 14.sp,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (emoji) Color.Transparent else Colors.key)
-                        .combinedClickableCompat {
-                            typist.insertFace(f)
-                            recent = Faces.recent(ctx)
-                        }
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (f == holding) Colors.popupSel else if (emoji) Color.Transparent else Colors.key)
+                        .combinedClickable(
+                            onClick = {
+                                holding = null
+                                typist.insertFace(f)
+                                change++
+                            },
+                            onLongClick = { typist.holdBuzz(); holding = f },
+                        )
                         .padding(horizontal = if (emoji) 4.dp else 9.dp, vertical = if (emoji) 2.dp else 8.dp),
+                )
+            }
+            // +: a face copied (from a page, a message) joins this tab.
+            if (group != null) {
+                Text(
+                    "+",
+                    color = Colors.accent,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Colors.key)
+                        .combinedClickableCompat {
+                            val clip = ctx.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
+                            val t = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim().orEmpty()
+                            if (t.isNotEmpty() && t.length <= 40 && '\n' !in t) {
+                                Faces.add(ctx, group.first(), t)
+                                change++
+                            } else {
+                                typist.holdBuzz()
+                            }
+                        }
+                        .padding(horizontal = 14.dp, vertical = 5.dp),
                 )
             }
         }
@@ -481,21 +555,25 @@ private fun FacePanel(ui: UiState, typist: Typist) {
             PanelKey("", 3.8f, Colors.key) { typist.press(KeyKind.SPACE) }
             PanelKey(".", 0.8f) { typist.type(".") }
             PanelKey("⌫", 1.3f) { typist.press(KeyKind.BACKSPACE) }
-            PanelKey("↵", 1.3f, Color(Colors.ENTER), Color(Colors.ENTER_FG)) { typist.press(KeyKind.ENTER) }
+            PanelKey("", 1.3f, Color(Colors.ENTER), Color(Colors.ENTER_FG), icon = Icons.enter) { typist.press(KeyKind.ENTER) }
         }
     }
 }
 
 @Composable
-private fun RowScope.PanelKey(label: String, weight: Float, bg: Color = Colors.mod, fg: Color = Colors.muted, onTap: () -> Unit) {
+private fun RowScope.PanelKey(label: String, weight: Float, bg: Color = Colors.mod, fg: Color = Colors.muted, icon: ImageVector? = null, onTap: () -> Unit) {
     Box(
         Modifier.weight(weight).fillMaxHeight().clip(RoundedCornerShape(6.dp)).background(bg).combinedClickableCompat(onTap),
         contentAlignment = Alignment.Center,
-    ) { Text(label, color = fg, fontSize = if (label == "↵" || label == "⌫") 22.sp else 15.sp) }
+    ) {
+        if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(24.dp))
+        else Text(label, color = fg, fontSize = if (label == "⌫") 22.sp else 15.sp)
+    }
 }
 
+/** A panel's or settings' button: a tick, as keys give (owner, 2026-11-15: haptics in more places). */
 @OptIn(ExperimentalFoundationApi::class)
-private fun Modifier.combinedClickableCompat(onClick: () -> Unit) = this.combinedClickable(onClick = onClick)
+private fun Modifier.combinedClickableCompat(onClick: () -> Unit) = this.combinedClickable(onClick = { App.instance.tick?.invoke(); onClick() })
 
 // --- dictation ---
 
@@ -892,6 +970,7 @@ private fun AiSettings(version: Int) {
     }
     // Apps given the key (keyring/), or refused it: Remove makes one ask again.
     var apps by remember(version) { mutableStateOf(uk.ccez.keys.keyring.Keyring.decided(ctx)) }
+    if (apps.isNotEmpty()) Text("Apps with the key", color = Colors.dim, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp))
     apps.forEach { (pkg, ok) ->
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(uk.ccez.keys.keyring.Keyring.label(ctx, pkg), color = if (ok) Colors.fg else Colors.dim, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
@@ -910,48 +989,57 @@ private fun FlagGrid(order: List<String>, @Suppress("UNUSED_PARAMETER") version:
     val tiles = order.map { it as String? } + listOf(null)
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         tiles.chunked(5).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { code ->
-                    val i = if (code == null) -1 else order.indexOf(code)
-                    Box(
-                        Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(12.dp))
-                            .background(if (code != null && code == picked) Colors.popupSel else Colors.key)
-                            .combinedClickableCompat { if (code == null) go(Page.ADD) else picked = if (picked == code) null else code },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (code == null) {
-                            Text("+", color = Colors.accent, fontSize = 22.sp)
-                        } else {
-                            Text(Langs.of(ctx, code)?.flag ?: code, fontSize = 26.sp)
-                            Text(
-                                "${i + 1}",
-                                color = Colors.muted,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 5.dp, bottom = 2.dp),
-                            )
-                        }
-                    }
+            FlagRow(row, order, picked, ctx, go) { picked = it }
+            // Its buttons right under the flag tapped (owner, 2026-11-15: under the last row, they were off screen).
+            val p = picked
+            if (p != null && p in row) FlagActions(p, order, ctx) { picked = null }
+        }
+    }
+}
+
+@Composable
+private fun FlagRow(row: List<String?>, order: List<String>, picked: String?, ctx: Context, go: (Page) -> Unit, pick: (String?) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        row.forEach { code ->
+            val i = if (code == null) -1 else order.indexOf(code)
+            Box(
+                Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(12.dp))
+                    .background(if (code != null && code == picked) Colors.popupSel else Colors.key)
+                    .combinedClickableCompat { if (code == null) go(Page.ADD) else pick(if (picked == code) null else code) },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (code == null) {
+                    Text("+", color = Colors.accent, fontSize = 22.sp)
+                } else {
+                    Text(Langs.of(ctx, code)?.flag ?: code, fontSize = 26.sp)
+                    Text(
+                        "${i + 1}",
+                        color = Colors.muted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 5.dp, bottom = 2.dp),
+                    )
                 }
-                repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
-        val p = picked
-        if (p != null && p in order) {
-            val i = order.indexOf(p)
-            fun move(to: Int) {
-                val l = order.toMutableList()
-                l.add(to.coerceIn(0, l.lastIndex), l.removeAt(i))
-                set("languages.learning", JSONArray(l).toString())
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(Langs.of(ctx, p)?.name ?: p, color = Colors.fg, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                if (i > 0) Action("First") { move(0) }
-                if (i > 0) Action("Earlier") { move(i - 1) }
-                if (i < order.lastIndex) Action("Later") { move(i + 1) }
-                Action("Remove") { set("languages.learning", JSONArray(order - p).toString()); picked = null }
-            }
-        }
+        repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+    }
+}
+
+@Composable
+private fun FlagActions(p: String, order: List<String>, ctx: Context, removed: () -> Unit) {
+    val i = order.indexOf(p)
+    fun move(to: Int) {
+        val l = order.toMutableList()
+        l.add(to.coerceIn(0, l.lastIndex), l.removeAt(i))
+        set("languages.learning", JSONArray(l).toString())
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(Langs.of(ctx, p)?.name ?: p, color = Colors.fg, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        if (i > 0) Action("First") { move(0) }
+        if (i > 0) Action("Earlier") { move(i - 1) }
+        if (i < order.lastIndex) Action("Later") { move(i + 1) }
+        Action("Remove") { set("languages.learning", JSONArray(order - p).toString()); removed() }
     }
 }
 
@@ -1052,7 +1140,8 @@ private fun TwoColumns(rows: List<Triple<ImageVector, String, String>>, version:
                     ) {
                         Icon(icon, null, tint = Colors.muted, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(10.dp))
-                        Text(label, color = Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                        // Two lines when long ("Telex (Tiếng Việt)" was cut off).
+                        Text(label, color = Colors.fg, fontSize = 13.5.sp, lineHeight = 15.sp, modifier = Modifier.weight(1f), maxLines = 2)
                         if (key.isEmpty()) SizeStepper(version) else Switch(on)
                     }
                 }
@@ -1106,10 +1195,10 @@ internal object Icons {
     )
     val face = stroke("M21 12a9 9 0 1 1 -18 0a9 9 0 1 1 18 0z", "M8.5 14.5a4.5 4.5 0 0 0 7 0", "M9 9.5h.01M15 9.5h.01")
     val check = stroke("M4 12l5 5L20 6")
-    // The review line's answers: a smile, a straight mouth, a frown.
-    val easy = stroke("M21 12a9 9 0 1 1 -18 0a9 9 0 1 1 18 0z", "M8 13.5a4.8 4.8 0 0 0 8 0", "M9 9.5h.01M15 9.5h.01")
-    val medium = stroke("M21 12a9 9 0 1 1 -18 0a9 9 0 1 1 18 0z", "M8.5 15h7", "M9 9.5h.01M15 9.5h.01")
-    val hard = stroke("M21 12a9 9 0 1 1 -18 0a9 9 0 1 1 18 0z", "M8 16.5a4.8 4.8 0 0 1 8 0", "M9 9.5h.01M15 9.5h.01")
+    // The review line's answers (owner, 2026-11-15: not smiley faces): two ticks, one tick, again.
+    val easy = stroke("M2.5 12.5l4 4L15 8", "M10.5 15.5l1 1L21.5 7")
+    val medium = stroke("M5 12.5l4.5 4.5L19 7.5")
+    val hard = stroke("M4 12a8 8 0 1 0 2.3 -5.6", "M4 4v4h4")
     val capital = stroke("M5 19l6-14 6 14", "M7.5 13.5h7", "M19 9V5M17 7l2-2 2 2")
     val dot = stroke("M4 17h3M10 17h3", "M18 17h.01")
     val vibrate = stroke("M10 4h4a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1 -1.5 1.5h-4a1.5 1.5 0 0 1 -1.5 -1.5v-13a1.5 1.5 0 0 1 1.5 -1.5z", "M4 9v6M20 9v6")
@@ -1123,4 +1212,5 @@ internal object Icons {
     val number = stroke("M5 9l2-1.5V16", "M10.5 9.5a2 2 0 0 1 4 .5c0 2-4 3.5-4 6h4", "M17.5 8h3l-2 3a2.5 2.5 0 1 1-1.5 4.5")
     val copy = stroke("M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1v-10a1 1 0 0 1 1 -1z", "M5 15a1 1 0 0 1 -1 -1v-10a1 1 0 0 1 1 -1h10a1 1 0 0 1 1 1v1")
     val size = stroke("M4 9h16M4 15h16", "M12 3v4M12 17v4")
+    val enter = stroke("M19 5v6a3 3 0 0 1 -3 3H5", "M9 10l-4 4 4 4")
 }
