@@ -632,9 +632,12 @@ mod app {
             let _ = words_menu.append(c);
         }
         // A break once every word on screen is answered (owner, 2026-11-13:
-        // "a breather after clearing the screen"; off to start, short).
-        let break_menu = Submenu::new("Break after clearing", true);
-        let breaks: Vec<(u64, CheckMenuItem)> = [(0u64, "Off"), (10, "10 s"), (20, "20 s"), (60, "1 min"), (300, "5 min")]
+        // "a breather after clearing the screen"; 2026-11-15: "set how long
+        // I should wait before they come back", so up to an hour, and with
+        // the other word settings).
+        let break_menu = Submenu::new("Back after clearing", true);
+        let breaks: Vec<(u64, CheckMenuItem)> =
+            [(0u64, "At once"), (10, "10 s"), (30, "30 s"), (60, "1 min"), (300, "5 min"), (900, "15 min"), (1800, "30 min"), (3600, "1 h")]
             .into_iter()
             .map(|(n, t)| (n, CheckMenuItem::new(t, true, app.prefs.borrow().words_break == n, None)))
             .collect();
@@ -653,7 +656,7 @@ mod app {
         let words_typing = CheckMenuItem::new("While typing", true, app.prefs.borrow().words_typing, None);
         let words_video = CheckMenuItem::new("While a video plays", true, app.prefs.borrow().words_video, None);
         let words_shots = CheckMenuItem::new("Hide in screenshots", true, app.prefs.borrow().words_hide_shots, None);
-        let _ = words_menu.append_items(&[&PredefinedMenuItem::separator(), &langs_menu, &PredefinedMenuItem::separator(), &words_typing, &words_video, &words_shots]);
+        let _ = words_menu.append_items(&[&PredefinedMenuItem::separator(), &break_menu, &langs_menu, &PredefinedMenuItem::separator(), &words_typing, &words_video, &words_shots]);
         let chat_swap = CheckMenuItem::new("⌥⏎ in ChatGPT and Claude: into my language", true, app.prefs.borrow().chat_swap, None);
         // Translations run on this Mac, in the languages downloaded in System
         // Settings: this opens that page, and names any still missing.
@@ -663,7 +666,7 @@ mod app {
         let sep = PredefinedMenuItem::separator();
         let sep2 = PredefinedMenuItem::separator();
         let sep3 = PredefinedMenuItem::separator();
-        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &speak, &words_menu, &break_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
+        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &speak, &words_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_title("文").with_tooltip("ccez-keys").build();
         // Bold and a size up: the menu bar's regular text left 文 thin and small.
         if let Ok(t) = &tray

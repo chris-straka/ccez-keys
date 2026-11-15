@@ -113,8 +113,9 @@ was; 2026-11-13: two minutes over every overlapping spot sent words to
 the far right). A word stays 3 minutes of time the Mac is in use (input
 in the last minute): away or reading, words don't turn over unseen.
 
-"Break after clearing" (menu; Off to start, 10 s to 5 min): words come in
-rounds. A word recalled (Good, Easy, Known) isn't replaced; one answered
+"Back after clearing" (Words on screen menu; At once, 10 s to 1 h): words
+come in rounds (owner, 2026-11-15: "set how long I should wait before they
+come back"). A word recalled (Good, Easy, Known) isn't replaced; one answered
 Again or timed out is. Once the screen is clear, nothing comes for the
 break, then a fresh screenful (owner, 2026-11-13: "a breather after
 clearing the screen"). Undo puts the word back and cancels the break.
