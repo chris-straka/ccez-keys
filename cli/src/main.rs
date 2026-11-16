@@ -9,8 +9,12 @@
 //!     keys update                  look for a new release now
 //!     keys word <lang> <word> [new|learning|known]   a word's status (set: synced to ccez-words)
 //!     keys log [-n 50]             the keyboard's events and errors
-//!     keys key < file              the AI key, from stdin (empty removes it);
-//!                                  it never appears on a command line
+//!     keys ai-key                  the DeepSeek key, once, everywhere: z's keychain
+//!                                  (ccez-words), the phone, the Cloudflare apps;
+//!                                  from the clipboard or a hidden prompt (aikey.rs)
+//!     keys ai-key --test           one tiny real call through each of those
+//!     keys key < file              the phone's AI key only, from stdin (empty
+//!                                  removes it); it never appears on a command line
 //!     keys keyring [allow|deny|drop <package>]   apps given the AI key
 //!                                  (docs/keyring.md); no argument lists them
 //!     keys clip put <text|->       onto the phone's clipboard (- or nothing: stdin)
@@ -27,6 +31,13 @@
 //! JSON (except log, JSON lines). Errors are plain words, exit code 1.
 
 use std::process::{Command, exit};
+
+mod aikey;
+
+/// adb, or a stand-in for tests (KEYS_ADB).
+fn adb() -> String {
+    std::env::var("KEYS_ADB").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "adb".into())
+}
 
 const URI: &str = "content://uk.ccez.keys.control";
 
@@ -95,6 +106,10 @@ fn main() {
         ["clip"] => ("clip", Some("now".to_string()), None),
         ["clip", "now" | "ls" | "clear"] => ("clip", Some(args[1].clone()), None),
         ["clip", "get" | "rm", id] => ("clip", Some(format!("{} {id}", args[1])), None),
+        ["ai-key", rest @ ..] => {
+            let rest: Vec<String> = rest.iter().map(|s| s.to_string()).collect();
+            exit(aikey::main(&rest));
+        }
         ["key"] => {
             match send_key() {
                 Ok(out) => println!("{out}"),
@@ -106,7 +121,7 @@ fn main() {
             return;
         }
         _ => {
-            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key < file | keyring [allow|deny|drop <package>] | clip [put <text|-> | now | ls | get <id> | rm <id> | clear] | backup [dir] | restore <file>");
+            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | ai-key [--test] | key < file | keyring [allow|deny|drop <package>] | clip [put <text|-> | now | ls | get <id> | rm <id> | clear] | backup [dir] | restore <file>");
             exit(2);
         }
     };
@@ -123,7 +138,7 @@ fn serial() -> Result<String, String> {
     if let Ok(s) = std::env::var("KEYS_SERIAL") {
         return Ok(s);
     }
-    let out = Command::new("adb").arg("devices").output().map_err(|e| format!("adb didn't run: {e}"))?;
+    let out = Command::new(adb()).arg("devices").output().map_err(|e| format!("adb didn't run: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout);
     let devices: Vec<&str> = text.lines().skip(1).filter(|l| l.ends_with("\tdevice")).map(|l| l.split('\t').next().unwrap_or("")).collect();
     match devices.as_slice() {
@@ -147,7 +162,7 @@ fn call(method: &str, arg: Option<&str>, value: Option<&str>) -> Result<String, 
     if std::env::var("KEYS_DEBUG").is_ok() {
         eprintln!("adb -s {serial} shell {cmd}");
     }
-    let out = Command::new("adb").args(["-s", &serial, "shell", &cmd]).output().map_err(|e| format!("adb didn't run: {e}"))?;
+    let out = Command::new(adb()).args(["-s", &serial, "shell", &cmd]).output().map_err(|e| format!("adb didn't run: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
     if text.contains("Could not find provider") || text.contains("Unknown authority") {
         return Err("ccez-keys isn't installed on the phone".into());
@@ -155,7 +170,7 @@ fn call(method: &str, arg: Option<&str>, value: Option<&str>) -> Result<String, 
     let pick = |name: &str| {
         let at = text.find(&format!("{name}="))? + name.len() + 1;
         let rest = &text[at..];
-        let end = rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len());
+        let end = rest.find([',', '}']).unwrap_or(rest.len());
         unb64(rest[..end].trim())
     };
     if let Some(e) = pick("error") {
@@ -194,7 +209,7 @@ fn call_stdin(method: &str, arg: Option<&str>, encoded: &str) -> Result<String, 
     let serial = serial()?;
     let arg = arg.map(|a| format!(" --arg {}", quote(a))).unwrap_or_default();
     let script = format!("read -r k; content call --uri {URI} --method {method}{arg} --extra value:s:\"$k\"");
-    let mut child = Command::new("adb")
+    let mut child = Command::new(adb())
         .args(["-s", &serial, "shell", &script])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -205,11 +220,11 @@ fn call_stdin(method: &str, arg: Option<&str>, encoded: &str) -> Result<String, 
     let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
     if let Some(at) = text.find("{error=") {
         let rest = &text[at + 7..];
-        return Err(unb64(rest[..rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len())].trim()).unwrap_or_else(|| text.trim().to_string()));
+        return Err(unb64(rest[..rest.find([',', '}']).unwrap_or(rest.len())].trim()).unwrap_or_else(|| text.trim().to_string()));
     }
     let at = text.find("out=").ok_or_else(|| format!("unexpected answer from the phone: {}", text.trim()))? + 4;
     let rest = &text[at..];
-    unb64(rest[..rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len())].trim()).ok_or_else(|| "bad answer".into())
+    unb64(rest[..rest.find([',', '}']).unwrap_or(rest.len())].trim()).ok_or_else(|| "bad answer".into())
 }
 
 fn quote(s: &str) -> String {
@@ -264,7 +279,7 @@ fn today() -> String {
 /// schedule) into `dir/YYYY-MM-DD.json`; the newest 30 kept.
 fn backup(dir: &std::path::Path) -> Result<String, String> {
     let serial = serial()?;
-    let out = Command::new("adb")
+    let out = Command::new(adb())
         .args(["-s", &serial, "exec-out", "content", "read", "--uri", BACKUP_URI])
         .output()
         .map_err(|e| format!("adb didn't run: {e}"))?;
@@ -301,9 +316,9 @@ fn restore(file: &std::path::Path) -> Result<String, String> {
     }
     let serial = serial()?;
     // The keyboard logs how a restore went: its newest "restore" line, before and after.
-    let last = || call("log", Some("60"), None).unwrap_or_default().lines().filter(|l| l.contains("\"event\":\"restore\"")).last().map(str::to_string);
+    let last = || call("log", Some("60"), None).unwrap_or_default().lines().rfind(|l| l.contains("\"event\":\"restore\"")).map(str::to_string);
     let before = last();
-    let mut child = Command::new("adb")
+    let mut child = Command::new(adb())
         .args(["-s", &serial, "shell", "content", "write", "--uri", RESTORE_URI])
         .stdin(std::process::Stdio::piped())
         .spawn()
