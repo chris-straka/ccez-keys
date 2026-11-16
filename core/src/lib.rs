@@ -652,10 +652,13 @@ impl Engine {
     }
 
     /// A screen word graded: Good later and later, Easy two steps, Again
-    /// in two minutes. Syncs with the word statuses (`sync_words`).
+    /// and a new word's first Good after the `learning.comeback` minutes
+    /// (1-5; the phone grades through here too, so it honours the same
+    /// setting). Syncs with the word statuses (`sync_words`).
     pub fn grade_screen_word(&self, lang: String, word: String, grade: Grade) {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        self.review.lock().unwrap_or_else(|e| e.into_inner()).grade(&lang, &word, grade, now);
+        let mins = self.lock().settings.get("learning.comeback").and_then(|v| v.as_u64()).unwrap_or(2);
+        self.review.lock().unwrap_or_else(|e| e.into_inner()).grade_with_come_back(&lang, &word, grade, now, mins * 60);
     }
 
     /// A word's meaning as its card says it (word_face): the phone's review
