@@ -128,11 +128,11 @@ A stored value that isn't a preset (say 5 words, a 10 s break) keeps an
 item of its own, so it still shows as set; picking a preset replaces it.
 
 "Come back in" (1-5 min, 2 by default) is how soon a word comes back
-after Again, and a new word after its first Good; FSRS's later intervals
-are unchanged. It is the core's `learning.comeback` setting, not a Mac
-one: the phone grades through the same core (`grade_screen_word`), so
-the value the phone holds applies there too (Settings → Learning on the
-phone sets it as well).
+after Again (a new word's first Good stays 10 min, and FSRS's later
+intervals are unchanged). It is the core's `learning.comeback` setting,
+not a Mac one: the phone grades through the same core
+(`grade_screen_word`), so the value the phone holds applies there too
+(Settings → Learning on the phone sets it as well).
 
 Hovered, a word shows its reading, its meaning, then (1.5 s later, faded
 in) its tags, the first being its kind (v, n, a, adv…), then for Chinese

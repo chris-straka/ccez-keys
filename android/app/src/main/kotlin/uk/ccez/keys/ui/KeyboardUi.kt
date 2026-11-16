@@ -1167,7 +1167,7 @@ private fun Switch(on: Boolean) {
     }
 }
 
-/** How soon a review word comes back after Again, and a new word after its first Good (the core's FSRS takes it from there). */
+/** How soon a review word comes back after Again (a new word's first Good stays 10 min, and the core's FSRS takes it from there). */
 @Composable
 private fun ComeBackRow(version: Int) {
     val now = remember(version) { App.instance.engine.setting("learning.comeback").toIntOrNull() ?: 2 }

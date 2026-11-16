@@ -641,9 +641,9 @@ mod app {
         for (_, c) in &word_counts {
             let _ = words_menu.append(c);
         }
-        // How soon a word comes back after Again, and a new word after its
-        // first Good (owner, 2026-11-15: options between 1 and 5 min). In
-        // the core's settings with the rest, so the phone's grading
+        // How soon a word comes back after Again (owner, 2026-11-15: options
+        // between 1 and 5 min; a new word's first Good stays at Anki's 10 min).
+        // In the core's settings with the rest, so the phone's grading
         // (through the same core) honours the setting it holds.
         let comeback_menu = Submenu::new("Come back in", true);
         let comeback_now = app.engine.setting("learning.comeback".into()).ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(2);

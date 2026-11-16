@@ -659,8 +659,8 @@ impl Engine {
             .collect()
     }
 
-    /// A screen word graded: Good later and later, Easy two steps, Again
-    /// and a new word's first Good after the `learning.comeback` minutes
+    /// A screen word graded: Good later and later (10 min first step on a new
+    /// word), Easy two steps, Again after the `learning.comeback` minutes
     /// (1-5; the phone grades through here too, so it honours the same
     /// setting). Syncs with the word statuses (`sync_words`).
     pub fn grade_screen_word(&self, lang: String, word: String, grade: Grade) {

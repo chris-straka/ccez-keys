@@ -3,10 +3,10 @@
 //! using the anki algorithm anywhere?"). Each word keeps a stability (days
 //! until recall falls to 90%) and a difficulty, updated by every answer;
 //! the next review is set for 90% recall. Again sends a word to a short
-//! relearning step, and Good on a new word to a short learning step, then
-//! it graduates (the maths is ccez-lang-core's `fsrs`, shared with
-//! ccez-words, which grades what the owner watches). Kept in
-//! screen-words.json beside the settings, on the
+//! relearning step (`learning.comeback`, 2 min by default); Good on a new
+//! word to a 10 min learning step, then it graduates (the maths is
+//! ccez-lang-core's `fsrs`, shared with ccez-words, which grades what the
+//! owner watches). Kept in screen-words.json beside the settings, on the
 //! Mac and the phone alike.
 //!
 //! Synced through ccez-words with the word statuses ([`sync`]): `GET
@@ -112,20 +112,19 @@ impl Review {
         self.answer(lang, word, g, now, None);
     }
 
-    /// As [Review::grade], but Again and a new word's first Good come back
-    /// after `come_back` (the `learning.comeback` setting, 1-5 min) instead
-    /// of FSRS's short steps. Graduating and every later interval are
-    /// FSRS's, unchanged.
+    /// As [Review::grade], but Again comes back after `come_back` (the
+    /// `learning.comeback` setting, 1-5 min) instead of FSRS's 2 min. A new
+    /// word's first Good stays at 10 min (Anki's `1m 10m`), and graduating
+    /// and every later interval are FSRS's, unchanged.
     pub fn grade_with_come_back(&mut self, lang: &str, word: &str, g: Grade, now: u64, come_back: u64) {
         self.answer(lang, word, g, now, Some(come_back.clamp(60, 300)));
     }
 
     fn answer(&mut self, lang: &str, word: &str, g: Grade, now: u64, come_back: Option<u64>) {
         let card = self.cards.entry(key(lang, word)).or_default();
-        let new_word = card.state == fsrs::State::New;
         card.answer(g.into(), now);
         if let Some(secs) = come_back
-            && (g == Grade::Again || (new_word && g == Grade::Good))
+            && g == Grade::Again
         {
             card.due = now + secs;
         }
@@ -332,15 +331,15 @@ mod tests {
     }
 
     #[test]
-    fn a_chosen_come_back_covers_again_and_a_new_words_first_step_only() {
-        // New word, Good: back in the chosen 3 min, not FSRS's 10.
+    fn a_chosen_come_back_covers_again_only_and_keeps_first_good_at_ten_minutes() {
+        // New word, Good: keeps Anki/FSRS's 10 min step (600 s), not come_back.
         let mut r = Review::default();
         r.grade_with_come_back("fr", "lugubre", Grade::Good, 1000, 180);
-        assert_eq!(r.due_at("fr", "lugubre"), Some(1180));
+        assert_eq!(r.due_at("fr", "lugubre"), Some(1600));
         // Good again at its time: it graduates, a day or more off (FSRS).
-        r.grade_with_come_back("fr", "lugubre", Grade::Good, 1180, 180);
+        r.grade_with_come_back("fr", "lugubre", Grade::Good, 1600, 180);
         let graduated = r.due_at("fr", "lugubre").unwrap();
-        assert!(graduated >= 1180 + DAY, "{graduated}");
+        assert!(graduated >= 1600 + DAY, "{graduated}");
         // Again on a word well into FSRS: back in the chosen 3 min...
         r.grade_with_come_back("fr", "lugubre", Grade::Again, graduated, 180);
         assert_eq!(r.due_at("fr", "lugubre"), Some(graduated + 180));
@@ -349,7 +348,7 @@ mod tests {
         let mut steady = Review::default();
         for x in [&mut slipped, &mut steady] {
             x.grade_with_come_back("fr", "x", Grade::Good, 0, 60);
-            x.grade_with_come_back("fr", "x", Grade::Good, 60, 60);
+            x.grade_with_come_back("fr", "x", Grade::Good, 600, 60);
         }
         let due = steady.due_at("fr", "x").unwrap();
         slipped.grade_with_come_back("fr", "x", Grade::Again, due, 60);
@@ -357,10 +356,10 @@ mod tests {
         slipped.grade_with_come_back("fr", "x", Grade::Good, due + 60, 60);
         steady.grade_with_come_back("fr", "x", Grade::Good, due + 60, 60);
         assert!(slipped.due_at("fr", "x") < steady.due_at("fr", "x"));
-        // The ends of the menu's range, and Easy untouched by it.
+        // The ends of the menu's range on Again (new words), and Easy untouched.
         let mut r = Review::default();
-        r.grade_with_come_back("fr", "a", Grade::Good, 0, 60);
-        r.grade_with_come_back("fr", "b", Grade::Good, 0, 300);
+        r.grade_with_come_back("fr", "a", Grade::Again, 0, 60);
+        r.grade_with_come_back("fr", "b", Grade::Again, 0, 300);
         assert_eq!((r.due_at("fr", "a"), r.due_at("fr", "b")), (Some(60), Some(300)));
         r.grade_with_come_back("fr", "c", Grade::Easy, 0, 60);
         assert!(r.due_at("fr", "c").unwrap() >= 7 * DAY);

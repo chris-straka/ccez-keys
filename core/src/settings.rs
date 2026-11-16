@@ -74,7 +74,7 @@ pub const DEFS: &[Def] = &[
     Def { key: "learning.screen_typing", kind: Kind::Bool, default: || json!(true), about: "Screen words stay up while the keyboard is up." },
     Def { key: "learning.screen_video", kind: Kind::Bool, default: || json!(true), about: "Screen words stay up while a video plays full screen." },
     Def { key: "learning.screen_hide_shots", kind: Kind::Bool, default: || json!(true), about: "Screen words stay out of screenshots and screen recordings (off: they show, to share them)." },
-    Def { key: "learning.comeback", kind: Kind::Int { min: 1, max: 5 }, default: || json!(2), about: "Minutes until a word comes back after Again, and after a new word's first Good. FSRS's later intervals are unchanged." },
+    Def { key: "learning.comeback", kind: Kind::Int { min: 1, max: 5 }, default: || json!(2), about: "Minutes until a word comes back after Again (a new word's first Good stays 10 min, and FSRS's later intervals are unchanged)." },
     Def {
         key: "words.server",
         kind: Kind::Text,
