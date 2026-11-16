@@ -226,7 +226,7 @@ videos) stays in ccez-tube, so few words are grey yet.
   kept in `keys mistakes` for ccez-learn), Ask typed on the keyboard
   itself (carry on in ccez-llm), the strip reworded by the AI on a pause,
   casual or polite per app (hold 🔊). Key: Settings → AI → Paste, or
-  `keys key < file`. Needs the owner's key to be tried for real.
+  `keys key add deepseek`.
 - Noticing the language typed (two words), language per app.
 - Kaomoji offered in chat apps by the message's mood; clipboard history.
 - Dictation: tap (Android's recogniser; asks for a missing language pack),
