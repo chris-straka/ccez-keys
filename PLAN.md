@@ -17,7 +17,7 @@
 - The preview line's grade buttons: icons other than smiley faces.
 - ccez-translate (the owner's own app, not Google's): ⏎ closes the
   keyboard, and its camera tab gets a lens: both fixed in that app (v0.1.37).
-- Muse key list in the keyboard: it is the keyring (ccez-keys holds the key
+- AI key list in the keyboard: it is the keyring (ccez-keys holds the key
   for the owner's apps); the rows are the apps allowed to use it.
 
 # Bug review, 2026-11-13: left for later
@@ -152,8 +152,8 @@ on the page.
 - Shared crate, extracted from ccez-tube `core/` (words.rs, dict.rs,
   vocab.rs, ask.rs, sense.rs + ccez-lexicon): dictionaries, Japanese and
   Chinese segmentation, furigana/pinyin/pitch, word statuses and
-  ccez-words sync, the OpenAI-compatible client (Muse
-  `muse-spark-1.3-contributor`, DeepSeek, Zen, custom). Own error type,
+  ccez-words sync, one chat-completions client (DeepSeek
+  `deepseek-flash` since 2026-11-16; address and model are settings). Own error type,
   UniFFI behind a feature. ccez-tube moves onto it too. Romaja and word
   parts get ported from Kotlin into it.
 - Kotlin side for Android services: ML Kit Translate (live strip, offline,

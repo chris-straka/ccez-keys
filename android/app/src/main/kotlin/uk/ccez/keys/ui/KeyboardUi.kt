@@ -941,19 +941,10 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
 private fun AiSettings(version: Int) {
     val ctx = LocalContext.current
     val e = App.instance.engine
-    val provider = remember(version) { e.setting("ai.provider").trim('"') }
+    // One AI: DeepSeek (its address and model are settings: `keys set ai.model …`).
+    val model = remember(version) { e.setting("ai.model").trim('"') }
     var hint by remember(version) { mutableStateOf(uk.ccez.keys.learn.Secrets.hint(ctx)) }
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf("muse" to "Muse", "deepseek" to "DeepSeek", "zen" to "Zen").forEach { (id, label) ->
-            Text(
-                label,
-                color = if (id == provider) Colors.accent else Colors.fg,
-                fontSize = 12.5.sp,
-                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (id == provider) Colors.faceOn else Colors.chip)
-                    .combinedClickableCompat { set("ai.provider", "\"$id\"") }.padding(horizontal = 12.dp, vertical = 6.dp),
-            )
-        }
-    }
+    Text("DeepSeek · $model", color = Colors.fg, fontSize = 13.5.sp)
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(hint ?: "Key", color = if (hint == null) Colors.dim else Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
         // The key from the clipboard: copied wherever it lives, pasted here.

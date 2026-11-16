@@ -113,7 +113,7 @@ fun StripRow(s: StripView, typist: Typist) {
         // The AI at work (a slow violet blink) or its wording in place (✦), in a
         // slot always there: appearing, they pushed the words (owner, 2026-11-08).
         Box(Modifier.size(30.dp).clip(RoundedCornerShape(15.dp)).let { m ->
-            // Tap: ask Muse about this wording. Hold: this app's wording polite or casual.
+            // Tap: ask the AI about this wording. Hold: this app's wording polite or casual.
             if (s.refined) m.combinedClickable(onClick = { typist.openAsk("${s.source} → ${s.text}") }, onLongClick = { typist.flipRegister() }) else m
         }, contentAlignment = Alignment.Center) {
             if (s.pending) {
@@ -121,7 +121,7 @@ fun StripRow(s: StripView, typist: Typist) {
                 androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(550); bright = !bright } }
                 Box(Modifier.size(6.dp).graphicsLayer { alpha = if (bright) 1f else 0.3f }.clip(RoundedCornerShape(3.dp)).background(VIOLET))
             } else if (s.refined) {
-                Icon(Icons.spark, "Ask Muse", tint = if (typist.polite()) VIOLET else VIOLET.copy(alpha = 0.6f), modifier = Modifier.size(13.dp))
+                Icon(Icons.spark, "Ask the AI", tint = if (typist.polite()) VIOLET else VIOLET.copy(alpha = 0.6f), modifier = Modifier.size(13.dp))
             }
         }
         // No speaker here: the cards have one (owner, 2026-11-08).
@@ -334,15 +334,15 @@ fun BoxScope.CardOverlay(c: CardView, ui: UiState, typist: Typist) {
                     }
                 }
             }
-            // What it means here: Muse's reading of it in this sentence (✦), else the
-            // dictionary's best match, Muse's answer fading in over it.
+            // What it means here: the AI's reading of it in this sentence (✦), else the
+            // dictionary's best match, the AI's answer fading in over it.
             var more by remember(c.word, c.lang) { mutableStateOf(false) }
             val meanings = card?.meanings.orEmpty().ifEmpty { listOfNotNull(c.meaning) }
             androidx.compose.animation.Crossfade(c.here, animationSpec = androidx.compose.animation.core.tween(220), label = "here") { here ->
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     if (here != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.spark, "Muse", tint = VIOLET, modifier = Modifier.size(13.dp))
+                            Icon(Icons.spark, "AI", tint = VIOLET, modifier = Modifier.size(13.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(here, color = Colors.fg, fontSize = 17.sp, maxLines = 2)
                         }
@@ -479,13 +479,12 @@ fun AskPanel(a: uk.ccez.keys.learn.AskState, typist: Typist) {
                         modifier = Modifier.align(Alignment.End).clip(RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp)).background(Color(0xFF3B4C7A)).padding(horizontal = 11.dp, vertical = 6.dp),
                     )
                 } else {
-                    Text(
-                        l.text.ifEmpty { "…" },
-                        color = Color(0xFFE9E3FF),
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(VIOLET_BG).padding(horizontal = 11.dp, vertical = 8.dp),
-                    )
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(VIOLET_BG).padding(horizontal = 11.dp, vertical = 8.dp)) {
+                        Text(l.text.ifEmpty { "…" }, color = Color(0xFFE9E3FF), fontSize = 13.sp, lineHeight = 18.sp)
+                        // What it's looking up right now, quietly; it folds into the sources row.
+                        l.looking?.let { Text(it, color = Colors.muted, fontSize = 11.5.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp)) }
+                        if (l.sources.isNotEmpty() || l.searches.isNotEmpty()) Sources(l)
+                    }
                 }
             }
         }
@@ -501,6 +500,52 @@ fun AskPanel(a: uk.ccez.keys.learn.AskState, typist: Typist) {
     }
 }
 
+
+/**
+ * What an Ask answer looked up (owner, 2026-11-16: "show me all the things
+ * it looked up"): a row of overlapping site letters and "N sources"; a tap
+ * opens each search it ran, then each page (title, site), a tap on a page
+ * opening it in the browser. Only what DeepSeek sent back.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Sources(l: uk.ccez.keys.learn.Line) {
+    val ctx = LocalContext.current
+    var open by remember(l.sources, l.searches) { mutableStateOf(false) }
+    val tints = listOf(Color(0xFF6C5BB5), Color(0xFF3B6E8F), Color(0xFF8F5B3B), Color(0xFF4F7F52))
+    Row(
+        Modifier.padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).combinedClickable(onClick = { open = !open }).padding(vertical = 2.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        l.sources.take(3).forEachIndexed { i, src ->
+            Box(
+                Modifier.offset(x = (-5 * i).dp).size(16.dp).clip(RoundedCornerShape(8.dp)).background(tints[i % tints.size]),
+                contentAlignment = Alignment.Center,
+            ) { Text(src.site.firstOrNull()?.uppercase() ?: "•", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold) }
+        }
+        val n = l.sources.size
+        val label = if (n > 0) "$n source${if (n == 1) "" else "s"}" else "${l.searches.size} search${if (l.searches.size == 1) "" else "es"}"
+        Text(label + if (open) " ▴" else " ▾", color = Colors.muted, fontSize = 11.5.sp, modifier = Modifier.offset(x = (if (n > 0) 4 - 5 * (minOf(n, 3) - 1) else 0).dp))
+    }
+    if (!open) return
+    Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        l.searches.forEach { q -> Text("Searched: $q", color = Colors.muted, fontSize = 11.5.sp, maxLines = 2) }
+        l.sources.forEach { src ->
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = {
+                    runCatching {
+                        ctx.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(src.url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                }).padding(vertical = 2.dp),
+            ) {
+                Text(src.title, color = Color(0xFFCFC8E6), fontSize = 12.sp, maxLines = 2)
+                Text(src.site, color = Colors.dim, fontSize = 10.5.sp, maxLines = 1)
+            }
+        }
+    }
+}
 
 /**
  * One of the owner's Learning words, on an empty field (the keyboard just

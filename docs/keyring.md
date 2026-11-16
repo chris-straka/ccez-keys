@@ -1,6 +1,6 @@
 # Keyring: the AI key for the owner's other apps
 
-ccez-keys holds the AI key (Settings → AI, or `keys key`). The owner's
+ccez-keys holds the AI key, DeepSeek's since 2026-11-16 (`keys ai-key` on z puts it here and everywhere else, or Settings → AI → Paste). The owner's
 other apps (ccez-tube, ccez-llm, ccez-translate…) ask it for that key
 instead of each keeping a copy: one place to change it, and the phone
 keeps its AI when the Mac is off. Decided 2026-11-13 with a second
@@ -11,7 +11,7 @@ memory while it uses it).
 ## Asking (the app's side)
 
 ```kotlin
-contentResolver.call(Uri.parse("content://uk.ccez.keys.keyring"), "key", "muse", null)
+contentResolver.call(Uri.parse("content://uk.ccez.keys.keyring"), "key", "deepseek", null)
 ```
 
 Off the main thread. The answer's `status`:
@@ -23,7 +23,7 @@ Off the main thread. The answer's `status`:
   screen reads who asked from the system, shows the app's name and
   certificate, and remembers the answer.
 - `denied`: the owner said no (Settings → AI → Remove lets it ask again).
-- `none`: ccez-keys has no key for that provider (its provider differs).
+- `none`: ccez-keys has no key for that provider (it only holds `deepseek`'s).
 - `locked`: the phone hasn't been unlocked since it started.
 
 An app with no ccez-keys gets an `IllegalArgumentException` (unknown

@@ -25,7 +25,7 @@ import uk.ccez.keys.learn.Secrets
 
 /**
  * The AI key for the owner's other apps (docs/keyring.md). One method,
- * `key`: an app asks for a provider's key ("muse") and gets it back if it
+ * `key`: an app asks for a provider's key ("deepseek") and gets it back if it
  * was allowed, else "approve" (it opens [Approve] for the owner) or a
  * reason. Who asks is the system's word (the calling uid), never anything
  * the caller sends. Allowing remembers the app's signing certificate, so a
@@ -42,7 +42,7 @@ class Provider : ContentProvider() {
         val pkg = Keyring.caller(ctx, uid, callingPackage) ?: throw SecurityException("unknown caller")
         if (method != "key") throw SecurityException("no method $method")
         val out = Bundle()
-        val status = Keyring.answer(ctx, pkg, arg ?: "muse", out)
+        val status = Keyring.answer(ctx, pkg, arg ?: Keyring.PROVIDER, out)
         out.putString("status", status)
         log("keyring", "app" to pkg, "status" to status)
         return out
@@ -57,6 +57,9 @@ class Provider : ContentProvider() {
 }
 
 object Keyring {
+    /** The one key ccez-keys holds: DeepSeek's (owner, 2026-11-16). */
+    const val PROVIDER = "deepseek"
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("keyring", Context.MODE_PRIVATE)
 
     /**
@@ -95,9 +98,8 @@ object Keyring {
         if (ctx.getSystemService(UserManager::class.java)?.isUserUnlocked == false) return "locked"
         if (denied(ctx, pkg)) return "denied"
         if (!allowed(ctx, pkg)) return "approve"
-        val held = runCatching { App.instance.engine.setting("ai.provider").trim('"') }.getOrDefault("")
         val key = Secrets.get(ctx)
-        if (held != provider || key == null) return "none"
+        if (provider != PROVIDER || key == null) return "none"
         out.putString("key", key)
         out.putInt("version", Secrets.version(ctx))
         return "ok"

@@ -699,7 +699,7 @@ dependencies = [
 [[package]]
 name = "ccez-lang-core"
 version = "0.1.0"
-source = "git+https://github.com/chris-straka/ccez-lang-core?tag=v0.1.6#f8cfdba4bc3ed87d89b3f542437d4f3c8a6923a6"
+source = "git+https://github.com/chris-straka/ccez-lang-core?tag=v0.2.0#7f4cb2d6a2bf452e478094d8ba8259d984f6e076"
 dependencies = [
  "ccez-lexicon",
  "flate2",
@@ -714,7 +714,7 @@ dependencies = [
 [[package]]
 name = "ccez-lexicon"
 version = "0.1.0"
-source = "git+https://github.com/chris-straka/ccez-lang-core?tag=v0.1.6#f8cfdba4bc3ed87d89b3f542437d4f3c8a6923a6"
+source = "git+https://github.com/chris-straka/ccez-lang-core?tag=v0.2.0#7f4cb2d6a2bf452e478094d8ba8259d984f6e076"
 dependencies = [
  "serde_json",
 ]

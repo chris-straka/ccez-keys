@@ -13,22 +13,22 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
 3. Shows while typing, fades ~3 s after; ⌥ held brings it back.
 4. Everywhere except password fields and a short list (Terminal, code
    editors, Claude), editable from the menu bar icon.
-5. Click a word: the same card as the phone (meaning here via Muse,
+5. Click a word: the same card as the phone (meaning here via the AI,
    Learning / Known, synced through ccez-words). Hover reads it aloud.
 - Long messages: only the sentence being typed, one line; a long one shows
   its end with "…" before it.
-- Never Muse (and no preview) for password fields or anything that looks
+- Never the AI (and no preview) for password fields or anything that looks
   like a password, API key or token (long mixed letter/digit runs, sk-…,
   ghp_…). Security, privacy and performance first.
 
 ## How it's built (agent's call)
 
 - Rust, like ccez-clip (menu bar, objc2), sharing ccez-keys' core and
-  ccez-lang-core (dictionaries, cards, statuses, Muse).
+  ccez-lang-core (dictionaries, cards, statuses, the AI client).
 - Reads the focused field through Accessibility (AXUIElement: value,
   selected range, bounds for the caret), never a key tap.
 - Apple's on-device translation (macOS 15+, Translation framework) through
-  a small Swift helper; Muse rewords after a pause, answers cached.
+  a small Swift helper; the AI rewords after a pause, answers cached.
 
 ## Built so far
 

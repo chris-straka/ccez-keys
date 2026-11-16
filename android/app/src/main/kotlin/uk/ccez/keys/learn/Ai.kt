@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import uk.ccez.keys.App
 import uk.ccez.keys.UiState
 import uk.ccez.keys.core.AnswerSink
+import uk.ccez.keys.core.AskSource
 import uk.ccez.keys.core.ChatMessage
 import uk.ccez.keys.core.Fix
 
@@ -77,7 +78,7 @@ data class Tip(val sentence: String, val lang: String, val fix: Fix)
 
 /**
  * Corrections while a learning language is typed: when the typist pauses
- * or ends a sentence, Muse checks it (once per sentence) and a violet note
+ * or ends a sentence, the AI checks it (once per sentence) and a violet note
  * shows the fix the way ccez-llm does. Typing on folds it away.
  */
 class Tips(private val ui: UiState) {
@@ -107,10 +108,23 @@ class Tips(private val ui: UiState) {
     }
 }
 
-/** One line of an Ask chat. */
-data class Line(val role: String, val text: String)
+/**
+ * One line of an Ask chat; an answer brings what it looked up on the web
+ * ([searches], [sources]) and, while it comes, what it's looking up now.
+ */
+data class Line(
+    val role: String,
+    val text: String,
+    val searches: List<String> = emptyList(),
+    val sources: List<AskSource> = emptyList(),
+    val looking: String? = null,
+)
 
-/** Ask: a chat with the AI about something typed, its input typed on this keyboard. */
+/**
+ * Ask: a chat with the AI about something typed, its input typed on this
+ * keyboard. DeepSeek thinks lightly and may search the web or read a link
+ * pasted in; what it looked up shows under the answer.
+ */
 class Ask(private val ui: UiState) {
     private val app = App.instance
     private var history: List<ChatMessage> = emptyList()
@@ -130,27 +144,28 @@ class Ask(private val ui: UiState) {
             return
         }
         val e = app.engine
-        val messages = if (history.isEmpty()) e.askStart(s.about, q) else history + ChatMessage("user", q)
+        val messages = if (history.isEmpty()) e.askStart(s.about, q) else history + ChatMessage("user", q, null)
         ui.ask = s.copy(lines = s.lines + Line("user", q) + Line("assistant", ""), input = "", busy = true)
         val chat = ui.ask
+        // Only into the chat it was asked in.
+        fun mine() = ui.ask?.takeIf { it.about == chat?.about && it.lines.size == chat.lines.size }
+        fun last(change: (Line) -> Line) = app.scope.launch(Dispatchers.Main) { mine()?.let { a -> ui.ask = a.copy(lines = a.lines.dropLast(1) + change(a.lines.last())) } }
         job = app.scope.launch {
             val answer = runCatching {
                 e.ask(messages, key, object : AnswerSink {
-                    override fun text(soFar: String) {
-                        app.scope.launch(Dispatchers.Main) {
-                            // Only into the chat it was asked in.
-                            ui.ask?.takeIf { it.about == chat?.about && it.lines.size == chat.lines.size }?.let { a -> ui.ask = a.copy(lines = a.lines.dropLast(1) + Line("assistant", soFar)) }
-                        }
-                    }
+                    override fun text(soFar: String) { last { it.copy(text = soFar, looking = null) } }
+                    override fun looking(what: String) { last { it.copy(looking = what) } }
                 })
             }
             withContext(Dispatchers.Main) {
-                val a = ui.ask?.takeIf { it.about == chat?.about && it.lines.size == chat.lines.size } ?: return@withContext
-                answer.onSuccess { full ->
-                    history = messages + ChatMessage("assistant", full)
-                    ui.ask = a.copy(lines = a.lines.dropLast(1) + Line("assistant", full), busy = false)
+                val a = mine() ?: return@withContext
+                answer.onSuccess { r ->
+                    history = messages + ChatMessage("assistant", r.text, r.carry)
+                    ui.ask = a.copy(lines = a.lines.dropLast(1) + Line("assistant", r.text, r.searches, r.sources), busy = false)
                 }.onFailure {
-                    ui.ask = a.copy(lines = a.lines.dropLast(1) + Line("assistant", "Couldn't reach the AI."), busy = false)
+                    // The core's words: the key refused, the balance used up, busy.
+                    val why = (it as? uk.ccez.keys.core.KeysException.Bad)?.v1?.takeIf { m -> m.isNotBlank() && m.length < 200 } ?: "Couldn't reach the AI."
+                    ui.ask = a.copy(lines = a.lines.dropLast(1) + Line("assistant", why), busy = false)
                 }
             }
         }
@@ -166,7 +181,7 @@ class Ask(private val ui: UiState) {
     /** The chat as text, for carrying on in ccez-llm. */
     fun transcript(): String {
         val s = ui.ask ?: return ""
-        return "About: ${s.about}\n\n" + s.lines.joinToString("\n\n") { (if (it.role == "user") "Me: " else "Muse: ") + it.text }
+        return "About: ${s.about}\n\n" + s.lines.joinToString("\n\n") { (if (it.role == "user") "Me: " else "AI: ") + it.text }
     }
 }
 

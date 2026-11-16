@@ -23,7 +23,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub use ai::{AnswerSink, ChatMessage, Fix, FixKind, FixPart};
+pub use ai::{AnswerSink, AskReply, AskSource, ChatMessage, Fix, FixKind, FixPart};
 pub use convert::Conversion;
 pub use layout::{Key, KeyKind, Layout, Page, Row};
 pub use learn::{Card, Ruby, StripWord, WordStatus};
@@ -213,9 +213,17 @@ impl Engine {
         out
     }
 
-    fn provider(&self) -> Result<ai::Provider, KeysError> {
-        let id = self.lock().settings.get("ai.provider").and_then(|v| v.as_str()).unwrap_or("muse").to_string();
-        ai::provider(&id).ok_or_else(|| KeysError::Bad(format!("no AI provider called {id}")))
+    /// The AI with `key`, where the settings say it is (DeepSeek by default).
+    fn ai(&self, key: &str) -> ccez_lang_core::ai::Ai {
+        let s = &self.lock().settings;
+        let text = |k: &str| s.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        ccez_lang_core::ai::Ai::new(&text("ai.url"), &text("ai.model"), key)
+    }
+
+    /// A quick answer (thinking off, no web): corrections, glosses, translations.
+    fn quick(&self, key: &str, m: &[ccez_lang_core::ai::Message]) -> Result<String, KeysError> {
+        let ai = self.ai(key);
+        self.learn.block_on(ccez_lang_core::ai::chat(&ai, m, ccez_lang_core::ai::Mode::Quick, |_| {})).map(|r| r.text).map_err(|e| KeysError::Bad(e.to_string()))
     }
 
     fn converter_path(&self, lang: &str) -> PathBuf {
@@ -741,11 +749,10 @@ impl Engine {
     /// `text`, written in the learning language `lang`, corrected; None when
     /// it needs nothing. Blocks: call off the main thread.
     pub fn correct(&self, lang: String, text: String, key: String) -> Result<Option<Fix>, KeysError> {
-        let p = self.provider()?;
         let explain = self.lock().settings.get("languages.default").and_then(|v| v.as_str()).unwrap_or("en").to_string();
         let messages = ai::correction_messages(&lang, &text, &explain);
         let started = std::time::Instant::now();
-        let answer = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &messages, p.thinking.as_deref(), |_| {})).map_err(|e| KeysError::Bad(e.to_string()))?;
+        let answer = self.quick(&key, &messages)?;
         let fix = ai::to_fix(&text, &answer);
         self.log.write("info", "correction", &serde_json::json!({"lang": lang, "changed": fix.is_some(), "ms": started.elapsed().as_millis() as u64}).to_string());
         Ok(fix)
@@ -754,7 +761,6 @@ impl Engine {
     /// `text` (written in `from`) said naturally in `to`, casual or polite.
     /// Blocks: call off the main thread.
     pub fn translate_ai(&self, text: String, from: String, to: String, polite: bool, key: String) -> Result<String, KeysError> {
-        let p = self.provider()?;
         let name = |l: &str| ccez_lang_core::correction::language_name(l).to_string();
         let system = format!(
             "Translate the user's message from {} into {}, the way a native speaker would text it, {}. Reply with the translation only: no quotes, no notes.",
@@ -762,22 +768,23 @@ impl Engine {
             name(&to),
             if polite { "politely (vous, Sie, usted, です/ます)" } else { "casually, as to a friend (tu, du, tú, plain form)" }
         );
-        let m = vec![ccez_lang_core::ai::Message { role: "system".into(), content: system }, ccez_lang_core::ai::Message { role: "user".into(), content: text }];
-        let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |_| {}));
-        r.map(|t| t.trim().trim_matches('"').to_string()).map_err(|e| KeysError::Bad(e.to_string()))
+        let m = vec![
+            ccez_lang_core::ai::Message { role: "system".into(), content: system, carry: None },
+            ccez_lang_core::ai::Message { role: "user".into(), content: text, carry: None },
+        ];
+        self.quick(&key, &m).map(|t| t.trim().trim_matches('"').to_string())
     }
 
     /// What `word` means in `context` (the strip's sentence), as ccez-lang
     /// glosses a word: its English equivalent for this sense on the first
     /// line, at most one short note on the next. Blocks: off the main thread.
     pub fn gloss(&self, context: String, word: String, key: String) -> Result<String, KeysError> {
-        let p = self.provider()?;
         let m = ccez_lang_core::ai::ask_messages(&context, &word, None, false);
         let started = std::time::Instant::now();
-        // The least thinking the provider allows: a card wants its line quickly.
-        let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |_| {}));
+        // Thinking off: a card wants its line quickly.
+        let r = self.quick(&key, &m);
         self.log.write("info", "gloss", &serde_json::json!({"ok": r.is_ok(), "ms": started.elapsed().as_millis() as u64}).to_string());
-        r.map(|t| t.trim().to_string()).map_err(|e| KeysError::Bad(e.to_string()))
+        r.map(|t| t.trim().to_string())
     }
 
     /// A correction the owner took (for review later, in ccez-learn).
@@ -799,21 +806,32 @@ impl Engine {
         ai::ask_start(&typed, &question)
     }
 
-    /// The assistant's next answer to `messages`, streamed into `sink`;
-    /// returns the whole answer. Blocks: call off the main thread.
-    pub fn ask(&self, messages: Vec<ChatMessage>, key: String, sink: Box<dyn AnswerSink>) -> Result<String, KeysError> {
-        let mut p = self.provider()?;
-        // Explanations get the provider's usual thinking (Muse: medium);
-        // corrections and the strip stay on the least, for speed.
-        let id = self.lock().settings.get("ai.provider").and_then(|v| v.as_str()).unwrap_or("muse").to_string();
-        p.thinking = ccez_lang_core::ai::provider(&id).and_then(|x| x.default_thinking).map(String::from).or(p.thinking);
+    /// The assistant's next answer to `messages`, streamed into `sink`,
+    /// with light thinking and the web (DeepSeek searches and reads links
+    /// itself); returns the answer and what it looked up. Corrections and
+    /// the strip stay on thinking off, for speed. Blocks: off the main thread.
+    pub fn ask(&self, messages: Vec<ChatMessage>, key: String, sink: Box<dyn AnswerSink>) -> Result<AskReply, KeysError> {
+        let ai = self.ai(&key);
         let m = ai::to_messages(&messages);
-        // The crate hands over the whole answer so far each time.
-        let r = self.learn.block_on(ccez_lang_core::ai::ask(&p.url, &key, &p.model, &m, p.thinking.as_deref(), |t| {
-            sink.text(t.to_string());
+        let r = self.learn.block_on(ccez_lang_core::ai::chat(&ai, &m, ccez_lang_core::ai::Mode::Ask, |e| match e {
+            ccez_lang_core::ai::Event::Text(t) => sink.text(t),
+            ccez_lang_core::ai::Event::Looking(w) => sink.looking(w),
         }));
-        self.log.write("info", "ask", &serde_json::json!({"ok": r.is_ok(), "turns": messages.len()}).to_string());
-        r.map_err(|e| KeysError::Bad(e.to_string()))
+        self.log.write(
+            "info",
+            "ask",
+            &serde_json::json!({"ok": r.is_ok(), "turns": messages.len(), "sources": r.as_ref().map(|x| x.sources.len()).unwrap_or(0)}).to_string(),
+        );
+        r.map(ai::to_reply).map_err(|e| KeysError::Bad(e.to_string()))
+    }
+
+    /// One tiny real call with `key` (`keys ai-key --test`): the answer's
+    /// text, or the error in words. Never logs the key.
+    pub fn ai_test(&self, key: String) -> Result<String, KeysError> {
+        let m = vec![ccez_lang_core::ai::Message { role: "user".into(), content: "Reply with the single word OK.".into(), carry: None }];
+        let r = self.quick(&key, &m);
+        self.log.write("info", "ai-test", &serde_json::json!({"ok": r.is_ok()}).to_string());
+        r
     }
 
     /// `ctx` is JSON. Never typed text.

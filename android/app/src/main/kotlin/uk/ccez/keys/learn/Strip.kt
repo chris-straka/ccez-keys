@@ -47,10 +47,10 @@ data class CardView(
     val card: Card?,
     val meaning: String?,
     val reading: String = "",
-    /** Muse: what it means in this sentence, and at most one short note. */
+    /** The AI: what it means in this sentence, and at most one short note. */
     val here: String? = null,
     val note: String? = null,
-    /** Muse is being asked. */
+    /** The AI is being asked. */
     val asking: Boolean = false,
     /** The article the sentence gives it ("une livre": la), over the dictionary's. */
     val article: String? = null,
@@ -136,7 +136,7 @@ class Strip(private val ui: UiState) {
     /**
      * AI wordings already fetched: (from, to, polite, text) → translation. Kept
      * on disk, so going back to a sentence (or the keyboard restarting) never
-     * asks Muse twice.
+     * asks the AI twice.
      */
     private val refined = object : LinkedHashMap<String, String>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 500
@@ -249,7 +249,7 @@ class Strip(private val ui: UiState) {
         var lead: Tried? = null
         for ((n, k) in order.withIndex()) {
             val lang = all[k]
-            // A full stop added isn't a new sentence for Muse: the key leaves end marks out.
+            // A full stop added isn't a new sentence for the AI: the key leaves end marks out.
             val better = synchronized(refined) { refined["$from|$lang|$polite|${bare(src)}"] }
             // Only the first may fetch its model; the others are tried with what's on the phone.
             val got = better ?: Translator.translate(src, from, lang, download = n == 0)
@@ -424,7 +424,7 @@ class Strip(private val ui: UiState) {
             val meaning = if (card?.meanings.isNullOrEmpty()) Translator.translate(w.lemma.ifEmpty { w.text }, lang, defaultLang()) else null
             // Furigana or pinyin, now only on the card (owner, 2026-11-08: a shorter line).
             val reading = w.ruby.joinToString("") { it.rt.ifEmpty { it.text } }.takeIf { r -> w.ruby.any { it.rt.isNotEmpty() } }.orEmpty()
-            // In this sentence: Muse's gloss (kept on disk), else asked now.
+            // In this sentence: the AI's gloss (kept on disk), else asked now.
             val context = ui.strip?.takeIf { it.lang == lang }?.text ?: ui.strip?.more?.firstOrNull { it.lang == lang }?.text.orEmpty()
             val key = "gloss|$lang|${w.text}|$context"
             val known = synchronized(refined) { refined[key] }

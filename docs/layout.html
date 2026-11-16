@@ -163,7 +163,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .chip .ex { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--k-aibg); color: var(--k-ai); display: grid; place-items: center; }
 .chip .ex svg.i { width: 15px; height: 15px; }
 .tools.clipr > span { flex: none; }
-/* Ask Muse panel */
+/* Ask panel */
 .chat { background: #141218; padding: 8px 10px 10px; display: grid; gap: 8px; border-bottom: 1px solid #2a2440; }
 .chat .hd { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--k-mut); }
 .chat .hd .about { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #221f2b; border-radius: 10px; padding: 3px 9px; color: #cfc8e6; }
@@ -275,10 +275,10 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
           <div class="keys" data-space="English"></div>
         </div>
       </div>
-      <figcaption><b>Tap a word</b>The same card as ccez-tube: reading over the word, meaning under it. Learning and Known sync to ccez-words, so ccez-tube, ccez-lang and ccez-llm see it too. ✦ asks Muse.</figcaption>
+      <figcaption><b>Tap a word</b>The same card as ccez-tube: reading over the word, meaning under it. Learning and Known sync to ccez-words, so ccez-tube, ccez-lang and ccez-llm see it too. ✦ asks the AI.</figcaption>
     </figure>
 
-    <!-- C: typing French, Muse tip -->
+    <!-- C: typing French, AI tip -->
     <figure>
       <div class="ph">
         <div class="app">
@@ -303,7 +303,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
           <div class="keys" data-space="Français" data-auto="1"></div>
         </div>
       </div>
-      <figcaption><b>Typing French</b>It noticed French and switched the keys (the dot on the space bar). Muse corrects what you write in a language you're learning, the same way ccez-llm does: crossed out what goes, green what comes in. Fix puts it in; otherwise it folds away when you keep typing.</figcaption>
+      <figcaption><b>Typing French</b>It noticed French and switched the keys (the dot on the space bar). The AI corrects what you write in a language you're learning, the same way ccez-llm does: crossed out what goes, green what comes in. Fix puts it in; otherwise it folds away when you keep typing.</figcaption>
     </figure>
 
     <!-- J: typing Japanese -->
@@ -396,7 +396,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
       <figcaption><b>Just copied</b>What you copy waits as a chip in the button row of every field until you paste it or copy something else. No timer. Copied text in a language you're learning also shows in English above it, and ✦ explains it.</figcaption>
     </figure>
 
-    <!-- G: ask Muse -->
+    <!-- G: ask -->
     <figure>
       <div class="ph">
         <div class="app">
@@ -413,7 +413,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
           <div class="keys" data-space="English"></div>
         </div>
       </div>
-      <figcaption><b>Ask Muse</b>✦ on a tip, a card or a copied message opens a chat about it, above the keys. Your keys type into the chat, not the app, until you close it. 📖 carries the chat on in ccez-llm.</figcaption>
+      <figcaption><b>Ask</b>✦ on a tip, a card or a copied message opens a chat about it, above the keys. Your keys type into the chat, not the app, until you close it. 📖 carries the chat on in ccez-llm.</figcaption>
     </figure>
 
     <!-- H: camera text -->
@@ -434,7 +434,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
           <div class="acts2"><span><svg class="i"><use href="#spk"/></svg></span><span class="ai"><svg class="i"><use href="#spark"/></svg></span><span class="go">Into message</span></div>
         </div>
       </div>
-      <figcaption><b>Camera text</b>The camera button reads a sign, a menu or a photo of a screen; the corner button reads your latest screenshot instead. Words show known, learning or new, tap one for its card, and Into message types it out. ML Kit can't read Arabic, so Arabic goes to Muse.</figcaption>
+      <figcaption><b>Camera text</b>The camera button reads a sign, a menu or a photo of a screen; the corner button reads your latest screenshot instead. Words show known, learning or new, tap one for its card, and Into message types it out. ML Kit can't read Arabic, so Arabic goes to the AI.</figcaption>
     </figure>
 
     <!-- E: toolbar + settings -->
@@ -495,11 +495,11 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
         <li>Hold the flag: casual or polite (tu/vous, だ/です). Each app remembers its own; chat apps start casual.</li>
         <li>Know every word in it? The strip shows it all grey for a moment, then moves to the next language on your list.</li>
         <li>Hold the flag in the strip: send the translation instead of what you typed.</li>
-        <li>✦ on a tip, card or copied message: chat with Muse about it.</li>
+        <li>✦ on a tip, card or copied message: chat with the AI about it.</li>
         <li>Face key: kaomoji or emoji in place of the keys. ABC in the same spot: keys again.</li>
         <li>Bar idle (an empty field, or after a full stop): the latest copies, newest on the left (words, phrases, a picture or screenshot), right of the clipboard button; the row scrolls. Tap: in it goes, with a tick. Hold a picture: it opens large.</li>
         <li>Hold a suggestion: Remove takes it out of the suggestions. Hold the word as typed, when it's no word yet: saved to them.</li>
-        <li>Password fields: no strip, no AI, nothing learned or kept. Everywhere else Muse reads along.</li>
+        <li>Password fields: no strip, no AI, nothing learned or kept. Everywhere else the AI reads along.</li>
       </ul>
     </div>
     <div>
@@ -509,8 +509,8 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
         <li>Swipe typing is in settings, off at first. No limit on languages (SwiftKey stops at six).</li>
         <li>Kotlin keyboard service; keys drawn on one canvas so a tap shows in the same frame. Panels in Compose. No Tauri or web view: they lag, and Android closes heavy keyboards.</li>
         <li>Rust core through UniFFI, like ccez-tube: autocorrect, next word, language detection, kaomoji ranking, settings, logs.</li>
-        <li>Dictionaries, furigana, pinyin, word statuses, ccez-words sync and the Muse client move out of ccez-tube into one shared crate both apps use.</li>
-        <li>Live translation with ML Kit on the phone (instant, offline). Muse for corrections, tips and Ask. Google's on-phone Gemini Nano can't help: the S24 isn't supported and it only runs for the app on screen, which a keyboard never is.</li>
+        <li>Dictionaries, furigana, pinyin, word statuses, ccez-words sync and the AI client move out of ccez-tube into one shared crate both apps use.</li>
+        <li>Live translation with ML Kit on the phone (instant, offline). DeepSeek for corrections, tips and Ask. Google's on-phone Gemini Nano can't help: the S24 isn't supported and it only runs for the app on screen, which a keyboard never is.</li>
         <li>ML Kit on the phone: translation, language detection, camera text (no Arabic), handwriting for Japanese and Chinese.</li>
         <li>Clipboard on ccez-clip's core, kept on the phone only. Dictation: Android's speech recogniser for live words, ccez-whisper for a cleaner pass when you stop.</li>
         <li><code>keys</code> on the Mac, like <code>clip</code>: every setting, languages, buttons, words and logs, over USB or the tailnet.</li>
@@ -524,7 +524,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
         <li>The learning strip: translation, furigana and pinyin, sound, cards, Learning and Known from ccez-words, words under suggestions.</li>
         <li>Emoji, kaomoji that know the app, clipboard history, camera text.</li>
         <li>Japanese (romaji to kana and kanji) and Chinese (pinyin to hanzi). The hardest piece: each needs a converter that picks the right characters.</li>
-        <li>Dictation, Muse tips, Ask Muse, switching language on its own.</li>
+        <li>Dictation, AI tips, Ask, switching language on its own.</li>
         <li>Arabic, then any other layout a new language needs (Hangul, Hindi, AZERTY, QWERTZ).</li>
         <li>Later: words you met in ccez-tube this week come first in the strip; a quick review card when the keyboard opens; send selected text to ccez-llm to annotate.</li>
       </ol>

@@ -138,6 +138,11 @@ class Control : ContentProvider() {
                     app.log("info", "ai-key", "set" to value.isNotBlank())
                     if (value.isBlank()) "removed" else "saved"
                 }
+                // One tiny real call with the phone's key (`keys ai-key --test`): the answer, or why not.
+                "ai-test" -> {
+                    val key = uk.ccez.keys.learn.Secrets.get(app) ?: error("no AI key on the phone: run keys ai-key on the Mac")
+                    engine.aiTest(key).trim().ifEmpty { "(an empty answer)" }
+                }
                 // Apps given the AI key: `keys keyring` lists them, `keys keyring allow|deny|drop <package>`.
                 "keyring" -> {
                     val parts = (arg ?: "list").split(' ').filter { it.isNotEmpty() }

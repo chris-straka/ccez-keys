@@ -81,7 +81,11 @@ pub const DEFS: &[Def] = &[
         default: || json!(""),
         about: "The ccez-words server (word statuses shared with ccez-tube, ccez-lang, ccez-llm). Empty: statuses stay on the phone.",
     },
-    Def { key: "ai.provider", kind: Kind::Text, default: || json!("muse"), about: "muse, deepseek or zen (the key is set with `keys key`, or pasted in Settings)." },
+    // The AI is a chat-completions server: its address and model are
+    // settings, so another model is a settings change (owner, 2026-11-16:
+    // DeepSeek V4.1 Flash). The key is set with `keys ai-key` on the Mac.
+    Def { key: "ai.url", kind: Kind::Text, default: || json!("https://api.deepseek.com"), about: "The AI's server (OpenAI-style chat completions). The key is set with `keys ai-key` on the Mac, or pasted in Settings." },
+    Def { key: "ai.model", kind: Kind::Text, default: || json!("deepseek-flash"), about: "The AI's model on that server." },
     Def { key: "ai.tips", kind: Kind::Bool, default: || json!(true), about: "Corrections while typing in a language being learned (needs the AI key)." },
     Def { key: "apps.polite", kind: Kind::List, default: || json!([]), about: "Apps where the strip's translation is polite (tu→vous, だ→です); elsewhere casual. Hold 🔊 to switch." },
     Def { key: "learning.refine", kind: Kind::Bool, default: || json!(true), about: "When typing pauses, the AI rewords the strip's translation (needs the AI key)." },
@@ -184,4 +188,20 @@ pub fn schema() -> String {
         })
         .collect();
     serde_json::to_string_pretty(&v).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_ai_is_deepseek_by_default_and_an_old_provider_choice_is_dropped() {
+        let s = Settings::from_json(r#"{"ai.provider": "muse", "ai.tips": false}"#);
+        assert_eq!(s.get("ai.url"), Some(&json!("https://api.deepseek.com")));
+        assert_eq!(s.get("ai.model"), Some(&json!("deepseek-flash")));
+        assert_eq!(s.get("ai.provider"), None);
+        assert_eq!(s.get("ai.tips"), Some(&json!(false)));
+        let moved = Settings::from_json(r#"{"ai.url": "https://z.example:8448/ai/deepseek", "ai.model": "deepseek-v4-pro"}"#);
+        assert_eq!(moved.get("ai.model"), Some(&json!("deepseek-v4-pro")));
+    }
 }

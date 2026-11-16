@@ -1,7 +1,9 @@
-//! Muse (or another OpenAI-compatible provider) for corrections while a
-//! learning language is typed, and for Ask: a chat about something typed.
-//! The key comes in with each call (the app keeps it in the Android
-//! Keystore) and is never logged or stored here.
+//! The AI (DeepSeek by default; its address and model are settings) for
+//! corrections while a learning language is typed, glosses and
+//! translations, and for Ask: a chat about something typed, which may
+//! search the web and read links. The key comes in with each call (the
+//! app keeps it in the Android Keystore) and is never logged or stored
+//! here.
 
 use ccez_lang_core::ai::{self, Message};
 use ccez_lang_core::correction::{self, Op};
@@ -33,6 +35,28 @@ pub struct ChatMessage {
     /// "system", "user" or "assistant".
     pub role: String,
     pub text: String,
+    /// An answer's own fields to send back with it ([AskReply::carry]).
+    pub carry: Option<String>,
+}
+
+/// A page Ask's answer looked at.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AskSource {
+    pub url: String,
+    pub title: String,
+    pub site: String,
+    pub icon: String,
+}
+
+/// Ask's answer and what it looked up on the way.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AskReply {
+    pub text: String,
+    /// Each search it ran ("query · query").
+    pub searches: Vec<String>,
+    pub sources: Vec<AskSource>,
+    /// Sent back with this answer next turn (ChatMessage::carry).
+    pub carry: Option<String>,
 }
 
 /// Streamed answers reach the app through this.
@@ -40,21 +64,17 @@ pub struct ChatMessage {
 pub trait AnswerSink: Send + Sync {
     /// The answer so far.
     fn text(&self, so_far: String);
+    /// What it's looking up now ("Searching: …", "Reading example.com").
+    fn looking(&self, what: String);
 }
 
-pub struct Provider {
-    pub url: String,
-    pub model: String,
-    pub thinking: Option<String>,
-}
-
-pub fn provider(id: &str) -> Option<Provider> {
-    let p = ai::provider(id)?;
-    if p.url.is_empty() {
-        return None;
+pub fn to_reply(r: ai::Reply) -> AskReply {
+    AskReply {
+        text: r.text,
+        searches: r.searches,
+        sources: r.sources.into_iter().map(|s| AskSource { url: s.url, title: s.title, site: s.site, icon: s.icon }).collect(),
+        carry: r.carry,
     }
-    // Corrections want speed: the least thinking the provider allows.
-    Some(Provider { url: p.url.into(), model: p.model.into(), thinking: p.thinking.first().map(|t| t.to_string()) })
 }
 
 pub fn correction_messages(lang: &str, text: &str, explain_in: &str) -> Vec<Message> {
@@ -76,7 +96,7 @@ pub fn to_fix(written: &str, answer: &str) -> Option<Fix> {
 }
 
 pub fn to_messages(v: &[ChatMessage]) -> Vec<Message> {
-    v.iter().map(|m| Message { role: m.role.clone(), content: m.text.clone() }).collect()
+    v.iter().map(|m| Message { role: m.role.clone(), content: m.text.clone(), carry: m.carry.clone() }).collect()
 }
 
 /// The opening of an Ask chat about `typed` (what the owner just wrote),
@@ -84,6 +104,6 @@ pub fn to_messages(v: &[ChatMessage]) -> Vec<Message> {
 pub fn ask_start(typed: &str, question: &str) -> Vec<ChatMessage> {
     ai::ask_messages(typed, typed, Some(question), false)
         .into_iter()
-        .map(|m| ChatMessage { role: m.role, text: m.content })
+        .map(|m| ChatMessage { role: m.role, text: m.content, carry: None })
         .collect()
 }
