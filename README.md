@@ -37,6 +37,7 @@ just deepseek key"). Copy a key, then on z run `keys key add <name>`:
     keys key add gemini     # z's keychain and art-website's GEMINI_API_KEY (the
                             # writing helper)
     keys key add <other>    # z's keychain and the phone, which lends it by name
+                            # (docs/keyring.md; Settings → AI lists each key)
 
 It checks the key looks right for its name (DeepSeek's `sk-…`, Gemini's
 `AQ.…` or `AIza…`), stores it in z's login keychain (service `uk.ccez.ai`,
