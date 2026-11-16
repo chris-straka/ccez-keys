@@ -3,7 +3,7 @@
 //! spot the front window has no content in and no other window covers,
 //! faint until the pointer is over it, when its meaning shows. Anki's three
 //! on the mouse: left click Good (back later, later each time), right click
-//! Again (back in two minutes), middle click Easy (back
+//! Again (back after the menu's come-back time), middle click Easy (back
 //! much later). Each leaves after a while and another comes; one whose spot
 //! fills up goes at once. Looking for spots reads the front window's layout,
 //! so it runs on its own thread every few seconds.
@@ -644,10 +644,11 @@ impl Floaters {
         }
         match kind {
             1 => {
-                // Fades out at once like the others, back in two minutes
-                // (owner, 2026-11-11: "I expect it to fade out when I right
-                // click it"; staying, then leaving after 2.5 s, both felt off).
-                self.engine.with_review(|r| r.grade(&lang, &word, Grade::Again, Self::now()));
+                // Fades out at once like the others, back after the menu's
+                // come-back time (owner, 2026-11-11: "I expect it to fade
+                // out when I right click it"; staying, then leaving after
+                // 2.5 s, both felt off).
+                self.engine.grade_screen_word(lang.clone(), word.clone(), Grade::Again);
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
                 Some(("Again".to_string(), None))
@@ -659,7 +660,7 @@ impl Floaters {
                 Some(("Known".to_string(), Some((lang, word))))
             }
             k => {
-                self.engine.with_review(|r| r.grade(&lang, &word, if k == 2 { Grade::Easy } else { Grade::Good }, Self::now()));
+                self.engine.grade_screen_word(lang.clone(), word.clone(), if k == 2 { Grade::Easy } else { Grade::Good });
                 let w = self.words.borrow_mut().remove(i);
                 self.leave(w, false);
                 self.recalled();

@@ -624,39 +624,80 @@ mod app {
         // Words said aloud when clicked, or not (owner, 2026-11-13).
         let speak = CheckMenuItem::new("Say a word when clicked", true, app.prefs.borrow().speak, None);
         crate::speak::set_on(app.prefs.borrow().speak);
-        // How many learning words float in the screen's empty spots.
+        // Words on screen, grouped (owner, 2026-11-15: the 0-12 column and
+        // the 1-24 one were clunky): how many, then when they come back,
+        // then the toggles. Each group is short presets; a stored value
+        // that isn't a preset keeps an item of its own, so what is set now
+        // always shows as set and stored values stay as they were.
         let words_menu = Submenu::new("Words on screen", true);
+        let mut word_vals: Vec<usize> = vec![0, 2, 4, 6, 8, 12];
+        let set_count = app.prefs.borrow().words_on_screen;
+        if !word_vals.contains(&set_count) {
+            let at = word_vals.iter().position(|&n| n > set_count).unwrap_or(word_vals.len());
+            word_vals.insert(at, set_count);
+        }
         let word_counts: Vec<(usize, CheckMenuItem)> =
-            (0usize..=12).map(|n| (n, CheckMenuItem::new(if n == 0 { "Off".to_string() } else { n.to_string() }, true, app.prefs.borrow().words_on_screen == n, None))).collect();
+            word_vals.iter().map(|&n| (n, CheckMenuItem::new(if n == 0 { "Off".to_string() } else { n.to_string() }, true, set_count == n, None))).collect();
         for (_, c) in &word_counts {
             let _ = words_menu.append(c);
+        }
+        // How soon a word comes back after Again, and a new word after its
+        // first Good (owner, 2026-11-15: options between 1 and 5 min). In
+        // the core's settings with the rest, so the phone's grading
+        // (through the same core) honours the setting it holds.
+        let comeback_menu = Submenu::new("Come back in", true);
+        let comeback_now = app.engine.setting("learning.comeback".into()).ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(2);
+        let comebacks: Vec<(u64, CheckMenuItem)> = (1u64..=5).map(|n| (n, CheckMenuItem::new(format!("{n} min"), true, comeback_now == n, None))).collect();
+        for (_, c) in &comebacks {
+            let _ = comeback_menu.append(c);
         }
         // A break once every word on screen is answered (owner, 2026-11-13:
         // "a breather after clearing the screen"; 2026-11-15: "set how long
         // I should wait before they come back", so up to an hour, and with
         // the other word settings).
         let break_menu = Submenu::new("Back after clearing", true);
+        let secs_words = |n: u64| match n {
+            0 => "At once".to_string(),
+            1..=59 => format!("{n} s"),
+            n if n % 3600 == 0 => format!("{} h", n / 3600),
+            n if n % 60 == 0 => format!("{} min", n / 60),
+            n => format!("{n} s"),
+        };
+        let mut break_vals: Vec<u64> = vec![0, 30, 60, 300, 900, 3600];
+        let set_break = app.prefs.borrow().words_break;
+        if !break_vals.contains(&set_break) {
+            let at = break_vals.iter().position(|&n| n > set_break).unwrap_or(break_vals.len());
+            break_vals.insert(at, set_break);
+        }
         let breaks: Vec<(u64, CheckMenuItem)> =
-            [(0u64, "At once"), (10, "10 s"), (30, "30 s"), (60, "1 min"), (300, "5 min"), (900, "15 min"), (1800, "30 min"), (3600, "1 h")]
-            .into_iter()
-            .map(|(n, t)| (n, CheckMenuItem::new(t, true, app.prefs.borrow().words_break == n, None)))
-            .collect();
+            break_vals.iter().map(|&n| (n, CheckMenuItem::new(secs_words(n), true, set_break == n, None))).collect();
         for (_, c) in &breaks {
             let _ = break_menu.append(c);
         }
         // How many languages they come from (the first few, in the owner's order).
-        let langs_menu = Submenu::new("Languages on screen", true);
-        let lang_counts: Vec<(usize, CheckMenuItem)> = std::iter::once(0usize)
-            .chain(1..=app.langs.len())
-            .map(|n| (n, CheckMenuItem::new(if n == 0 { "All".to_string() } else { n.to_string() }, true, app.prefs.borrow().words_langs == n, None)))
-            .collect();
+        let langs_menu = Submenu::new("Languages", true);
+        let mut lang_vals: Vec<usize> = vec![0];
+        for n in [1usize, 2, 3, 6] {
+            if n <= app.langs.len() {
+                lang_vals.push(n);
+            }
+        }
+        let set_langs = app.prefs.borrow().words_langs;
+        if !lang_vals.contains(&set_langs) {
+            let at = lang_vals.iter().position(|&n| n > set_langs).unwrap_or(lang_vals.len());
+            lang_vals.insert(at, set_langs);
+        }
+        let lang_counts: Vec<(usize, CheckMenuItem)> =
+            lang_vals.iter().map(|&n| (n, CheckMenuItem::new(if n == 0 { "All".to_string() } else { format!("First {n}") }, true, set_langs == n, None))).collect();
         for (_, c) in &lang_counts {
             let _ = langs_menu.append(c);
         }
         let words_typing = CheckMenuItem::new("While typing", true, app.prefs.borrow().words_typing, None);
         let words_video = CheckMenuItem::new("While a video plays", true, app.prefs.borrow().words_video, None);
         let words_shots = CheckMenuItem::new("Hide in screenshots", true, app.prefs.borrow().words_hide_shots, None);
-        let _ = words_menu.append_items(&[&PredefinedMenuItem::separator(), &break_menu, &langs_menu, &PredefinedMenuItem::separator(), &words_typing, &words_video, &words_shots]);
+        let words_sep = PredefinedMenuItem::separator();
+        let words_sep2 = PredefinedMenuItem::separator();
+        let _ = words_menu.append_items(&[&words_sep, &comeback_menu, &break_menu, &langs_menu, &words_sep2, &words_typing, &words_video, &words_shots]);
         let chat_swap = CheckMenuItem::new("⌥⏎ in ChatGPT and Claude: into my language", true, app.prefs.borrow().chat_swap, None);
         // Translations run on this Mac, in the languages downloaded in System
         // Settings: this opens that page, and names any still missing.
@@ -932,6 +973,11 @@ mod app {
                         app.prefs.borrow_mut().words_langs = *n;
                         app.prefs.borrow().save(&dirs());
                         for (m, c) in &lang_counts {
+                            c.set_checked(m == n);
+                        }
+                    } else if let Some((n, _)) = comebacks.iter().find(|(_, c)| *c.id() == e.id) {
+                        let _ = app.engine.set_setting("learning.comeback".to_string(), n.to_string());
+                        for (m, c) in &comebacks {
                             c.set_checked(m == n);
                         }
                     } else if let Some((n, _)) = breaks.iter().find(|(_, c)| *c.id() == e.id) {
