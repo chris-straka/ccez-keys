@@ -9,12 +9,12 @@
 //!     keys update                  look for a new release now
 //!     keys word <lang> <word> [new|learning|known]   a word's status (set: synced to ccez-words)
 //!     keys log [-n 50]             the keyboard's events and errors
-//!     keys ai-key                  the DeepSeek key, once, everywhere: z's keychain
-//!                                  (ccez-words), the phone, the Cloudflare apps;
-//!                                  from the clipboard or a hidden prompt (aikey.rs)
-//!     keys ai-key --test           one tiny real call through each of those
-//!     keys key < file              the phone's AI key only, from stdin (empty
-//!                                  removes it); it never appears on a command line
+//!     keys key add <name>          a key (deepseek, gemini or any name), once,
+//!                                  everywhere that name is used: z's keychain,
+//!                                  the phone, the Cloudflare apps; from the
+//!                                  clipboard or a hidden prompt (keystore.rs)
+//!     keys key ls | rm <name> | test [<name>]   list (never values), remove, try
+//!     keys ai-key [--test]         the old name for keys key add|test deepseek
 //!     keys keyring [allow|deny|drop <package>]   apps given the AI key
 //!                                  (docs/keyring.md); no argument lists them
 //!     keys clip put <text|->       onto the phone's clipboard (- or nothing: stdin)
@@ -27,12 +27,13 @@
 //!
 //! The clipboard works with the keyboard closed: nothing opens on the phone.
 //!
-//! The phone: $KEYS_SERIAL, else the only device adb sees. Output is
+//! The phone: $KEYS_SERIAL, else the phone adb sees (over USB first when
+//! it sees the same phone over USB and wireless debugging). Output is
 //! JSON (except log, JSON lines). Errors are plain words, exit code 1.
 
 use std::process::{Command, exit};
 
-mod aikey;
+mod keystore;
 
 /// adb, or a stand-in for tests (KEYS_ADB).
 fn adb() -> String {
@@ -108,20 +109,14 @@ fn main() {
         ["clip", "get" | "rm", id] => ("clip", Some(format!("{} {id}", args[1])), None),
         ["ai-key", rest @ ..] => {
             let rest: Vec<String> = rest.iter().map(|s| s.to_string()).collect();
-            exit(aikey::main(&rest));
+            exit(keystore::ai_key(&rest));
         }
-        ["key"] => {
-            match send_key() {
-                Ok(out) => println!("{out}"),
-                Err(e) => {
-                    eprintln!("{e}");
-                    exit(1);
-                }
-            }
-            return;
+        ["key", rest @ ..] => {
+            let rest: Vec<String> = rest.iter().map(|s| s.to_string()).collect();
+            exit(keystore::main(&rest));
         }
         _ => {
-            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | ai-key [--test] | key < file | keyring [allow|deny|drop <package>] | clip [put <text|-> | now | ls | get <id> | rm <id> | clear] | backup [dir] | restore <file>");
+            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key add <name> | key ls | key rm <name> | key test [<name>] | ai-key [--test] | keyring [allow|deny|drop <package>] | clip [put <text|-> | now | ls | get <id> | rm <id> | clear] | backup [dir] | restore <file>");
             exit(2);
         }
     };
@@ -138,13 +133,39 @@ fn serial() -> Result<String, String> {
     if let Ok(s) = std::env::var("KEYS_SERIAL") {
         return Ok(s);
     }
-    let out = Command::new(adb()).arg("devices").output().map_err(|e| format!("adb didn't run: {e}"))?;
+    let out = Command::new(adb()).arg("devices").output().map_err(|_| "phone not reachable: adb didn't run".to_string())?;
     let text = String::from_utf8_lossy(&out.stdout);
     let devices: Vec<&str> = text.lines().skip(1).filter(|l| l.ends_with("\tdevice")).map(|l| l.split('\t').next().unwrap_or("")).collect();
-    match devices.as_slice() {
-        [one] => Ok(one.to_string()),
-        [] => Err("no phone: plug it in or connect it with adb".into()),
-        _ => Err(format!("several devices ({}); set KEYS_SERIAL", devices.join(", "))),
+    // Each one's own serial number: the same phone over USB and over
+    // wireless debugging is two devices with one number.
+    let seen: Vec<(String, Option<String>)> = if devices.len() > 1 {
+        devices.iter().map(|d| (d.to_string(), getprop(d, "ro.serialno"))).collect()
+    } else {
+        devices.iter().map(|d| (d.to_string(), None)).collect()
+    };
+    pick_phone(&seen)
+}
+
+fn getprop(device: &str, prop: &str) -> Option<String> {
+    let out = Command::new(adb()).args(["-s", device, "shell", "getprop", prop]).output().ok()?;
+    let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (out.status.success() && !v.is_empty()).then_some(v)
+}
+
+/// The phone among the devices adb lists, with their serial numbers. One
+/// phone seen over USB and the network is one phone (USB preferred); an
+/// emulator beside a phone is left out.
+fn pick_phone(devices: &[(String, Option<String>)]) -> Result<String, String> {
+    let phones: Vec<&(String, Option<String>)> = if devices.len() > 1 { devices.iter().filter(|(d, _)| !d.starts_with("emulator-")).collect() } else { devices.iter().collect() };
+    let usb_first = |list: &[&(String, Option<String>)]| {
+        // A network device is host:port or an mDNS name (adb-…._adb-tls-connect._tcp).
+        list.iter().find(|(d, _)| !d.contains(':') && !d.contains("._adb")).or_else(|| list.first()).map(|(d, _)| d.clone())
+    };
+    match phones.as_slice() {
+        [] => Err("phone not reachable: plug it in or turn on wireless debugging".into()),
+        [(one, _)] => Ok(one.clone()),
+        many if many.iter().all(|(_, s)| s.is_some() && *s == many[0].1) => usb_first(many).ok_or_else(|| "no phone".into()),
+        many => Err(format!("several phones ({}): unplug the ones you don't mean", many.iter().map(|(d, _)| d.as_str()).collect::<Vec<_>>().join(", "))),
     }
 }
 
@@ -177,16 +198,6 @@ fn call(method: &str, arg: Option<&str>, value: Option<&str>) -> Result<String, 
         return Err(e);
     }
     pick("out").ok_or_else(|| format!("unexpected answer from the phone: {}", text.trim()))
-}
-
-/// The key goes through stdin to the phone's shell (`read`), so it is on
-/// no command line on the Mac.
-fn send_key() -> Result<String, String> {
-    use std::io::Read;
-    let mut key = String::new();
-    std::io::stdin().read_to_string(&mut key).map_err(|e| format!("couldn't read the key: {e}"))?;
-    let encoded = if key.trim().is_empty() { b64(" ") } else { b64(key.trim()) };
-    call_stdin("key", None, &encoded)
 }
 
 /// Text for the phone's clipboard, through stdin like the key: any
@@ -342,4 +353,30 @@ fn restore(file: &std::path::Path) -> Result<String, String> {
         };
     }
     Err("no word from the keyboard about the restore".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_phone;
+
+    fn d(serial: &str, number: Option<&str>) -> (String, Option<String>) {
+        (serial.to_string(), number.map(str::to_string))
+    }
+
+    #[test]
+    fn one_phone_over_usb_and_wifi_is_one_phone() {
+        let usb_and_wifi = [d("100.82.119.62:40465", Some("RFCX")), d("RFCX10YQ4GZ", Some("RFCX"))];
+        assert_eq!(pick_phone(&usb_and_wifi).unwrap(), "RFCX10YQ4GZ");
+        let wifi_twice = [d("adb-RFCX-abc._adb-tls-connect._tcp", Some("RFCX")), d("100.82.119.62:40465", Some("RFCX"))];
+        assert_eq!(pick_phone(&wifi_twice).unwrap(), "adb-RFCX-abc._adb-tls-connect._tcp");
+        assert_eq!(pick_phone(&[d("100.82.119.62:40465", None)]).unwrap(), "100.82.119.62:40465");
+    }
+
+    #[test]
+    fn no_phone_or_two_phones_say_so_plainly() {
+        assert_eq!(pick_phone(&[]).unwrap_err(), "phone not reachable: plug it in or turn on wireless debugging");
+        assert!(pick_phone(&[d("A1", Some("A")), d("B1", Some("B"))]).unwrap_err().contains("several phones"));
+        // An emulator beside the phone isn't the phone.
+        assert_eq!(pick_phone(&[d("emulator-5554", Some("EMU")), d("RFCX10YQ4GZ", Some("RFCX"))]).unwrap(), "RFCX10YQ4GZ");
+    }
 }
