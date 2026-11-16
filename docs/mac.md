@@ -113,12 +113,26 @@ was; 2026-11-13: two minutes over every overlapping spot sent words to
 the far right). A word stays 3 minutes of time the Mac is in use (input
 in the last minute): away or reading, words don't turn over unseen.
 
-"Back after clearing" (Words on screen menu; At once, 10 s to 1 h): words
+"Back after clearing" (Words on screen menu; At once, 30 s to 1 h): words
 come in rounds (owner, 2026-11-15: "set how long I should wait before they
 come back"). A word recalled (Good, Easy, Known) isn't replaced; one answered
 Again or timed out is. Once the screen is clear, nothing comes for the
 break, then a fresh screenful (owner, 2026-11-13: "a breather after
 clearing the screen"). Undo puts the word back and cancels the break.
+
+The Words on screen menu is grouped (owner, 2026-11-15: the long number
+columns were clunky): how many (Off, 2, 4, 6, 8, 12), then "Come back in",
+"Back after clearing" and "Languages" (All, First 1/2/3/6) as submenus,
+then the While typing / While a video plays / Hide in screenshots ticks.
+A stored value that isn't a preset (say 5 words, a 10 s break) keeps an
+item of its own, so it still shows as set; picking a preset replaces it.
+
+"Come back in" (1-5 min, 2 by default) is how soon a word comes back
+after Again, and a new word after its first Good; FSRS's later intervals
+are unchanged. It is the core's `learning.comeback` setting, not a Mac
+one: the phone grades through the same core (`grade_screen_word`), so
+the value the phone holds applies there too (Settings → Learning on the
+phone sets it as well).
 
 Hovered, a word shows its reading, its meaning, then (1.5 s later, faded
 in) its tags, the first being its kind (v, n, a, adv…), then for Chinese
