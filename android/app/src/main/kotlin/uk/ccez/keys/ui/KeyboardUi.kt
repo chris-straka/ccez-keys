@@ -899,6 +899,8 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
         ),
         version,
     )
+    Heading("Learning")
+    ComeBackRow(version)
     Heading("Languages")
     FlagGrid(learning(), version, go)
     Heading("Default language")
@@ -1156,6 +1158,24 @@ private fun Switch(on: Boolean) {
     val x by androidx.compose.animation.core.animateDpAsState(if (on) 14.dp else 0.dp, tween(120), label = "switch")
     Box(Modifier.width(32.dp).height(18.dp).clip(RoundedCornerShape(10.dp)).background(if (on) Colors.switchOn else Colors.switchOff)) {
         Box(Modifier.padding(2.dp).offset(x = x).size(14.dp).clip(RoundedCornerShape(7.dp)).background(if (on) Colors.accent else Color(0xFF8A8A8A)))
+    }
+}
+
+/** How soon a review word comes back after Again, and a new word after its first Good (the core's FSRS takes it from there). */
+@Composable
+private fun ComeBackRow(version: Int) {
+    val now = remember(version) { App.instance.engine.setting("learning.comeback").toIntOrNull() ?: 2 }
+    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Come back", color = Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+        (1..5).forEach { n ->
+            Text(
+                "$n min",
+                color = if (n == now) Colors.accent else Colors.fg,
+                fontSize = 12.5.sp,
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (n == now) Colors.faceOn else Colors.chip)
+                    .combinedClickableCompat { set("learning.comeback", n.toString()) }.padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 
