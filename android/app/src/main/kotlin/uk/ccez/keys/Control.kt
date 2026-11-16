@@ -131,16 +131,21 @@ class Control : ContentProvider() {
                     app.settingsChanged()
                     lang
                 }
-                // The AI key: from `keys key` (stdin on the Mac, read on the phone's shell).
+                // A key by name (`keys key add|rm <name>`, stdin on the Mac, read on the phone's
+                // shell); no name is DeepSeek's. A blank value removes it.
                 "key" -> {
+                    val name = arg?.trim()?.ifEmpty { null } ?: uk.ccez.keys.learn.KeyNames.DEEPSEEK
+                    if (!uk.ccez.keys.learn.KeyNames.valid(name)) error("$name can't be a key's name")
                     val value = extras?.getString("value")?.let { String(Base64.decode(it, Base64.DEFAULT)) } ?: error("key needs a value")
-                    uk.ccez.keys.learn.Secrets.set(app, value.trim().ifEmpty { null })
-                    app.log("info", "ai-key", "set" to value.isNotBlank())
+                    uk.ccez.keys.learn.Secrets.set(app, name, value.trim().ifEmpty { null })
+                    app.log("info", "ai-key", "name" to name, "set" to value.isNotBlank())
                     if (value.isBlank()) "removed" else "saved"
                 }
-                // One tiny real call with the phone's key (`keys ai-key --test`): the answer, or why not.
+                // One tiny real call with the phone's DeepSeek key (`keys key test deepseek`): the answer, or why not.
                 "ai-test" -> {
-                    val key = uk.ccez.keys.learn.Secrets.get(app) ?: error("no AI key on the phone: run keys ai-key on the Mac")
+                    val name = arg?.trim()?.ifEmpty { null } ?: uk.ccez.keys.learn.KeyNames.DEEPSEEK
+                    if (name != uk.ccez.keys.learn.KeyNames.DEEPSEEK) error("no test call for $name on the phone")
+                    val key = uk.ccez.keys.learn.Secrets.get(app) ?: error("no DeepSeek key on the phone: run keys key add deepseek on the Mac")
                     engine.aiTest(key).trim().ifEmpty { "(an empty answer)" }
                 }
                 // Apps given the AI key: `keys keyring` lists them, `keys keyring allow|deny|drop <package>`.
@@ -191,6 +196,8 @@ class Control : ContentProvider() {
             .put("typing", JSONArray(e.typingLanguages()))
             .put("current", e.currentLanguage())
             .put("ai_key", uk.ccez.keys.learn.Secrets.get(app) != null)
+            // The key names held (never the keys): `keys key ls`.
+            .put("keys", JSONArray(uk.ccez.keys.learn.Secrets.names(app)))
             .put("words_loaded", JSONArray(e.typingLanguages().filter { e.loaded(it) }))
             .toString(2)
     }

@@ -24,9 +24,9 @@ import uk.ccez.keys.Colors
 import uk.ccez.keys.learn.Secrets
 
 /**
- * The AI key for the owner's other apps (docs/keyring.md). One method,
- * `key`: an app asks for a provider's key ("deepseek") and gets it back if it
- * was allowed, else "approve" (it opens [Approve] for the owner) or a
+ * The owner's keys for their other apps (docs/keyring.md). One method,
+ * `key`: an app asks for a key by name ("deepseek", "gemini"…) and gets it
+ * back if it was allowed, else "approve" (it opens [Approve] for the owner) or a
  * reason. Who asks is the system's word (the calling uid), never anything
  * the caller sends. Allowing remembers the app's signing certificate, so a
  * different app under the same name gets nothing.
@@ -57,7 +57,8 @@ class Provider : ContentProvider() {
 }
 
 object Keyring {
-    /** The one key ccez-keys holds: DeepSeek's (owner, 2026-11-16). */
+    /** The key an app gets when it names none: DeepSeek's. Any name
+     * ccez-keys holds is lent the same way (`keys key add <name>`). */
     const val PROVIDER = "deepseek"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("keyring", Context.MODE_PRIVATE)
@@ -98,8 +99,7 @@ object Keyring {
         if (ctx.getSystemService(UserManager::class.java)?.isUserUnlocked == false) return "locked"
         if (denied(ctx, pkg)) return "denied"
         if (!allowed(ctx, pkg)) return "approve"
-        val key = Secrets.get(ctx)
-        if (provider != PROVIDER || key == null) return "none"
+        val key = Secrets.get(ctx, provider) ?: return "none"
         out.putString("key", key)
         out.putInt("version", Secrets.version(ctx))
         return "ok"
@@ -185,7 +185,7 @@ class Approve : Activity() {
             gravity = Gravity.CENTER_HORIZONTAL
             filterTouchesWhenObscured = true
             addView(text(name, 22f, Colors.FG))
-            addView(text("wants your AI key", 15f, Colors.MUTED))
+            addView(text("wants your keys", 15f, Colors.MUTED))
             addView(text(pkg + "\n" + digest.take(16).chunked(4).joinToString(" "), 12f, Colors.DIM).apply { typeface = android.graphics.Typeface.MONOSPACE })
             addView(LinearLayout(this@Approve).apply {
                 orientation = LinearLayout.HORIZONTAL

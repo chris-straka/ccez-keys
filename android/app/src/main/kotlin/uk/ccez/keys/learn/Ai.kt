@@ -21,7 +21,41 @@ import uk.ccez.keys.core.AskSource
 import uk.ccez.keys.core.ChatMessage
 import uk.ccez.keys.core.Fix
 
-/** The AI key, encrypted with a key that never leaves the Android Keystore. */
+/**
+ * How named keys are kept (`keys key add <name>` on the Mac, owner
+ * 2026-11-16): which names are allowed and where each lives in the prefs.
+ * DeepSeek's stays under "ai", where the one key always lived, so nothing
+ * moves; any other name is "key:<name>". Pure, for tests.
+ */
+object KeyNames {
+    const val DEEPSEEK = "deepseek"
+    private val NAME = Regex("[a-z][a-z0-9-]{0,31}")
+
+    fun valid(name: String) = NAME.matches(name)
+
+    fun pref(name: String) = if (name == DEEPSEEK) "ai" else "key:$name"
+
+    /** The names among the prefs' keys, DeepSeek's first. */
+    fun names(prefKeys: Collection<String>): List<String> = prefKeys.mapNotNull {
+        when {
+            it == "ai" -> DEEPSEEK
+            it.startsWith("key:") -> it.removePrefix("key:").takeIf(::valid)
+            else -> null
+        }
+    }.distinct().sortedWith(compareBy({ it != DEEPSEEK }, { it }))
+
+    /** What Settings calls it. */
+    fun label(name: String) = when (name) {
+        DEEPSEEK -> "DeepSeek"
+        "gemini" -> "Gemini"
+        else -> name.replaceFirstChar { it.uppercase() }
+    }
+}
+
+/**
+ * The owner's keys by name (DeepSeek's, and any other `keys key add`
+ * sends), each encrypted with a key that never leaves the Android Keystore.
+ */
 object Secrets {
     private const val ALIAS = "ccez-keys-ai"
 
@@ -40,37 +74,49 @@ object Secrets {
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("secrets", Context.MODE_PRIVATE)
 
-    /** Decrypted once (each Keystore decrypt is a call to the system, too slow per keystroke). */
-    @Volatile private var cached: String? = null
-    @Volatile private var loaded = false
+    /** Decrypted once per name (each Keystore decrypt is a call to the system, too slow per keystroke); "" for none. */
+    private val cached = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    fun set(ctx: Context, value: String?) {
-        cached = value?.trim()?.ifEmpty { null }
-        loaded = true
-        // Bumped on every change: apps given the key (keyring/) see it's new.
+    /** DeepSeek's key, which the keyboard's own AI uses. */
+    fun set(ctx: Context, value: String?) = set(ctx, KeyNames.DEEPSEEK, value)
+
+    fun set(ctx: Context, name: String, value: String?) {
+        require(KeyNames.valid(name)) { "not a key name: $name" }
+        val v = value?.trim()?.ifEmpty { null }
+        cached[name] = v ?: ""
+        // Bumped on every change: apps given a key (keyring/) see it's new.
         val next = version(ctx) + 1
-        if (value.isNullOrBlank()) { prefs(ctx).edit().remove("ai").putInt("version", next).apply(); return }
+        val edit = prefs(ctx).edit().putInt("version", next)
+        if (v == null) { edit.remove(KeyNames.pref(name)).remove("at:$name").apply(); return }
         val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val data = c.iv + c.doFinal(value.trim().toByteArray())
-        prefs(ctx).edit().putString("ai", Base64.encodeToString(data, Base64.NO_WRAP)).putInt("version", next).apply()
+        val data = c.iv + c.doFinal(v.toByteArray())
+        edit.putString(KeyNames.pref(name), Base64.encodeToString(data, Base64.NO_WRAP)).putLong("at:$name", System.currentTimeMillis()).apply()
     }
 
     fun version(ctx: Context): Int = prefs(ctx).getInt("version", 1)
 
-    fun get(ctx: Context): String? {
-        if (loaded) return cached
+    fun get(ctx: Context): String? = get(ctx, KeyNames.DEEPSEEK)
+
+    fun get(ctx: Context, name: String): String? {
+        if (!KeyNames.valid(name)) return null
+        cached[name]?.let { return it.ifEmpty { null } }
         val v = runCatching {
-            val data = Base64.decode(prefs(ctx).getString("ai", null) ?: return@runCatching null, Base64.NO_WRAP)
+            val data = Base64.decode(prefs(ctx).getString(KeyNames.pref(name), null) ?: return@runCatching null, Base64.NO_WRAP)
             val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, data, 0, 12)) }
             String(c.doFinal(data, 12, data.size - 12))
         }.getOrNull()
-        cached = v
-        loaded = true
+        cached[name] = v ?: ""
         return v
     }
 
+    /** The names held, DeepSeek's first. Never the keys. */
+    fun names(ctx: Context): List<String> = KeyNames.names(prefs(ctx).all.keys)
+
+    /** When a key was last set here (ms), if known (DeepSeek's from before named keys isn't). */
+    fun setAt(ctx: Context, name: String): Long? = prefs(ctx).getLong("at:$name", 0L).takeIf { it > 0 }
+
     /** "••••abcd", for Settings. */
-    fun hint(ctx: Context): String? = get(ctx)?.takeLast(4)?.let { "••••$it" }
+    fun hint(ctx: Context, name: String = KeyNames.DEEPSEEK): String? = get(ctx, name)?.takeLast(4)?.let { "••••$it" }
 }
 
 /** A correction shown over the strip. */

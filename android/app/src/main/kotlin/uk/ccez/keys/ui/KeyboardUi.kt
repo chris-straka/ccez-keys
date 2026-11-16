@@ -1,5 +1,6 @@
 package uk.ccez.keys.ui
 
+import uk.ccez.keys.learn.KeyNames
 import android.content.Context
 import android.view.ViewGroup
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -941,25 +942,15 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
 private fun AiSettings(version: Int) {
     val ctx = LocalContext.current
     val e = App.instance.engine
-    // One AI: DeepSeek (its address and model are settings: `keys set ai.model …`).
+    // The keyboard's own AI: DeepSeek (its address and model are settings: `keys set ai.model …`).
     val model = remember(version) { e.setting("ai.model").trim('"') }
-    var hint by remember(version) { mutableStateOf(uk.ccez.keys.learn.Secrets.hint(ctx)) }
-    Text("DeepSeek · $model", color = Colors.fg, fontSize = 13.5.sp)
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(hint ?: "Key", color = if (hint == null) Colors.dim else Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-        // The key from the clipboard: copied wherever it lives, pasted here.
-        Action("Paste") {
-            val clip = ctx.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
-            val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim()
-            if (!text.isNullOrEmpty() && !text.contains(' ')) {
-                uk.ccez.keys.learn.Secrets.set(ctx, text)
-                hint = uk.ccez.keys.learn.Secrets.hint(ctx)
-                // A key never stays in the clipboard history or the chip.
-                uk.ccez.keys.learn.Clips.remove(ctx, text)
-                App.instance.clearClipChip?.invoke()
-            }
+    // Each key held, by name (`keys key add <name>` on the Mac); DeepSeek's always, so it can be pasted.
+    var names by remember(version) { mutableStateOf(listOf(KeyNames.DEEPSEEK) + uk.ccez.keys.learn.Secrets.names(ctx).filter { it != KeyNames.DEEPSEEK }) }
+    names.forEachIndexed { i, name ->
+        val title = if (name == KeyNames.DEEPSEEK) "DeepSeek · $model" else KeyNames.label(name)
+        KeyRow(name, title, version, Modifier.padding(top = if (i == 0) 0.dp else 12.dp)) {
+            names = listOf(KeyNames.DEEPSEEK) + uk.ccez.keys.learn.Secrets.names(ctx).filter { it != KeyNames.DEEPSEEK }
         }
-        if (hint != null) Action("Remove") { uk.ccez.keys.learn.Secrets.set(ctx, null); hint = null }
     }
     // Apps given the key (keyring/), or refused it: Remove makes one ask again.
     var apps by remember(version) { mutableStateOf(uk.ccez.keys.keyring.Keyring.decided(ctx)) }
@@ -972,6 +963,30 @@ private fun AiSettings(version: Int) {
         }
     }
     TwoColumns(listOf(Triple(Icons.spark, "Corrections", "ai.tips")), version)
+}
+
+/** One key: its name, "••••abcd" or "Key", Paste and Remove. */
+@Composable
+private fun KeyRow(name: String, title: String, version: Int, modifier: Modifier, changed: () -> Unit) {
+    val ctx = LocalContext.current
+    var hint by remember(version, name) { mutableStateOf(uk.ccez.keys.learn.Secrets.hint(ctx, name)) }
+    Text(title, color = Colors.fg, fontSize = 13.5.sp, modifier = modifier)
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(hint ?: "Key", color = if (hint == null) Colors.dim else Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+        // The key from the clipboard: copied wherever it lives, pasted here.
+        Action("Paste") {
+            val clip = ctx.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
+            val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim()
+            if (!text.isNullOrEmpty() && !text.contains(' ')) {
+                uk.ccez.keys.learn.Secrets.set(ctx, name, text)
+                hint = uk.ccez.keys.learn.Secrets.hint(ctx, name)
+                // A key never stays in the clipboard history or the chip.
+                uk.ccez.keys.learn.Clips.remove(ctx, text)
+                App.instance.clearClipChip?.invoke()
+            }
+        }
+        if (hint != null) Action("Remove") { uk.ccez.keys.learn.Secrets.set(ctx, name, null); hint = null; changed() }
+    }
 }
 
 /** The learning order as numbered flags, five a row, + last; tap a flag to move or remove it. */
