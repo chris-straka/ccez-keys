@@ -13,6 +13,15 @@
 //!                                  it never appears on a command line
 //!     keys keyring [allow|deny|drop <package>]   apps given the AI key
 //!                                  (docs/keyring.md); no argument lists them
+//!     keys clip put <text|->       onto the phone's clipboard (- or nothing: stdin)
+//!     keys clip now                what's on it now ({"secret":true} for passwords)
+//!     keys clip ls                 the keyboard's clipboard history, with ids
+//!     keys clip get <id>           one item's text
+//!     keys clip rm <id>            out of the history; off the clipboard if it's on it
+//!                                  (an agent's put: what was there before comes back)
+//!     keys clip clear              empties the clipboard (the history stays)
+//!
+//! The clipboard works with the keyboard closed: nothing opens on the phone.
 //!
 //! The phone: $KEYS_SERIAL, else the only device adb sees. Output is
 //! JSON (except log, JSON lines). Errors are plain words, exit code 1.
@@ -61,6 +70,31 @@ fn main() {
             }
             return;
         }
+        ["clip", "put", rest @ ..] => {
+            let text = match rest {
+                [] | ["-"] => {
+                    use std::io::Read;
+                    let mut t = String::new();
+                    if let Err(e) = std::io::stdin().read_to_string(&mut t) {
+                        eprintln!("couldn't read stdin: {e}");
+                        exit(1);
+                    }
+                    t
+                }
+                words => words.join(" "),
+            };
+            match clip_put(&text) {
+                Ok(out) => println!("{out}"),
+                Err(e) => {
+                    eprintln!("{e}");
+                    exit(1);
+                }
+            }
+            return;
+        }
+        ["clip"] => ("clip", Some("now".to_string()), None),
+        ["clip", "now" | "ls" | "clear"] => ("clip", Some(args[1].clone()), None),
+        ["clip", "get" | "rm", id] => ("clip", Some(format!("{} {id}", args[1])), None),
         ["key"] => {
             match send_key() {
                 Ok(out) => println!("{out}"),
@@ -72,7 +106,7 @@ fn main() {
             return;
         }
         _ => {
-            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key < file | keyring [allow|deny|drop <package>] | backup [dir] | restore <file>");
+            eprintln!("usage: keys status | get [key] | set <key> <value> | schema | use <lang> | log [-n N] | key < file | keyring [allow|deny|drop <package>] | clip [put <text|-> | now | ls | get <id> | rm <id> | clear] | backup [dir] | restore <file>");
             exit(2);
         }
     };
@@ -133,21 +167,46 @@ fn call(method: &str, arg: Option<&str>, value: Option<&str>) -> Result<String, 
 /// The key goes through stdin to the phone's shell (`read`), so it is on
 /// no command line on the Mac.
 fn send_key() -> Result<String, String> {
-    use std::io::{Read, Write};
+    use std::io::Read;
     let mut key = String::new();
     std::io::stdin().read_to_string(&mut key).map_err(|e| format!("couldn't read the key: {e}"))?;
+    let encoded = if key.trim().is_empty() { b64(" ") } else { b64(key.trim()) };
+    call_stdin("key", None, &encoded)
+}
+
+/// Text for the phone's clipboard, through stdin like the key: any
+/// characters, on no command line on the Mac. One shell argument on the
+/// phone holds it, so about 90 KB at most.
+fn clip_put(text: &str) -> Result<String, String> {
+    if text.is_empty() {
+        return Err("nothing to put".into());
+    }
+    let encoded = b64(text);
+    if encoded.len() > 120_000 {
+        return Err(format!("too long for the phone's clipboard this way ({} KB; 90 KB at most)", text.len() / 1024));
+    }
+    call_stdin("clip", Some("put"), &encoded)
+}
+
+/// `content call` with the value extra read from stdin on the phone's shell.
+fn call_stdin(method: &str, arg: Option<&str>, encoded: &str) -> Result<String, String> {
+    use std::io::Write;
     let serial = serial()?;
-    let script = format!("read -r k; content call --uri {URI} --method key --extra value:s:\"$k\"");
+    let arg = arg.map(|a| format!(" --arg {}", quote(a))).unwrap_or_default();
+    let script = format!("read -r k; content call --uri {URI} --method {method}{arg} --extra value:s:\"$k\"");
     let mut child = Command::new("adb")
         .args(["-s", &serial, "shell", &script])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("adb didn't run: {e}"))?;
-    let encoded = if key.trim().is_empty() { b64(" ") } else { b64(key.trim()) };
     child.stdin.take().ok_or("no stdin")?.write_all(format!("{encoded}\n").as_bytes()).map_err(|e| e.to_string())?;
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    if let Some(at) = text.find("{error=") {
+        let rest = &text[at + 7..];
+        return Err(unb64(rest[..rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len())].trim()).unwrap_or_else(|| text.trim().to_string()));
+    }
     let at = text.find("out=").ok_or_else(|| format!("unexpected answer from the phone: {}", text.trim()))? + 4;
     let rest = &text[at..];
     unb64(rest[..rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len())].trim()).ok_or_else(|| "bad answer".into())

@@ -17,3 +17,10 @@ phone; the learning strip comes next. Layout: `docs/layout.html`.
 
     scripts/build.sh                  # release APK, installed on the phone
     cargo run -p ccez-keys-cli --bin keys -- status | get [key] | set <key> <value> | schema | log
+    keys clip put <text|-> | now | ls | get <id> | rm <id> | clear   # the phone's clipboard
+
+`keys clip` sets and clears the phone's clipboard through the keyboard with
+the keyboard closed (only adb can call it). While the phone is locked
+Android takes the write but hides the clipboard from everyone, so `now`
+says so and `put` can't read itself back. `ccez-clip`'s `clip --on phone`
+uses it.

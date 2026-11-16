@@ -153,6 +153,13 @@ class Control : ContentProvider() {
                         else -> error("keyring list | allow <package> | deny <package> | drop <package>")
                     }
                 }
+                // The phone's clipboard: `keys clip put|now|ls|get <id>|rm <id>|clear` (learn/ClipBoard.kt).
+                "clip" -> {
+                    val value = extras?.getString("value")?.let { String(Base64.decode(it, Base64.DEFAULT)) }
+                    val main = android.os.Handler(android.os.Looper.getMainLooper())
+                    uk.ccez.keys.learn.ClipBoard.run(app, arg ?: "now", value) { main.post { app.clearClipChip?.invoke() } }
+                        .also { app.log("info", "clip", "command" to (arg ?: "now").substringBefore(' ')) }
+                }
                 "log" -> engine.logTail((arg?.toIntOrNull() ?: 50).coerceIn(1, 5000).toUInt())
                 else -> error("no command called $method")
             }
