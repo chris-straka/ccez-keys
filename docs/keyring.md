@@ -1,7 +1,9 @@
 # Keyring: the owner's keys for their other apps
 
 ccez-keys holds the owner's API keys by name (owner, 2026-11-16: "Keys
-should store more than just deepseek key"): `deepseek`, and any other name
+should store more than just deepseek key"): `deepseek`, `github` (the
+token the apps update themselves with from their private repos' releases;
+owner, 2026-11-18, README "The apps' updates"), and any other name
 `keys key add <name>` on z sends to the phone (README, "Keys, once"), or
 Settings → AI → Paste on a key's row. Settings → AI lists each key held.
 The owner's other apps (ccez-tube, ccez-llm, ccez-translate…) ask it for a

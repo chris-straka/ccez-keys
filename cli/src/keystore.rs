@@ -17,13 +17,15 @@
 //! pick up.
 //!
 //! A key must look right for its name (DeepSeek's `sk-…`, Gemini's `AQ.…`
-//! or `AIza…`) before it goes anywhere. It's never printed, logged or put
-//! on a command line: each tool gets it on stdin.
+//! or `AIza…`, GitHub's `github_pat_…`) before it goes anywhere. It's
+//! never printed, logged or put on a command line: each tool gets it on
+//! stdin.
 //!
 //! The tools are found on PATH; tests point them at stand-ins with
 //! KEYS_SECURITY, KEYS_LAUNCHCTL, KEYS_PBPASTE, KEYS_WRANGLER, KEYS_GIT,
-//! KEYS_CURL, KEYS_ADB, KEYS_SWE (the repos' folder), KEYS_HUB (ccez-words)
-//! and KEYS_GEMINI (Google's API); KEYS_NO_PROMPT turns the hidden prompt off.
+//! KEYS_CURL, KEYS_ADB, KEYS_SWE (the repos' folder), KEYS_HUB (ccez-words),
+//! KEYS_GEMINI (Google's API) and KEYS_GITHUB (GitHub's); KEYS_NO_PROMPT
+//! turns the hidden prompt off.
 
 use std::io::{BufRead, Read, Write};
 use std::process::{Command, Stdio};
@@ -34,6 +36,11 @@ const HUB: &str = "http://127.0.0.1:8798/ai/deepseek";
 const DEEPSEEK_MODEL: &str = "deepseek-flash";
 const GEMINI: &str = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_MODEL: &str = "gemini-4-hydrogen";
+const GITHUB: &str = "https://api.github.com";
+/// The phone apps that update themselves from a private repo's releases
+/// with the `github` key (owner, 2026-11-18: one token, kept in ccez-keys,
+/// instead of a copy in each app).
+pub const UPDATE_REPOS: &[&str] = &["ccez-tube", "ccez-calc", "ccez-gallery", "ccez-home", "ccez-recorder", "ccez-translate"];
 
 /// Where a key goes.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -75,6 +82,8 @@ const PLACES: &[Known] = &[
         ],
     },
     Known { name: "gemini", label: "Gemini", shape: "AQ.… or AIza…", looks: looks_gemini, places: &[Z, Pages("art-website", "art-website", "GEMINI_API_KEY")] },
+    // The phone apps' updates: ccez-keys lends it to each (docs/keyring.md).
+    Known { name: "github", label: "GitHub", shape: "fine-grained github_pat_…", looks: looks_github, places: &[Z, Phone] },
 ];
 const ELSEWHERE: &[Place] = &[Z, Phone];
 
@@ -105,6 +114,12 @@ pub fn looks_deepseek(k: &str) -> bool {
 pub fn looks_gemini(k: &str) -> bool {
     let tail_ok = |t: &str| t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
     (k.starts_with("AQ.") && (20..=400).contains(&k.len()) && tail_ok(&k[3..])) || (k.starts_with("AIza") && k.len() == 39 && tail_ok(&k[4..]) && !k.contains('.'))
+}
+
+/// GitHub's fine-grained tokens: `github_pat_`, then letters, digits and _.
+/// Not the classic `ghp_…`: those read every repo and can write.
+pub fn looks_github(k: &str) -> bool {
+    k.starts_with("github_pat_") && (40..=255).contains(&k.len()) && k[11..].chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// A name it doesn't know: one word of printable characters.
@@ -505,6 +520,33 @@ fn test_gemini() -> Result<String, String> {
     Ok(format!("ok, {GEMINI_MODEL} answered “{answer}”"))
 }
 
+/// The latest release of each app in [UPDATE_REPOS], asked for with z's
+/// GitHub token: the phone apps make the same call to update.
+fn test_github() -> Result<String, String> {
+    let key = z_key("github")?;
+    let config = format!("header = \"authorization: Bearer {key}\"\nheader = \"accept: application/vnd.github+json\"\n");
+    drop(key);
+    let api = std::env::var("KEYS_GITHUB").unwrap_or_else(|_| GITHUB.to_string());
+    let mut cant = Vec::new();
+    for repo in UPDATE_REPOS {
+        let (_, code, _) = curl(&["-K", "-", &format!("{api}/repos/chris-straka/{repo}/releases/latest")], Some(&config));
+        if code == 0 {
+            return Err("GitHub unreachable".into());
+        }
+        if code == 401 {
+            return Err("GitHub refused the token (401): expired or revoked".into());
+        }
+        if code != 200 {
+            cant.push(format!("{repo} ({code})"));
+        }
+    }
+    if cant.is_empty() {
+        Ok(format!("ok, reads the releases of {}", UPDATE_REPOS.join(", ")))
+    } else {
+        Err(format!("can't read {}: give the token Contents: Read-only on those repos", cant.join(", ")))
+    }
+}
+
 /// One tiny call from the phone with the DeepSeek key ccez-keys holds.
 fn test_phone(name: &str) -> Result<String, String> {
     if name != "deepseek" {
@@ -554,6 +596,7 @@ fn test(name: &str, failed: &mut bool) {
             Z => match name {
                 "deepseek" => test_hub(),
                 "gemini" => test_gemini(),
+                "github" => test_github(),
                 _ => z_keys().and_then(|z| if z.iter().any(|(n, _)| n == name) { Ok("in z's keychain (no test call for this name)".into()) } else { Err("not in z's keychain".into()) }),
             },
             Phone => test_phone(name),
@@ -781,6 +824,14 @@ mod tests {
         assert!(!looks_gemini(&format!("{aq}\"x")));
         assert!(looks_right("gemini", &aq));
         assert!(!looks_right("deepseek", &aq));
+        let pat = format!("github_pat_{}_{}", "11AAFAKE0".repeat(2), "Fake0x".repeat(9));
+        assert!(looks_github(&pat));
+        assert!(looks_right("github", &pat));
+        assert!(!looks_github(&format!("ghp_{}", "Fake0x".repeat(6))));
+        assert!(!looks_github("github_pat_short"));
+        assert!(!looks_github(&format!("{pat}-x")));
+        assert!(!looks_github(&format!("{pat} x")));
+        assert!(!looks_right("github", &ds));
         assert!(looks_right("other", "anything-without-spaces"));
         assert!(!looks_right("other", "two words"));
     }
@@ -801,6 +852,7 @@ mod tests {
         assert_eq!(places("gemini"), &[Z, Pages("art-website", "art-website", "GEMINI_API_KEY")]);
         assert!(places("deepseek").contains(&Phone));
         assert!(places("deepseek").contains(&Worker("ccez-keeps", "DEEPSEEK_API_KEY")));
+        assert_eq!(places("github"), &[Z, Phone]);
         assert_eq!(places("anything-else"), &[Z, Phone]);
     }
 

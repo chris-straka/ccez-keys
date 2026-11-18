@@ -12,6 +12,7 @@ T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 FAKE=sk-test0fake0key0000000000000000000
 FAKEG=AQ.Ab8test0fake0gemini0key000000000000000
+FAKEP=github_pat_11TESTFAKE0000000000_test0fake0github0token00000000000000000000000000000
 b64() { printf %s "$1" | base64; }
 : > "$T/kc"
 : > "$T/phone_keys"
@@ -27,6 +28,7 @@ case \"\$*\" in
   dump-keychain) while read -r n; do printf 'keychain: \"/x/login.keychain-db\"\nclass: \"genp\"\nattributes:\n    \"acct\"<blob>=\"%s\"\n    \"mdat\"<timedate>=0x00  \"20261116154411Z\\\\000\"\n    \"svce\"<blob>=\"uk.ccez.ai\"\n' \"\$n\"; done < $T/kc
     printf 'keychain: \"/x/login.keychain-db\"\nclass: \"genp\"\nattributes:\n    \"acct\"<blob>=\"someone\"\n    \"svce\"<blob>=\"other.service\"\n';;
   *find-generic-password*gemini*) echo '$FAKEG';;
+  *find-generic-password*github*) echo '$FAKEP';;
   *delete-generic-password*) n=\$(echo \"\$*\" | sed 's/.* -a //'); grep -vx \"\$n\" $T/kc > $T/kc2 || true; mv $T/kc2 $T/kc;;
 esac"
 mk launchctl "$LOG"
@@ -44,6 +46,8 @@ case \"\$*\" in
   *chat/completions*) printf '{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}\n200';;
   *user/balance*) printf '{\"is_available\":true,\"balance_infos\":[{\"currency\":\"USD\",\"total_balance\":\"4.20\"}]}\n200';;
   *gemini-4-hydrogen:generateContent*) printf '{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"OK\"}]}}]}\n200';;
+  *ccez-gallery/releases/latest*) if [ -n \"\${NO_GALLERY:-}\" ]; then printf '{}\n404'; else printf '{}\n200'; fi;;
+  *releases/latest*) printf '{\"tag_name\":\"v1\"}\n200';;
 esac"
 # The phone, seen twice (USB and wireless debugging); its ccez-keys holds
 # named keys (phone_keys) unless OLD_PHONE is set.
@@ -62,11 +66,11 @@ esac"
 
 export KEYS_PBPASTE="$T/pbpaste" KEYS_SECURITY="$T/security" KEYS_LAUNCHCTL="$T/launchctl" KEYS_WRANGLER="$T/wrangler" \
   KEYS_GIT="$T/git" KEYS_CURL="$T/curl" KEYS_ADB="$T/adb" KEYS_SWE="$T/swe" \
-  KEYS_HUB="http://127.0.0.1:9/ai/deepseek" KEYS_GEMINI="http://127.0.0.1:9/v1beta"
+  KEYS_HUB="http://127.0.0.1:9/ai/deepseek" KEYS_GEMINI="http://127.0.0.1:9/v1beta" KEYS_GITHUB="http://127.0.0.1:9"
 unset KEYS_SERIAL || true
 
 fail() { echo "FAIL: $*"; exit 1; }
-leaked() { grep -q -e "$FAKE" -e "$FAKEG" "$1"; }
+leaked() { grep -q -e "$FAKE" -e "$FAKEG" -e "$FAKEP" "$1"; }
 
 # DeepSeek, by its old name: z, the phone and the three Cloudflare apps.
 "$KEYS" ai-key > "$T/out.txt" 2>&1 || { cat "$T/out.txt"; fail "keys ai-key exited non-zero"; }
@@ -102,6 +106,29 @@ grep -q "kickstart" "$T/args.log" && fail "ccez-words restarted for Gemini"
 grep -q "header = \"x-goog-api-key: $FAKEG\"" "$T/curl-stdin.log" || fail "the Gemini test didn't send the key in curl's config"
 grep -q '"thinkingLevel\\":\\"low\\"' "$T/curl-stdin.log" || fail "the Gemini test isn't low thinking"
 grep -q "gemini-4-hydrogen answered “OK”" "$T/out.txt" || fail "the Gemini test"
+
+# GitHub (the phone apps' updates): z and the phone; its test asks for each
+# app's latest release with the token in curl's config on stdin.
+: > "$T/args.log"
+: > "$T/curl-stdin.log"
+mk pbpaste "printf '%s\n' '$FAKEP'"
+"$KEYS" key add github > "$T/out.txt" 2>&1 || { cat "$T/out.txt"; fail "keys key add github exited non-zero"; }
+cat "$T/out.txt"
+leaked "$T/out.txt" && fail "the GitHub token was printed"
+leaked "$T/args.log" && fail "the GitHub token was on a command line"
+grep -q "add-generic-password -U -s uk.ccez.ai -a github .* -w $FAKEP" "$T/stdin.log" || fail "keychain didn't get the GitHub token on stdin"
+grep -q "^$(b64 "$FAKEP")\$" "$T/stdin.log" || fail "the phone didn't get the GitHub token on stdin"
+grep -q "content call .* --method key --arg 'github'" "$T/args.log" || fail "github to the phone, by name"
+grep -q "wrangler" "$T/args.log" && fail "the GitHub token went to Cloudflare"
+for r in ccez-tube ccez-calc ccez-gallery ccez-home ccez-recorder ccez-translate; do
+  grep -q "/repos/chris-straka/$r/releases/latest" "$T/args.log" || fail "the GitHub test skipped $r"
+done
+grep -q "header = \"authorization: Bearer $FAKEP\"" "$T/curl-stdin.log" || fail "the GitHub test didn't send the token in curl's config"
+grep -q "reads the releases of ccez-tube" "$T/out.txt" || fail "the GitHub test"
+NO_GALLERY=1 "$KEYS" key test github > "$T/out.txt" 2>&1 && fail "the GitHub test passed with a repo it can't read"
+grep -q "can't read ccez-gallery (404)" "$T/out.txt" || { cat "$T/out.txt"; fail "the GitHub 404 wording"; }
+mk pbpaste "printf '%s\n' 'ghp_0000000000test0fake0classic0000000'"
+KEYS_NO_PROMPT=1 "$KEYS" key add github < /dev/null > /dev/null 2>&1 && fail "took a classic GitHub token"
 
 # A name it doesn't know: z and the phone.
 mk pbpaste "printf '%s\n' 'other-fake-key-0000'"
