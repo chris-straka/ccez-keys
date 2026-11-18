@@ -34,7 +34,11 @@ Off the main thread. The answer's `status`:
 - `locked`: the phone hasn't been unlocked since it started.
 
 An app with no ccez-keys gets an `IllegalArgumentException` (unknown
-provider). The app needs `<queries><package android:name="uk.ccez.keys"/></queries>`.
+provider). The app needs `<queries><package android:name="uk.ccez.keys"/></queries>`,
+and ccez-keys' manifest lists the app's package in its own `<queries>`:
+without it, after either app is updated, ccez-keys can't see the app
+until it asks again (Settings shows its package name, and `keys keyring
+allow` says it isn't installed).
 
 Apps ask each time they need the key (a few ms) and keep it in memory
 only, so a changed key reaches them at once. A copy to paste is

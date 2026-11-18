@@ -27,6 +27,10 @@
              (`keys keyring allow`, their names in Settings). -->
         <package android:name="uk.ccez.tube" />
         <package android:name="uk.ccez.translate" />
+        <package android:name="uk.ccez.calc" />
+        <package android:name="uk.ccez.gallery" />
+        <package android:name="uk.ccez.home" />
+        <package android:name="uk.ccez.recorder" />
     </queries>
 
     <application
