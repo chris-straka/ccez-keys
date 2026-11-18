@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
                 Modifier.fillMaxSize().background(Colors.bg).safeDrawingPadding().imePadding().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text("ccez-keys", color = Colors.fg, fontSize = 22.sp)
+                Text("Ccez Keys", color = Colors.fg, fontSize = 22.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }, colors = buttons) { Text("Turn on") }
                     Button(onClick = { getSystemService(InputMethodManager::class.java)?.showInputMethodPicker() }, colors = buttons) { Text("Choose") }

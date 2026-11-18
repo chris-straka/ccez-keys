@@ -37,7 +37,7 @@
         android:name=".App"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="ccez-keys"
+        android:label="Ccez Keys"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <!-- simpleperf from the Mac (scripts/perf.sh): profiling by the shell only. -->
@@ -62,7 +62,7 @@
         <service
             android:name=".KeysService"
             android:exported="true"
-            android:label="ccez-keys"
+            android:label="Ccez Keys"
             android:permission="android.permission.BIND_INPUT_METHOD">
             <intent-filter>
                 <action android:name="android.view.InputMethod" />
