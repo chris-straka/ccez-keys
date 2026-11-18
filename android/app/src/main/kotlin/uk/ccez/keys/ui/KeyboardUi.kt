@@ -945,47 +945,87 @@ private fun AiSettings(version: Int) {
     // The keyboard's own AI: DeepSeek (its address and model are settings: `keys set ai.model …`).
     val model = remember(version) { e.setting("ai.model").trim('"') }
     // Each key held, by name (`keys key add <name>` on the Mac); DeepSeek's always, so it can be pasted.
-    var names by remember(version) { mutableStateOf(listOf(KeyNames.DEEPSEEK) + uk.ccez.keys.learn.Secrets.names(ctx).filter { it != KeyNames.DEEPSEEK }) }
-    names.forEachIndexed { i, name ->
+    fun held() = listOf(KeyNames.DEEPSEEK) + uk.ccez.keys.learn.Secrets.names(ctx).filter { it != KeyNames.DEEPSEEK }
+    var names by remember(version) { mutableStateOf(held()) }
+    // One key or app picked at a time; its actions show under it, as a
+    // flag's do (owner, 2026-11-18: a Remove on every row read as a
+    // column of buttons).
+    var picked by remember { mutableStateOf<String?>(null) }
+    names.forEach { name ->
         val title = if (name == KeyNames.DEEPSEEK) "DeepSeek · $model" else KeyNames.label(name)
-        KeyRow(name, title, version, Modifier.padding(top = if (i == 0) 0.dp else 12.dp)) {
-            names = listOf(KeyNames.DEEPSEEK) + uk.ccez.keys.learn.Secrets.names(ctx).filter { it != KeyNames.DEEPSEEK }
+        val id = "key:$name"
+        KeyRow(name, title, version, open = picked == id, toggle = { picked = if (picked == id) null else id }) {
+            names = held()
+            picked = null
         }
     }
-    // Apps given the key (keyring/), or refused it: Remove makes one ask again.
+    // Apps given the keys (keyring/), or refused them: Remove makes one ask again.
     var apps by remember(version) { mutableStateOf(uk.ccez.keys.keyring.Keyring.decided(ctx)) }
-    if (apps.isNotEmpty()) Text("Apps with the key", color = Colors.dim, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp))
-    apps.forEach { (pkg, ok) ->
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(uk.ccez.keys.keyring.Keyring.label(ctx, pkg), color = if (ok) Colors.fg else Colors.dim, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-            if (!ok) Text("Refused", color = Colors.dim, fontSize = 12.sp)
-            Action("Remove") { uk.ccez.keys.keyring.Keyring.forget(ctx, pkg); apps = uk.ccez.keys.keyring.Keyring.decided(ctx) }
+    if (apps.isNotEmpty()) {
+        Text("Apps", color = Colors.dim, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            apps.forEach { (pkg, ok) ->
+                val id = "app:$pkg"
+                Text(
+                    uk.ccez.keys.keyring.Keyring.label(ctx, pkg),
+                    color = if (ok) Colors.fg else Colors.dim,
+                    fontSize = 13.sp,
+                    textDecoration = if (ok) null else androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                    modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                        .background(if (picked == id) Colors.popupSel else Colors.key)
+                        .combinedClickableCompat { picked = if (picked == id) null else id }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                )
+            }
+        }
+        val app = picked?.takeIf { it.startsWith("app:") }?.removePrefix("app:")?.takeIf { p -> apps.any { it.first == p } }
+        if (app != null) {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val ok = apps.firstOrNull { it.first == app }?.second == true
+                Text(if (ok) "Allowed" else "Refused", color = Colors.dim, fontSize = 12.5.sp, modifier = Modifier.weight(1f))
+                Action("Remove") {
+                    uk.ccez.keys.keyring.Keyring.forget(ctx, app)
+                    apps = uk.ccez.keys.keyring.Keyring.decided(ctx)
+                    picked = null
+                }
+            }
         }
     }
     TwoColumns(listOf(Triple(Icons.spark, "Corrections", "ai.tips")), version)
 }
 
-/** One key: its name, "••••abcd" or "Key", Paste and Remove. */
+/** One key: its name and "••••abcd" (or "None"); tapped, Paste and Remove under it. */
 @Composable
-private fun KeyRow(name: String, title: String, version: Int, modifier: Modifier, changed: () -> Unit) {
+private fun KeyRow(name: String, title: String, version: Int, open: Boolean, toggle: () -> Unit, changed: () -> Unit) {
     val ctx = LocalContext.current
     var hint by remember(version, name) { mutableStateOf(uk.ccez.keys.learn.Secrets.hint(ctx, name)) }
-    Text(title, color = Colors.fg, fontSize = 13.5.sp, modifier = modifier)
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(hint ?: "Key", color = if (hint == null) Colors.dim else Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-        // The key from the clipboard: copied wherever it lives, pasted here.
-        Action("Paste") {
-            val clip = ctx.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
-            val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim()
-            if (!text.isNullOrEmpty() && !text.contains(' ')) {
-                uk.ccez.keys.learn.Secrets.set(ctx, name, text)
-                hint = uk.ccez.keys.learn.Secrets.hint(ctx, name)
-                // A key never stays in the clipboard history or the chip.
-                uk.ccez.keys.learn.Clips.remove(ctx, text)
-                App.instance.clearClipChip?.invoke()
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+            .background(if (open) Colors.popupSel else Color.Transparent)
+            .combinedClickableCompat(toggle)
+            .padding(horizontal = 6.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = Colors.fg, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+        Text(hint ?: "None", color = Colors.dim, fontSize = 13.sp)
+    }
+    if (open) {
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+            // The key from the clipboard: copied wherever it lives, pasted here.
+            Action("Paste") {
+                val clip = ctx.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
+                val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim()
+                if (!text.isNullOrEmpty() && !text.contains(' ')) {
+                    uk.ccez.keys.learn.Secrets.set(ctx, name, text)
+                    hint = uk.ccez.keys.learn.Secrets.hint(ctx, name)
+                    // A key never stays in the clipboard history or the chip.
+                    uk.ccez.keys.learn.Clips.remove(ctx, text)
+                    App.instance.clearClipChip?.invoke()
+                    toggle()
+                }
             }
+            if (hint != null) Action("Remove") { uk.ccez.keys.learn.Secrets.set(ctx, name, null); hint = null; changed() }
         }
-        if (hint != null) Action("Remove") { uk.ccez.keys.learn.Secrets.set(ctx, name, null); hint = null; changed() }
     }
 }
 

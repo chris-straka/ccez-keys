@@ -48,6 +48,7 @@ object KeyNames {
     fun label(name: String) = when (name) {
         DEEPSEEK -> "DeepSeek"
         "gemini" -> "Gemini"
+        "github" -> "GitHub"
         else -> name.replaceFirstChar { it.uppercase() }
     }
 }
