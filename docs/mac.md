@@ -54,6 +54,35 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
   Region page (Translation Languages is there) and names any language the
   Mac couldn't translate into.
 
+## Words never cover text (owner, 2026-11-18)
+
+"The random words that popup on screen can overlap the text I'm reading
+which should NEVER happen." Two rules, each tested (`float.rs`, `ax.rs`,
+`idle.rs`):
+
+- **Placed only where there is known to be no text.** A front window whose
+  text the walk didn't see is taken whole: a walk stopped early, or one
+  with no text in it. Claude's chat was the case: Chromium apps share their
+  page only after `wake`, and switch it off again by themselves a while
+  later, so the walk saw three icons and called all 317 spots free. The
+  window is asked again (at most every 10 s) and words go into it once its
+  text shows. The walk skips what's scrolled out of the window, so a long
+  page doesn't use up its 4000 elements and 250 ms.
+- **Gone the moment text comes under it.** Every 0.3 s the spot thread
+  hit-tests five points under each word (Accessibility's
+  `AXUIElementCopyElementAtPosition`, in the app whose window is on top
+  there), which follows scrolling at once; text, a link, a heading, a
+  paragraph's group or any control under it takes the word off with no
+  fade, and its spot rests. An app that doesn't answer in time counts on
+  the second look running. A word open under the pointer is left alone.
+- `ccez-keys-mac --guard-demo x y w h [noguard]` puts one word up in a spot
+  and runs that look (without `noguard`); `--look <pid>` prints the walk's
+  text count and whether it's trusted. `CCEZ_KEYS_DEBUG_UNDER=1` prints what
+  each look found under a word.
+- The blue frame round Claude's chat in the owner's report is Claude's own
+  focus outline (that area has the keyboard focus); this app draws no
+  outlines.
+
 ## Words on screen and videos (2026-11-12)
 
 Learning words (float.rs) go only where the front window has no content.
