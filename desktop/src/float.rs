@@ -248,18 +248,58 @@ pub struct Floaters {
     /// For the spot thread: the screen (top-left coordinates) and whether to look.
     screen: Arc<Mutex<Rect>>,
     looking: Arc<AtomicBool>,
+    /// For the spot thread: each word up, where it is (top-left coordinates).
+    up: Arc<Mutex<Vec<(isize, Rect)>>>,
+    /// From the spot thread: words with something under them now.
+    covered: Arc<Mutex<Vec<isize>>>,
+}
+
+/// The words to take off at once: those whose place has content under it.
+/// A word never covers text: placed only where there is none, and gone
+/// within a look (0.3 s) of text coming under it, however it came (a
+/// scroll, a window moved, new text) (owner, 2026-11-18). An app that
+/// doesn't answer in time counts too when it happens on two looks running
+/// (`unsure` keeps the count): once is a busy app, twice can't be trusted.
+pub fn covered_words(up: &[(isize, Rect)], under: impl Fn(Rect) -> Option<bool>, unsure: &mut std::collections::HashMap<isize, u8>) -> Vec<isize> {
+    let mut out = Vec::new();
+    unsure.retain(|id, _| up.iter().any(|(i, _)| i == id));
+    for (id, r) in up {
+        match under(*r) {
+            Some(true) => out.push(*id),
+            Some(false) => {
+                unsure.remove(id);
+            }
+            None => {
+                let n = unsure.entry(*id).or_insert(0);
+                *n += 1;
+                if *n >= 2 {
+                    out.push(*id);
+                }
+            }
+        }
+    }
+    out
 }
 
 impl Floaters {
     /// `find` gives the free spots on a screen and whether a video in the
     /// front window is playing; `video`, whether one holds the display awake.
-    pub fn new(engine: std::sync::Arc<ccez_keys_core::Engine>, find: impl Fn(Rect) -> (Vec<Rect>, bool) + Send + 'static, video: impl Fn() -> bool + Send + 'static) -> Floaters {
+    /// `under` says whether a word at a place has anything under it.
+    pub fn new(
+        engine: std::sync::Arc<ccez_keys_core::Engine>,
+        find: impl Fn(Rect) -> (Vec<Rect>, bool) + Send + 'static,
+        video: impl Fn() -> bool + Send + 'static,
+        under: impl Fn(Rect) -> Option<bool> + Send + 'static,
+    ) -> Floaters {
         let spots: Arc<Mutex<Option<Vec<Rect>>>> = Arc::default();
         let playing: Arc<AtomicBool> = Arc::default();
         let screen: Arc<Mutex<Rect>> = Arc::default();
         let looking: Arc<AtomicBool> = Arc::default();
+        let up: Arc<Mutex<Vec<(isize, Rect)>>> = Arc::default();
+        let covered: Arc<Mutex<Vec<isize>>> = Arc::default();
         {
             let (spots, playing, screen, looking) = (spots.clone(), playing.clone(), screen.clone(), looking.clone());
+            let (up, covered) = (up.clone(), covered.clone());
             std::thread::spawn(move || {
                 // Windows looked at every 0.3 s (cheap): the moment one moves,
                 // opens or closes, or another app comes forward, the front
@@ -267,11 +307,21 @@ impl Floaters {
                 // scrolls without the windows moving).
                 let mut seen: Option<String> = None;
                 let mut walked = std::time::Instant::now() - WALK_EVERY;
+                let mut unsure = std::collections::HashMap::new();
                 loop {
                     std::thread::sleep(Duration::from_millis(300));
                     if !looking.load(Ordering::Relaxed) {
                         seen = None;
                         continue;
+                    }
+                    // Under every word, every look: the walk below may wait
+                    // two seconds, and a scroll moves no window.
+                    let words = up.lock().unwrap().clone();
+                    if !words.is_empty() {
+                        let hit = covered_words(&words, &under, &mut unsure);
+                        if !hit.is_empty() {
+                            covered.lock().unwrap().extend(hit);
+                        }
                     }
                     let front = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
                     let now = format!("{front}:{:?}", crate::idle::windows(-1));
@@ -313,6 +363,8 @@ impl Floaters {
             video: playing,
             screen,
             looking,
+            up,
+            covered,
         }
     }
 
@@ -391,6 +443,31 @@ impl Floaters {
         let primary_h = NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(vis.size.height);
         *self.screen.lock().unwrap() = Rect { x: vis.origin.x, y: primary_h - (vis.origin.y + vis.size.height), w: vis.size.width, h: vis.size.height };
         let fresh = self.spots.lock().unwrap().take();
+        // Text under it (scrolled there, new text, a window over it): gone at
+        // once, no fade, and its spot rests (owner, 2026-11-18).
+        let hit: Vec<isize> = std::mem::take(&mut *self.covered.lock().unwrap());
+        if !hit.is_empty() {
+            let gone: Vec<usize> = self.words.borrow().iter().enumerate().filter(|(_, w)| hit.contains(&w.id)).map(|(i, _)| i).collect();
+            for i in gone.into_iter().rev() {
+                let w = self.words.borrow_mut().remove(i);
+                crate::app::log("info", &format!("word off: text under it at ({}, {})", w.cell.x as i64, w.cell.y as i64));
+                self.rested.borrow_mut().push((w.cell, Instant::now()));
+                w.on.set(false);
+                w.panel.orderOut(None);
+            }
+        }
+        // Where each word is, for the spot thread's look under it; not one
+        // open under the pointer (its meaning is being read).
+        *self.up.lock().unwrap() = self
+            .words
+            .borrow()
+            .iter()
+            .filter(|w| !w.open)
+            .map(|w| {
+                let f = w.panel.frame();
+                (w.id, Rect { x: f.origin.x, y: primary_h - (f.origin.y + f.size.height), w: f.size.width, h: f.size.height })
+            })
+            .collect();
         // Its spot taken (a window moved over it, the page changed): gone at
         // once, no fade (owner, 2026-11-11).
         if let Some(free) = fresh.as_ref() {
@@ -751,6 +828,18 @@ fn show(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: Str
     w
 }
 
+/// For `--guard-demo`: one word up in `cell` as the app shows them, faded in
+/// at once; its panel, to move or take off.
+pub fn demo_word(mtm: MainThreadMarker, cell: Rect, primary_h: f64) -> Retained<NSPanel> {
+    let w = build(mtm, 1, "fr".into(), "déchu".into(), "déchu".into(), "fallen".into(), Vec::new(), Vec::new(), cell, primary_h);
+    w.on.set(true);
+    // In screenshots, unlike the app's own words: the demo is for pictures.
+    w.panel.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
+    w.panel.setAlphaValue(1.0);
+    w.panel.orderFrontRegardless();
+    w.panel.clone()
+}
+
 /// A word made and laid out, not yet on screen.
 #[allow(clippy::too_many_arguments)]
 fn build(mtm: MainThreadMarker, id: isize, lang: String, word: String, shown: String, meaning: String, tags: Vec<String>, reading: Vec<(String, String)>, cell: Rect, primary_h: f64) -> Word {
@@ -1101,6 +1190,35 @@ fn without_article(lang: &str, shown: &str) -> String {
     };
     let bare = articles.iter().find_map(|a| shown.strip_prefix(a)).filter(|r| !r.trim().is_empty());
     bare.unwrap_or(shown).trim().to_string()
+}
+
+#[cfg(test)]
+#[test]
+fn a_word_with_text_scrolled_under_it_goes() {
+    let a = Rect { x: 100.0, y: 100.0, w: 120.0, h: 24.0 };
+    let b = Rect { x: 600.0, y: 400.0, w: 90.0, h: 24.0 };
+    // Text now lies under b only (the page scrolled up under it).
+    let text = [Rect { x: 500.0, y: 380.0, w: 700.0, h: 60.0 }];
+    let under = |r: Rect| Some(text.iter().any(|t| t.x < r.x + r.w && r.x < t.x + t.w && t.y < r.y + r.h && r.y < t.y + t.h));
+    let mut unsure = std::collections::HashMap::new();
+    assert_eq!(covered_words(&[(1, a), (2, b)], under, &mut unsure), vec![2]);
+    assert!(covered_words(&[(1, a)], under, &mut unsure).is_empty());
+    assert!(covered_words(&[], under, &mut unsure).is_empty());
+}
+
+#[cfg(test)]
+#[test]
+fn an_app_that_does_not_answer_twice_running_counts_as_text() {
+    let a = Rect { x: 100.0, y: 100.0, w: 120.0, h: 24.0 };
+    let mut unsure = std::collections::HashMap::new();
+    let silent = |_: Rect| None;
+    assert!(covered_words(&[(1, a)], silent, &mut unsure).is_empty(), "once: a busy app");
+    assert_eq!(covered_words(&[(1, a)], silent, &mut unsure), vec![1], "twice running: not trusted");
+    // A clear look in between starts the count again.
+    let mut unsure = std::collections::HashMap::new();
+    assert!(covered_words(&[(1, a)], silent, &mut unsure).is_empty());
+    assert!(covered_words(&[(1, a)], |_| Some(false), &mut unsure).is_empty());
+    assert!(covered_words(&[(1, a)], silent, &mut unsure).is_empty());
 }
 
 #[cfg(test)]

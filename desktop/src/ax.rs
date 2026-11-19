@@ -29,6 +29,7 @@ unsafe extern "C" {
     fn AXUIElementSetMessagingTimeout(element: Ref, seconds: f32) -> i32;
     fn AXUIElementCreateApplication(pid: i32) -> Ref;
     fn AXUIElementSetAttributeValue(element: Ref, attribute: Ref, value: Ref) -> i32;
+    fn AXUIElementCopyElementAtPosition(application: Ref, x: f32, y: f32, element: *mut Ref) -> i32;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -141,6 +142,85 @@ pub struct Layout {
     pub videos: Vec<crate::idle::Video>,
     /// The page's address, when it's a browser's (its web area says).
     pub url: Option<String>,
+    /// Text-bearing elements seen (text, headings, links, fields, cells).
+    pub texts: usize,
+    /// The walk got through the window: not stopped by `most` or `budget`.
+    pub complete: bool,
+}
+
+/// Roles that carry text a word must never cover.
+const TEXT_ROLES: [&str; 8] = ["AXStaticText", "AXTextArea", "AXTextField", "AXLink", "AXHeading", "AXCell", "AXSearchField", "AXComboBox"];
+
+/// Whether the front window's layout can be trusted to say where its text
+/// isn't: a walk that stopped early, or one that found a window but no text
+/// in it (a Chromium app whose accessibility is off or switched itself off
+/// again shows only empty groups: owner, 2026-11-18, words over a Claude
+/// chat), can't. Then the whole window counts as taken.
+pub fn layout_known(texts: usize, complete: bool) -> bool {
+    complete && texts > 0
+}
+
+/// Whether what a hit-test lands on is content a word must not sit on:
+/// anything but the backdrop (the window, its web area or scroll area, a
+/// big pane). A group the size of a paragraph or a message counts as content,
+/// so the gap between two lines of text does too.
+pub fn hit_is_content(role: &str, frame: Option<Rect>, window: Option<Rect>) -> bool {
+    const BACKDROP: [&str; 6] = ["AXWindow", "AXWebArea", "AXScrollArea", "AXSplitGroup", "AXLayoutArea", "AXApplication"];
+    if BACKDROP.contains(&role) {
+        return false;
+    }
+    if role == "AXGroup" || role == "AXUnknown" || role.is_empty() {
+        return match (frame, window) {
+            (Some(f), Some(w)) => f.w * f.h < w.w * w.h * 0.25,
+            _ => true,
+        };
+    }
+    true
+}
+
+/// Points to test under a word: its middle and four points just inside its corners.
+pub fn sample_points(r: Rect) -> [(f64, f64); 5] {
+    let (ix, iy) = ((r.w * 0.1).min(4.0), (r.h * 0.2).min(3.0));
+    [
+        (r.x + r.w / 2.0, r.y + r.h / 2.0),
+        (r.x + ix, r.y + iy),
+        (r.x + r.w - ix, r.y + iy),
+        (r.x + ix, r.y + r.h - iy),
+        (r.x + r.w - ix, r.y + r.h - iy),
+    ]
+}
+
+/// Whether anything of app `pid` lies under any of `points` (top-left
+/// screen coordinates): Accessibility's hit-test, which follows scrolling
+/// at once, unlike the layout walk. `Some(true)`: content; `Some(false)`:
+/// clear; `None`: the app didn't answer in time (a short timeout), not sure.
+pub fn content_under(pid: i32, points: &[(f64, f64)], window: Option<Rect>) -> Option<bool> {
+    let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
+    unsafe { AXUIElementSetMessagingTimeout(app.0, 0.15) };
+    for &(x, y) in points {
+        let mut out: Ref = std::ptr::null();
+        let err = unsafe { AXUIElementCopyElementAtPosition(app.0, x as f32, y as f32, &mut out) };
+        if err != 0 || out.is_null() {
+            // -25204 (cannot complete) and the like: unknown, so not clear.
+            // -25212 (no value): nothing of the app there.
+            if err == -25212 {
+                continue;
+            }
+            if std::env::var_os("CCEZ_KEYS_DEBUG_UNDER").is_some() {
+                eprintln!("under ({x}, {y}): AX error {err}");
+            }
+            return None;
+        }
+        let el = Owned(out);
+        let role = attr(el.0, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
+        if hit_is_content(&role, frame_of(el.0), window) {
+            if std::env::var_os("CCEZ_KEYS_DEBUG_UNDER").is_some() {
+                eprintln!("under ({x}, {y}): {role} {:?}", frame_of(el.0));
+            }
+            return Some(true);
+        }
+    }
+    Some(false)
 }
 
 /// A URL attribute as text (a CFURL, or a string).
@@ -225,14 +305,30 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> Lay
     let mut queue: std::collections::VecDeque<(Owned, Option<(Owned, isize)>)> = std::collections::VecDeque::new();
     queue.push_back((window, None));
     let mut seen = 0;
+    let mut texts = 0;
+    let mut complete = true;
+    let hits = |a: &Rect, b: &Rect| a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
     while let Some((el, up)) = queue.pop_front() {
         seen += 1;
         if seen > most || start.elapsed() > budget {
+            complete = false;
             break;
         }
         let kids = attr(el.0, "AXChildren").filter(|a| unsafe { CFGetTypeID(a.0) == CFArrayGetTypeID() });
         let n = kids.as_ref().map(|a| unsafe { CFArrayGetCount(a.0) }).unwrap_or(0);
         let role = attr(el.0, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
+        let at = frame_of(el.0);
+        // Scrolled out of the window: nothing in it can be under a word, and
+        // a long page's hidden part used to use up the walk (owner,
+        // 2026-11-18). A window with no frame, or an element without one: look in.
+        if let (Some(f), Some(w)) = (at, frame)
+            && !hits(&f, &w)
+        {
+            continue;
+        }
+        if TEXT_ROLES.contains(&role.as_str()) {
+            texts += 1;
+        }
         if url.is_none() && role == "AXWebArea" {
             url = attr(el.0, "AXURL").and_then(|r| url_text(&r));
         }
@@ -273,7 +369,7 @@ pub fn content_frames(pid: i32, most: usize, budget: std::time::Duration) -> Lay
             }
         }
     }
-    Layout { window: frame, content: out, videos, url }
+    Layout { window: frame, content: out, videos, url, texts, complete }
 }
 
 /// A run of text's width in points in the system font at 15 pt (what web
@@ -429,5 +525,45 @@ pub fn replace_range(start: usize, len: usize, text: &str) -> Put {
         Put::Selected
     } else {
         Put::Nothing
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WIN: Rect = Rect { x: 0.0, y: 0.0, w: 1600.0, h: 1000.0 };
+
+    #[test]
+    fn a_window_whose_text_was_not_seen_is_not_trusted() {
+        assert!(layout_known(12, true));
+        assert!(!layout_known(0, true), "no text seen: a Chromium app with its accessibility off");
+        assert!(!layout_known(40, false), "a walk that stopped early");
+    }
+
+    #[test]
+    fn what_a_hit_lands_on_counts_as_content_unless_it_is_backdrop() {
+        let small = Some(Rect { x: 100.0, y: 100.0, w: 600.0, h: 60.0 });
+        let pane = Some(Rect { x: 0.0, y: 0.0, w: 1500.0, h: 900.0 });
+        assert!(hit_is_content("AXStaticText", small, Some(WIN)));
+        assert!(hit_is_content("AXLink", small, Some(WIN)));
+        assert!(hit_is_content("AXGroup", small, Some(WIN)), "a paragraph: the gap between its lines too");
+        assert!(!hit_is_content("AXGroup", pane, Some(WIN)), "a big pane is backdrop");
+        assert!(!hit_is_content("AXWebArea", small, Some(WIN)));
+        assert!(!hit_is_content("AXScrollArea", pane, Some(WIN)));
+        assert!(!hit_is_content("AXWindow", Some(WIN), Some(WIN)));
+        assert!(hit_is_content("AXGroup", None, Some(WIN)), "no frame: not sure, so content");
+    }
+
+    #[test]
+    fn a_word_is_tested_in_its_middle_and_near_its_corners() {
+        let r = Rect { x: 100.0, y: 200.0, w: 120.0, h: 30.0 };
+        let p = sample_points(r);
+        assert_eq!(p[0], (160.0, 215.0));
+        for (x, y) in p {
+            assert!(x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h, "({x}, {y}) inside the word");
+        }
+        assert!(p.iter().any(|&(x, y)| x < 110.0 && y < 210.0), "top left corner");
+        assert!(p.iter().any(|&(x, y)| x > 210.0 && y > 220.0), "bottom right corner");
     }
 }

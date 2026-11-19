@@ -190,9 +190,21 @@ mod sys {
         d.objectForKey(&NSString::from_str("PreventUserIdleDisplaySleep")).is_some_and(|n| n.integerValue() > 0)
     }
 
+    /// The app whose window is on top at a point (top-left coordinates),
+    /// with that window; not `skip_pid`'s (this app's words), not the
+    /// desktop. The window list comes front to back.
+    pub fn owner_at(x: f64, y: f64, skip_pid: i32) -> Option<(i32, Rect)> {
+        windows_with_pids(skip_pid).into_iter().find(|(_, r)| x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)
+    }
+
     /// The on-screen windows of apps (not the desktop, menu bar or Dock), in
     /// screen points from the top-left of the primary screen.
     pub fn windows(skip_pid: i32) -> Vec<Rect> {
+        windows_with_pids(skip_pid).into_iter().map(|(_, r)| r).collect()
+    }
+
+    /// The same, each with its app's process id, front to back.
+    fn windows_with_pids(skip_pid: i32) -> Vec<(i32, Rect)> {
         // On screen only, desktop elements left out.
         let raw = unsafe { CGWindowListCopyWindowInfo(1 | 16, 0) };
         let Some(list) = (unsafe { Retained::from_raw(raw as *mut NSArray<NSDictionary<NSString, objc2::runtime::AnyObject>>) }) else {
@@ -215,11 +227,12 @@ mod sys {
                 continue;
             };
             let b: &NSDictionary<NSString, objc2::runtime::AnyObject> = unsafe { std::mem::transmute(b) };
+            let pid = num(&w, "kCGWindowOwnerPID").unwrap_or(0.0) as i32;
             if let (Some(x), Some(y), Some(w), Some(h)) = (num(b, "X"), num(b, "Y"), num(b, "Width"), num(b, "Height"))
                 && w > 40.0
                 && h > 40.0
             {
-                out.push(Rect { x, y, w, h });
+                out.push((pid, Rect { x, y, w, h }));
             }
         }
         out
@@ -227,13 +240,33 @@ mod sys {
 }
 
 #[cfg(target_os = "macos")]
-pub use sys::{idle, video, windows};
+pub use sys::{idle, owner_at, video, windows};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const SCREEN: Rect = Rect { x: 0.0, y: 0.0, w: 1200.0, h: 800.0 };
+
+    #[test]
+    fn no_spot_inside_a_window_taken_whole() {
+        // A window whose text wasn't seen goes in as content the window's size:
+        // no spot inside it, spots outside it stay.
+        let win = Rect { x: 0.0, y: 0.0, w: 600.0, h: 800.0 };
+        let free = free_spots(SCREEN, Some(win), &[win], &[], 8, 6);
+        assert!(!free.is_empty());
+        assert!(free.iter().all(|c| c.x >= win.x + win.w), "every spot is outside the window: {free:?}");
+    }
+
+    #[test]
+    fn no_spot_over_text_the_walk_saw() {
+        let win = Rect { x: 0.0, y: 0.0, w: 1200.0, h: 800.0 };
+        let text = [Rect { x: 200.0, y: 100.0, w: 800.0, h: 400.0 }];
+        let free = free_spots(SCREEN, Some(win), &text, &[], 8, 6);
+        let hits = |c: &Rect, r: &Rect| r.x < c.x + c.w && c.x < r.x + r.w && r.y < c.y + c.h && c.y < r.y + r.h;
+        assert!(!free.is_empty());
+        assert!(free.iter().all(|c| !hits(c, &text[0])), "a spot over text: {free:?}");
+    }
 
     #[test]
     fn no_words_over_ccez_llm() {

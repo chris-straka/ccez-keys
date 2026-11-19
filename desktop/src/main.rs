@@ -225,6 +225,8 @@ mod app {
         static VIDEOS: std::cell::RefCell<crate::idle::Videos> = std::cell::RefCell::new(crate::idle::Videos::default());
         /// A video in the front window was playing at the last look (for the log).
         static PLAYING: Cell<bool> = const { Cell::new(false) };
+        /// When each app's accessibility was last asked for again (spots).
+        static WOKE: std::cell::RefCell<std::collections::HashMap<i32, Instant>> = std::cell::RefCell::new(std::collections::HashMap::new());
     }
 
     /// Where idle words can go: room in the front window its content leaves,
@@ -234,6 +236,26 @@ mod app {
         let pid = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
         let mut look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
         let app = NSWorkspace::sharedWorkspace().frontmostApplication().and_then(|a| a.bundleIdentifier()).map(|b| b.to_string()).unwrap_or_default();
+        // A window whose text the walk didn't see (Chromium's accessibility
+        // off, or switched itself off again a while after it was asked) is
+        // taken whole: a word goes only where there is known to be no text
+        // (owner, 2026-11-18: words over a Claude chat). Asked again, not
+        // more than every 10 s, so the next look can see it.
+        if let Some(w) = look.window
+            && !ax::layout_known(look.texts, look.complete)
+        {
+            look.content.push(w);
+            let again = WOKE.with_borrow_mut(|m| {
+                let due = m.get(&pid).is_none_or(|t: &Instant| t.elapsed() > std::time::Duration::from_secs(10));
+                if due {
+                    m.insert(pid, Instant::now());
+                }
+                due
+            });
+            if again && !QUIET.contains(&app.as_str()) {
+                ax::wake(pid);
+            }
+        }
         // Its videos: content however big, playing or not.
         let videos = VIDEOS.with_borrow_mut(|v| v.look(&app, &look.videos, Instant::now()));
         look.content.extend(videos.iter().map(|v| v.0));
@@ -255,6 +277,18 @@ mod app {
         }
         let playing = playing.is_some();
         (BUSY.with_borrow_mut(|b| b.look(&app, &all, &free)), playing)
+    }
+
+    /// Whether a word at `r` (top-left coordinates) has anything under it:
+    /// the app whose window is on top there, hit-tested at five points. The
+    /// desktop (no window) is clear; None: that app didn't answer in time.
+    fn under(r: crate::model::Rect) -> Option<bool> {
+        let me = std::process::id() as i32;
+        let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        match crate::idle::owner_at(cx, cy, me) {
+            Some((pid, win)) => ax::content_under(pid, &ax::sample_points(r), Some(win)),
+            None => Some(false),
+        }
     }
 
     /// Lets this app set the cursor while it isn't the front app (the
@@ -449,7 +483,7 @@ mod app {
         if let Some(i) = args.iter().position(|a| a == "--look") {
             let pid = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(0);
             let look = ax::content_frames(pid, 4000, std::time::Duration::from_millis(250));
-            println!("window={:?} content={} videos={:?} url={:?}", look.window, look.content.len(), look.videos, look.url.as_deref().map(|u| u.split('?').next().unwrap_or("")));
+            println!("window={:?} content={} texts={} complete={} trusted={} videos={:?} url={:?}", look.window, look.content.len(), look.texts, look.complete, ax::layout_known(look.texts, look.complete), look.videos, look.url.as_deref().map(|u| u.split('?').next().unwrap_or("")));
             for c in &look.content {
                 println!("  content {} {} {} {}", c.x as i64, c.y as i64, c.w as i64, c.h as i64);
             }
@@ -458,6 +492,40 @@ mod app {
                 let free = crate::idle::free_spots(w, look.window, &content, &[], 8, 6);
                 println!("spots={}: {:?}", free.len(), free.iter().map(|c| (c.x as i64, c.y as i64)).collect::<Vec<_>>());
             }
+            return;
+        }
+        // `--guard-demo x y w h [noguard]`: one word up in that spot (top-left
+        // coordinates) and the look under it the app makes every 0.3 s: it goes
+        // the moment anything comes under it. With `noguard`, it stays (how it
+        // was). Prints when it went; quits after 12 s. For checks.
+        if let Some(i) = args.iter().position(|a| a == "--guard-demo") {
+            let n = |k: usize| args.get(i + k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+            let cell = crate::model::Rect { x: n(1), y: n(2), w: n(3), h: n(4) };
+            let guard = !args.iter().any(|a| a == "noguard");
+            let nsapp = NSApplication::sharedApplication(mtm);
+            nsapp.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+            let primary_h = objc2_app_kit::NSScreen::screens(mtm).firstObject().map(|p| p.frame().size.height).unwrap_or(0.0);
+            let panel = crate::float::demo_word(mtm, cell, primary_h);
+            let start = Instant::now();
+            let up = std::rc::Rc::new(Cell::new(true));
+            let unsure = std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
+            let look = RcBlock::new(move |_t: NonNull<NSTimer>| {
+                if !guard || !up.get() {
+                    return;
+                }
+                let f = panel.frame();
+                let r = crate::model::Rect { x: f.origin.x, y: primary_h - (f.origin.y + f.size.height), w: f.size.width, h: f.size.height };
+                if !crate::float::covered_words(&[(1, r)], under, &mut unsure.borrow_mut()).is_empty() {
+                    up.set(false);
+                    panel.orderOut(None);
+                    println!("word off at {} ms: something under it at ({}, {}, {}, {})", start.elapsed().as_millis(), r.x as i64, r.y as i64, r.w as i64, r.h as i64);
+                }
+            });
+            unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(0.3, true, &look) };
+            let quit = RcBlock::new(move |_t: NonNull<NSTimer>| std::process::exit(0));
+            unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(12.0, false, &quit) };
+            println!("word up in ({}, {}, {}, {}){}", cell.x as i64, cell.y as i64, cell.w as i64, cell.h as i64, if guard { "" } else { ", no guard" });
+            nsapp.run();
             return;
         }
         // `--spots`: the spots words may take right now, as the running app
@@ -603,7 +671,7 @@ mod app {
             typing_in: RefCell::default(),
             woken: RefCell::default(),
             preview: RefCell::new(crate::preview::Preview::new(Instant::now())),
-            floaters: crate::float::Floaters::new(engine.clone(), spots, crate::idle::video),
+            floaters: crate::float::Floaters::new(engine.clone(), spots, crate::idle::video, under),
             swapped: Default::default(),
         }));
 
