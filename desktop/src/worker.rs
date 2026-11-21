@@ -99,7 +99,17 @@ pub trait Translator: Send {
 pub type Start = Box<dyn Fn() -> Option<Box<dyn Translator>> + Send>;
 
 impl Worker {
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn start(engine: std::sync::Arc<ccez_keys_core::Engine>, start: Start, log: impl Fn(&str, &str) + Send + 'static) -> Worker {
+        Self::start_with_wake(engine, start, log, Arc::new(|| {}))
+    }
+
+    pub fn start_with_wake(
+        engine: std::sync::Arc<ccez_keys_core::Engine>,
+        start: Start,
+        log: impl Fn(&str, &str) + Send + 'static,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) -> Worker {
         let (tx, rx): (Sender<Ask>, Receiver<Ask>) = channel();
         let out: Arc<Mutex<Option<Shown>>> = Arc::default();
         let put = out.clone();
@@ -168,11 +178,13 @@ impl Worker {
                     let room = ask.max.saturating_sub(lines.len());
                     let pending = ask.langs[i + 1..].iter().take(room).cloned().collect();
                     *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines: lines.clone(), pending });
+                    wake();
                     if lines.len() >= ask.max {
                         break;
                     }
                 }
                 *put.lock().unwrap() = Some(Shown { seq: ask.seq, lines, pending: Vec::new() });
+                wake();
                 if cache.len() > 2000 {
                     cache.clear();
                 }

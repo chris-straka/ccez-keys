@@ -25,8 +25,15 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
 
 - Rust, like ccez-clip (menu bar, objc2), sharing ccez-keys' core and
   ccez-lang-core (dictionaries, cards, statuses, the AI client).
-- Reads the focused field through Accessibility (AXUIElement: value,
-  selected range, bounds for the caret), never a key tap.
+- Reads the focused field off the main thread through Accessibility
+  (`AXUIElement`: `AXStringForRange` near the cursor with `AXValue` fallback,
+  selected range, bounds for the caret; label attributes cached per element),
+  never a key tap: polls at 150 ms while active (input within 2 s, ⌥ held, or
+  translation in flight), drops to 1.5 s when idle, and stops while asleep,
+  locked, paused or in quiet apps.
+- Shares `ccez-clip`'s menu bar feather: when `ccez-clip` runs, its menu is
+  served over `menu.sock` inside `ccez-clip`'s popup settings; otherwise it
+  shows its own feather fallback icon.
 - Apple's on-device translation (macOS 15+, Translation framework) through
   a small Swift helper; the AI rewords after a pause, answers cached.
 

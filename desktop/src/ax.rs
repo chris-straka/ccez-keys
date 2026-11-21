@@ -64,6 +64,7 @@ pub fn wake(pid: i32) {
 unsafe extern "C" {
     fn CFRelease(r: Ref);
     fn CFRetain(r: Ref) -> Ref;
+    fn CFEqual(a: Ref, b: Ref) -> u8;
     fn CFGetTypeID(r: Ref) -> usize;
     fn CFStringGetTypeID() -> usize;
     fn CFURLGetTypeID() -> usize;
@@ -382,65 +383,136 @@ fn text_width(t: &str) -> f64 {
     objc2_app_kit::NSAttributedStringNSStringDrawing::size(&*a).width
 }
 
-/// The field being typed in, None when the focus isn't on editable text.
-pub fn focused() -> Option<Field> {
-    let el = focused_element(0.25)?;
-    let role = attr(el.0, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
-    let subrole = attr(el.0, "AXSubrole").and_then(|r| string(&r)).unwrap_or_default();
-    // A password box: said so by the app, or labelled as one, or macOS's secure
-    // input is on (any password box focused, anywhere): never read or shown.
-    let label: String = ["AXPlaceholderValue", "AXDescription", "AXTitle", "AXHelp"].iter().filter_map(|a| attr(el.0, a).and_then(|r| string(&r))).collect::<Vec<_>>().join(" ").to_lowercase();
-    let secret_label =
-        ["password", "passcode", "passphrase", "pin", "otp", "one-time", "token", "api key", "secret", "2fa", "verification code", "mot de passe", "passwort", "contraseña", "パスワード", "密码"]
+fn string_for_range(el: Ref, start: usize, len: usize) -> Option<String> {
+    if len == 0 {
+        return Some(String::new());
+    }
+    let r = CFRange { location: start as isize, length: len as isize };
+    let param = Owned(unsafe { AXValueCreate(AX_CFRANGE, &r as *const _ as *const c_void) });
+    let name = s("AXStringForRange");
+    let mut out: Ref = std::ptr::null();
+    let err = unsafe { AXUIElementCopyParameterizedAttributeValue(el, Retained::as_ptr(&name) as Ref, param.0, &mut out) };
+    (err == 0 && !out.is_null()).then(|| Owned(out)).and_then(|o| string(&o))
+}
+
+fn is_bullet_masked(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| matches!(c, '•' | '●' | '∙' | '*'))
+}
+
+/// Stateful reader for the focused text field: caches label attributes per
+/// AXUIElement across polls and reads only a window around the cursor when the
+/// app supports `AXStringForRange`.
+#[derive(Default)]
+pub struct FocusReader {
+    last_el: Option<Owned>,
+    last_secret_label: bool,
+}
+
+impl FocusReader {
+    pub fn read(&mut self) -> Option<Field> {
+        if unsafe { IsSecureEventInputEnabled() } {
+            return Some(Field { secure: true, ..Default::default() });
+        }
+        let el = focused_element(0.25)?;
+        let role = attr(el.0, "AXRole").and_then(|r| string(&r)).unwrap_or_default();
+        let subrole = attr(el.0, "AXSubrole").and_then(|r| string(&r)).unwrap_or_default();
+        if role == "AXSecureTextField" || subrole == "AXSecureTextField" {
+            return Some(Field { secure: true, ..Default::default() });
+        }
+        if !matches!(role.as_str(), "AXTextField" | "AXTextArea" | "AXComboBox" | "AXSearchField" | "AXWebArea") {
+            return None;
+        }
+        // A password box labelled as one: cache the 4 label reads per focused element.
+        let same = self.last_el.as_ref().is_some_and(|prev| unsafe { CFEqual(prev.0, el.0) != 0 });
+        let secret_label = if same {
+            self.last_secret_label
+        } else {
+            let label: String = ["AXPlaceholderValue", "AXDescription", "AXTitle", "AXHelp"]
+                .iter()
+                .filter_map(|a| attr(el.0, a).and_then(|r| string(&r)))
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            let sec = [
+                "password", "passcode", "passphrase", "pin", "otp", "one-time", "token", "api key", "secret", "2fa",
+                "verification code", "mot de passe", "passwort", "contraseña", "パスワード", "密码",
+            ]
             .iter()
             .any(|w| if *w == "pin" || *w == "otp" { label.split(|c: char| !c.is_alphanumeric()).any(|t| t == *w) } else { label.contains(w) });
-    let secure = role == "AXSecureTextField" || subrole == "AXSecureTextField" || secret_label || unsafe { IsSecureEventInputEnabled() };
-    if secure {
-        return Some(Field { secure, ..Default::default() });
-    }
-    if !matches!(role.as_str(), "AXTextField" | "AXTextArea" | "AXComboBox" | "AXSearchField" | "AXWebArea") {
-        return None;
-    }
-    let value = attr(el.0, "AXValue").and_then(|r| string(&r))?;
-    // Dots for letters: a password box that didn't say so.
-    if !value.is_empty() && value.chars().all(|c| matches!(c, '•' | '●' | '∙' | '*')) {
-        return Some(Field { secure: true, ..Default::default() });
-    }
-    let mut range = CFRange::default();
-    let sel = attr(el.0, "AXSelectedTextRange")?;
-    if !unsafe { AXValueGetValue(sel.0, AX_CFRANGE, &mut range as *mut _ as *mut c_void) } {
-        return None;
-    }
-    // AX counts UTF-16 units.
-    let units: Vec<u16> = value.encode_utf16().collect();
-    let at = (range.location.max(0) as usize).min(units.len());
-    let before = String::from_utf16_lossy(&units[..at]);
-    // A selection previews itself (owner, 2026-11-11).
-    let end = (at + range.length.max(0) as usize).min(units.len());
-    let selected = String::from_utf16_lossy(&units[at..end]);
-    // Where the cursor is: the bounds of the character before it (or of the empty range).
-    let caret = {
-        let r = CFRange { location: (at as isize - 1).max(0), length: if at > 0 { 1 } else { 0 } };
-        let param = Owned(unsafe { AXValueCreate(AX_CFRANGE, &r as *const _ as *const c_void) });
-        let name = s("AXBoundsForRange");
-        let mut out: Ref = std::ptr::null();
-        let err = unsafe { AXUIElementCopyParameterizedAttributeValue(el.0, Retained::as_ptr(&name) as Ref, param.0, &mut out) };
-        if err == 0 && !out.is_null() {
-            let o = Owned(out);
-            let mut rect = Rect::default();
-            unsafe { AXValueGetValue(o.0, AX_CGRECT, &mut rect as *mut _ as *mut c_void) }.then_some(rect).filter(|r| r.h > 0.0)
-        } else {
-            None
+            self.last_el = Some(Owned(unsafe { CFRetain(el.0) }));
+            self.last_secret_label = sec;
+            sec
+        };
+        if secret_label {
+            return Some(Field { secure: true, ..Default::default() });
         }
-    };
-    // Some apps (Electron) answer with nothing or a zero box: kept only when it's inside the field.
-    let frame = frame_of(el.0);
-    let caret = caret.filter(|c| (c.x != 0.0 || c.y != 0.0) && frame.is_none_or(|f| c.y + c.h >= f.y - 2.0 && c.y <= f.y + f.h + 2.0));
-    // No cursor from the app (Claude's box, other web text boxes): where the
-    // text typed ends, laid out in the box (owner, 2026-11-11: the preview
-    // sat at the box's left edge, far from the cursor).
-    let caret = caret.or_else(|| frame.map(|f| crate::model::estimate_caret(f, &before, text_width, 20.0, 2.0)));
-    Some(Field { secure, before, caret, frame, selected })
+        let mut range = CFRange::default();
+        let sel = attr(el.0, "AXSelectedTextRange")?;
+        if !unsafe { AXValueGetValue(sel.0, AX_CFRANGE, &mut range as *mut _ as *mut c_void) } {
+            return None;
+        }
+        let at = range.location.max(0) as usize;
+        let sel_len = range.length.max(0) as usize;
+        const BEFORE_WIN: usize = 2000;
+        const SEL_WIN: usize = 400;
+        let start = at.saturating_sub(BEFORE_WIN);
+        let before_part = if at == 0 {
+            Some(String::new())
+        } else {
+            string_for_range(el.0, start, at - start).filter(|s| !s.is_empty())
+        };
+        let sel_part = if sel_len == 0 {
+            Some(String::new())
+        } else {
+            string_for_range(el.0, at, sel_len.min(SEL_WIN)).filter(|s| !s.is_empty())
+        };
+        let (before, selected) = match (before_part, sel_part) {
+            (Some(b), Some(s)) => {
+                if is_bullet_masked(&b) || is_bullet_masked(&s) {
+                    return Some(Field { secure: true, ..Default::default() });
+                }
+                (b, s)
+            }
+            _ => {
+                let value = attr(el.0, "AXValue").and_then(|r| string(&r))?;
+                if is_bullet_masked(&value) {
+                    return Some(Field { secure: true, ..Default::default() });
+                }
+                let units: Vec<u16> = value.encode_utf16().collect();
+                let clamped_at = at.min(units.len());
+                let end = (clamped_at + sel_len).min(units.len());
+                (String::from_utf16_lossy(&units[..clamped_at]), String::from_utf16_lossy(&units[clamped_at..end]))
+            }
+        };
+        // Where the cursor is: the bounds of the character before it (or of the empty range).
+        let caret = {
+            let r = CFRange { location: (at as isize - 1).max(0), length: if at > 0 { 1 } else { 0 } };
+            let param = Owned(unsafe { AXValueCreate(AX_CFRANGE, &r as *const _ as *const c_void) });
+            let name = s("AXBoundsForRange");
+            let mut out: Ref = std::ptr::null();
+            let err = unsafe { AXUIElementCopyParameterizedAttributeValue(el.0, Retained::as_ptr(&name) as Ref, param.0, &mut out) };
+            if err == 0 && !out.is_null() {
+                let o = Owned(out);
+                let mut rect = Rect::default();
+                unsafe { AXValueGetValue(o.0, AX_CGRECT, &mut rect as *mut _ as *mut c_void) }.then_some(rect).filter(|r| r.h > 0.0)
+            } else {
+                None
+            }
+        };
+        // Some apps (Electron) answer with nothing or a zero box: kept only when it's inside the field.
+        let frame = frame_of(el.0);
+        let caret = caret.filter(|c| (c.x != 0.0 || c.y != 0.0) && frame.is_none_or(|f| c.y + c.h >= f.y - 2.0 && c.y <= f.y + f.h + 2.0));
+        // No cursor from the app (Claude's box, other web text boxes): where the
+        // text typed ends, laid out in the box (owner, 2026-11-11: the preview
+        // sat at the box's left edge, far from the cursor).
+        let caret = caret.or_else(|| frame.map(|f| crate::model::estimate_caret(f, &before, text_width, 20.0, 2.0)));
+        Some(Field { secure: false, before, caret, frame, selected })
+    }
+}
+
+/// The field being typed in, None when the focus isn't on editable text.
+pub fn focused() -> Option<Field> {
+    FocusReader::default().read()
 }
 
 /// The element with the keyboard: asked of the whole system, or else of the

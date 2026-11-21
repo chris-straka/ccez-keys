@@ -32,3 +32,9 @@ Tatoeba's stock names (Tom, Mary and others) are left out.
 - `data/han.tsv` (from ccez-tube): each common Han character's parts from
   **cjk-decomp** (Gavin Grover, fork by Aaron Madlon-Kay), MIT, and
   **Unihan** (Unicode 17.0.0), © Unicode, Inc., Unicode License V3.
+
+## Menu bar icon (macOS)
+
+- `desktop/assets/menubar-feather-16.png` / `-32.png`: status bar feather from
+  [p0deje/Maccy](https://github.com/p0deje/Maccy) (flipped vertically), MIT,
+  © 2025 Alex Rodionov (`desktop/assets/MACCY-LICENSE`).

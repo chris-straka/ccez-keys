@@ -10,6 +10,8 @@
 	<string>ccez-keys</string>
 	<key>CFBundleExecutable</key>
 	<string>ccez-keys-mac</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

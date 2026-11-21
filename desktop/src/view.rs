@@ -138,7 +138,8 @@ pub struct View {
     place: std::cell::Cell<Place>,
     toast: Retained<NSPanel>,
     toast_bg: Retained<NSBox>,
-    toast_until: std::cell::Cell<Option<std::time::Instant>>,
+    toast_until: std::rc::Rc<std::cell::Cell<Option<std::time::Instant>>>,
+    toast_timer: std::cell::Cell<Option<Retained<objc2_foundation::NSTimer>>>,
     toast_on: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
@@ -357,7 +358,8 @@ impl View {
             place: std::cell::Cell::new(Place::default()),
             toast,
             toast_bg,
-            toast_until: std::cell::Cell::new(None),
+            toast_until: std::rc::Rc::new(std::cell::Cell::new(None)),
+            toast_timer: std::cell::Cell::new(None),
             toast_on: Default::default(),
         }
     }
@@ -525,10 +527,25 @@ impl View {
         let (x, y) = (vis.origin.x + (vis.size.width - w) / 2.0, vis.origin.y + vis.size.height - h - 12.0);
         self.toast.setFrame_display(rect(x, y, w, h), true);
         self.toast_bg.setFrame(rect(0.0, 0.0, w, h));
-        self.toast_until.set(Some(std::time::Instant::now() + std::time::Duration::from_secs_f64(undo.unwrap_or(1.4))));
+        let secs = undo.unwrap_or(1.4);
+        self.toast_until.set(Some(std::time::Instant::now() + std::time::Duration::from_secs_f64(secs)));
         if !self.toast_on.get() {
             self.toast_on.set(true);
             fade(&self.toast, true, self.toast_on.clone());
+        }
+        let target = self.toast.clone();
+        let on = self.toast_on.clone();
+        let until = self.toast_until.clone();
+        let timer_cb = block2::RcBlock::new(move |_t: std::ptr::NonNull<objc2_foundation::NSTimer>| {
+            if until.get().is_some_and(|t| std::time::Instant::now() >= t) {
+                until.set(None);
+                on.set(false);
+                fade(&target, false, on.clone());
+            }
+        });
+        let timer = unsafe { objc2_foundation::NSTimer::scheduledTimerWithTimeInterval_repeats_block(secs, false, &timer_cb) };
+        if let Some(old) = self.toast_timer.replace(Some(timer)) {
+            old.invalidate();
         }
     }
 

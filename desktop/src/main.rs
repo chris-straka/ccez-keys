@@ -28,6 +28,8 @@ mod keys;
 mod learn;
 #[cfg(target_os = "macos")]
 mod meaning;
+#[cfg(target_os = "macos")]
+mod menu_ipc;
 mod model;
 mod paths;
 #[cfg(not(target_os = "macos"))]
@@ -47,15 +49,22 @@ mod app {
     use std::cell::{Cell, RefCell};
     use std::io::Write;
     use std::ptr::NonNull;
-    use std::time::Instant;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Condvar, Mutex};
+    use std::time::{Duration, Instant};
 
     use block2::RcBlock;
     use objc2::MainThreadMarker;
     use objc2::rc::autoreleasepool;
-    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWorkspace};
-    use objc2_foundation::NSTimer;
-    use tray_icon::TrayIconBuilder;
+    use objc2_app_kit::{
+        NSApplication, NSApplicationActivationPolicy, NSRunningApplication, NSWorkspace,
+        NSWorkspaceApplicationKey, NSWorkspaceDidActivateApplicationNotification,
+        NSWorkspaceDidLaunchApplicationNotification, NSWorkspaceDidTerminateApplicationNotification,
+        NSWorkspaceScreensDidSleepNotification, NSWorkspaceScreensDidWakeNotification,
+    };
+    use objc2_foundation::{NSDistributedNotificationCenter, NSNotification, NSNotificationName, NSString, NSTimer};
     use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+    use tray_icon::{TrayIcon, TrayIconBuilder};
 
     use ccez_keys_core::text::{looks_secret, sentence_of};
 
@@ -85,6 +94,20 @@ mod app {
         "com.apple.Passwords",
     ];
 
+    struct FallbackTray {
+        _tray: TrayIcon,
+        pause_id: tray_icon::menu::MenuId,
+        pause: MenuItem,
+        off_id: tray_icon::menu::MenuId,
+        off_here: CheckMenuItem,
+        lang_id: tray_icon::menu::MenuId,
+        languages: MenuItem,
+        login_id: tray_icon::menu::MenuId,
+        login: CheckMenuItem,
+        quit_id: tray_icon::menu::MenuId,
+        front: Cell<bool>,
+    }
+
     struct App {
         view: View,
         worker: Worker,
@@ -101,15 +124,56 @@ mod app {
         prefs: RefCell<crate::prefs::Prefs>,
         /** The app being typed in (bundle id, name): the menu's "Off in …" is about it. */
         typing_in: RefCell<Option<(String, String)>>,
-        woken: RefCell<std::collections::HashSet<i32>>,
         /** When it shows and what it says (the same on every system). */
         preview: RefCell<crate::preview::Preview>,
-        /** Idle words: where the list carries on from, and when to look again
-         * when there was nowhere (or nothing) to show them. */
         /** Learning words on screen (float.rs). */
         floaters: crate::float::Floaters,
         /** A ⌥⏎ swap's note for the toast, from its thread. */
-        swapped: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+        swapped: Arc<Mutex<Option<String>>>,
+        awake: Arc<AtomicBool>,
+        front_quiet: Arc<AtomicBool>,
+        ax_paused: Arc<AtomicBool>,
+        ask_in_flight: Arc<AtomicBool>,
+        ax_field: Arc<Mutex<Option<crate::model::Field>>>,
+        ax_signal: Arc<(Mutex<AxWake>, Condvar)>,
+        ipc_queue: crate::menu_ipc::Queue,
+        tray_events: Arc<Mutex<Vec<String>>>,
+        ui_timer: Cell<Option<objc2::rc::Retained<NSTimer>>>,
+        fallback_tray: RefCell<Option<FallbackTray>>,
+        last_missing: RefCell<Vec<String>>,
+        last_tray_front: RefCell<Option<(String, String, bool)>>,
+    }
+
+    #[derive(Default)]
+    struct AxWake {
+        wake_pids: Vec<i32>,
+        dirty: bool,
+    }
+
+    static WAKE_PENDING: AtomicBool = AtomicBool::new(false);
+    thread_local! {
+        static APP_REF: Cell<Option<&'static App>> = const { Cell::new(None) };
+    }
+
+    extern "C" fn on_wake(_ctx: *mut std::ffi::c_void) {
+        WAKE_PENDING.store(false, Ordering::Release);
+        if let Some(mtm) = MainThreadMarker::new() {
+            APP_REF.with(|c| {
+                if let Some(app) = c.get() {
+                    autoreleasepool(|_| drain_and_tick(mtm, app));
+                }
+            });
+        }
+    }
+
+    fn wake_main() {
+        if !WAKE_PENDING.swap(true, Ordering::AcqRel) {
+            unsafe extern "C" {
+                static _dispatch_main_q: u8;
+                fn dispatch_async_f(queue: *const u8, context: *mut std::ffi::c_void, work: extern "C" fn(*mut std::ffi::c_void));
+            }
+            unsafe { dispatch_async_f(&_dispatch_main_q as *const u8, std::ptr::null_mut(), on_wake) };
+        }
     }
 
     pub fn log(level: &str, what: &str) {
@@ -134,8 +198,10 @@ mod app {
     }
 
     fn option_held() -> bool {
-        let flags: usize = unsafe { objc2::msg_send![objc2::class!(NSEvent), modifierFlags] };
-        flags & (1 << 19) != 0
+        unsafe extern "C" {
+            fn CGEventSourceFlagsState(state: i32) -> u64;
+        }
+        (unsafe { CGEventSourceFlagsState(0) } & (1 << 19)) != 0
     }
 
     /// Off in this app: quiet by default (and not turned back on), or turned off from the menu.
@@ -144,23 +210,95 @@ mod app {
         p.off.iter().any(|b| b == bundle) || (QUIET.contains(&bundle) && !p.on.iter().any(|b| b == bundle))
     }
 
-    fn tick(mtm: MainThreadMarker, app: &App) {
-        if let Some(a) = NSWorkspace::sharedWorkspace().frontmostApplication() {
-            let bundle = a.bundleIdentifier().map(|s| s.to_string()).unwrap_or_default();
-            if bundle != "uk.ccez.keys.mac" && !bundle.is_empty() {
-                let name = a.localizedName().map(|s| s.to_string()).unwrap_or_else(|| bundle.clone());
-                *app.typing_in.borrow_mut() = Some((bundle, name));
-            }
+    fn sync_front_app(app: &App) {
+        let Some(a) = NSWorkspace::sharedWorkspace().frontmostApplication() else {
+            app.front_quiet.store(false, Ordering::Relaxed);
+            return;
+        };
+        let bundle = a.bundleIdentifier().map(|s| s.to_string()).unwrap_or_default();
+        let pid = a.processIdentifier();
+        if bundle != "uk.ccez.keys.mac" && bundle != "uk.ccez.clip" && !bundle.is_empty() {
+            let name = a.localizedName().map(|s| s.to_string()).unwrap_or_else(|| bundle.clone());
+            *app.typing_in.borrow_mut() = Some((bundle.clone(), name));
         }
-        let off = app.paused.get() || frontmost().is_some_and(|b| quiet(app, &b));
-        // Electron and Chrome apps: asked once to share their fields.
-        if !off
-            && let Some(pid) = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())
-            && app.woken.borrow_mut().insert(pid)
+        let q = bundle == "uk.ccez.keys.mac" || bundle == "uk.ccez.clip" || (!bundle.is_empty() && quiet(app, &bundle));
+        app.front_quiet.store(q, Ordering::Relaxed);
+        let (lock, cvar) = &*app.ax_signal;
         {
-            ax::wake(pid);
+            let mut g = lock.lock().unwrap();
+            if !q && pid > 0 && !app.paused.get() && !g.wake_pids.contains(&pid) {
+                g.wake_pids.push(pid);
+            }
+            g.dirty = true;
         }
-        let mut field = if off { None } else { ax::focused() };
+        cvar.notify_all();
+    }
+
+    fn start_ax_thread(
+        awake: Arc<AtomicBool>,
+        front_quiet: Arc<AtomicBool>,
+        paused: Arc<AtomicBool>,
+        ask_in_flight: Arc<AtomicBool>,
+        out: Arc<Mutex<Option<crate::model::Field>>>,
+        signal: Arc<(Mutex<AxWake>, Condvar)>,
+    ) {
+        std::thread::Builder::new()
+            .name("ax-field".into())
+            .spawn(move || {
+                let mut reader = ax::FocusReader::default();
+                let mut woken = std::collections::HashSet::new();
+                let mut last: Option<crate::model::Field> = None;
+                let mut last_opt = false;
+                let (lock, cvar) = &*signal;
+                loop {
+                    let wake_pid = {
+                        let mut g = lock.lock().unwrap();
+                        g.dirty = false;
+                        g.wake_pids.pop()
+                    };
+                    if let Some(pid) = wake_pid
+                        && woken.insert(pid)
+                    {
+                        ax::wake(pid);
+                    }
+                    let stopped = !awake.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) || front_quiet.load(Ordering::Relaxed);
+                    if stopped {
+                        if last.is_some() || last_opt {
+                            last = None;
+                            last_opt = false;
+                            *out.lock().unwrap() = None;
+                            wake_main();
+                        }
+                        let mut g = lock.lock().unwrap();
+                        while !g.dirty && g.wake_pids.is_empty() && (!awake.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) || front_quiet.load(Ordering::Relaxed)) {
+                            g = cvar.wait(g).unwrap();
+                        }
+                        continue;
+                    }
+                    let field = autoreleasepool(|_| reader.read());
+                    let opt = option_held();
+                    if field != last || opt != last_opt {
+                        last = field.clone();
+                        last_opt = opt;
+                        *out.lock().unwrap() = field;
+                        wake_main();
+                    }
+                    let active = crate::idle::input_idle() < Duration::from_secs(2) || opt || ask_in_flight.load(Ordering::Relaxed);
+                    let wait = if active { Duration::from_millis(150) } else { Duration::from_millis(1500) };
+                    let g = lock.lock().unwrap();
+                    if !g.dirty && g.wake_pids.is_empty() {
+                        let _ = cvar.wait_timeout(g, wait).unwrap();
+                    }
+                }
+            })
+            .ok();
+    }
+
+    fn tick(mtm: MainThreadMarker, app: &App, mut field: Option<crate::model::Field>) {
+        let off = !app.awake.load(Ordering::Relaxed) || app.paused.get() || app.front_quiet.load(Ordering::Relaxed);
+        if off {
+            field = None;
+        }
         if !app.prefs.borrow().selection
             && let Some(f) = field.as_mut()
         {
@@ -189,7 +327,7 @@ mod app {
             app.view.toast(mtm, &note);
         }
         app.view.tick_toast();
-        let most = if app.paused.get() { 0 } else { app.prefs.borrow().words_on_screen };
+        let most = if app.paused.get() || !app.awake.load(Ordering::Relaxed) { 0 } else { app.prefs.borrow().words_on_screen };
         let (while_video, while_typing) = {
             let p = app.prefs.borrow();
             app.floaters.hide_in_shots.set(p.words_hide_shots);
@@ -216,6 +354,7 @@ mod app {
         } else {
             app.view.hide();
         }
+        app.ask_in_flight.store(!p.complete, Ordering::Relaxed);
     }
 
     thread_local! {
@@ -657,150 +796,67 @@ mod app {
                 p.save(&dirs());
             }
         }
+        let awake = Arc::new(AtomicBool::new(true));
+        let front_quiet = Arc::new(AtomicBool::new(false));
+        let ax_paused = Arc::new(AtomicBool::new(false));
+        let ask_in_flight = Arc::new(AtomicBool::new(false));
+        let ax_field: Arc<Mutex<Option<crate::model::Field>>> = Arc::default();
+        let ax_signal: Arc<(Mutex<AxWake>, Condvar)> = Arc::default();
+        let ipc_queue: crate::menu_ipc::Queue = Arc::default();
+        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(wake_main);
+
         let app: &'static App = Box::leak(Box::new(App {
             view: View::new(mtm),
-            worker: Worker::start(engine.clone(), Box::new(|| crate::apple::Helper::start().map(|h| Box::new(h) as Box<dyn worker::Translator>)), log),
+            worker: Worker::start_with_wake(
+                engine.clone(),
+                Box::new(|| crate::apple::Helper::start().map(|h| Box::new(h) as Box<dyn worker::Translator>)),
+                log,
+                wake.clone(),
+            ),
             engine: engine.clone(),
             card: RefCell::default(),
             card_view: RefCell::default(),
-            meanings: crate::meaning::Meanings::new(&dirs()),
+            meanings: crate::meaning::Meanings::new_with_wake(&dirs(), wake.clone()),
             langs,
             flags: flags(),
             paused: Cell::new(false),
             prefs: RefCell::new(crate::prefs::Prefs::load(&dirs())),
             typing_in: RefCell::default(),
-            woken: RefCell::default(),
             preview: RefCell::new(crate::preview::Preview::new(Instant::now())),
-            floaters: crate::float::Floaters::new(engine.clone(), spots, crate::idle::video, under),
+            floaters: crate::float::Floaters::new(engine.clone(), awake.clone(), wake.clone(), spots, crate::idle::video, under),
             swapped: Default::default(),
+            awake,
+            front_quiet,
+            ax_paused,
+            ask_in_flight,
+            ax_field,
+            ax_signal,
+            ipc_queue: ipc_queue.clone(),
+            tray_events: Arc::default(),
+            ui_timer: Cell::new(None),
+            fallback_tray: RefCell::new(None),
+            last_missing: RefCell::new(Vec::new()),
+            last_tray_front: RefCell::new(None),
         }));
-
-        // The menu: pause, how many languages, readings, off in this app, the
-        // Mac's translation languages, open at login, quit.
-        let menu = Menu::new();
-        let pause = MenuItem::new("Pause", true, None);
-        let shown_menu = Submenu::new("Languages shown", true);
-        let counts: Vec<(usize, CheckMenuItem)> =
-            [1usize, 2, 4, 6, 8, 0].iter().map(|&n| (n, CheckMenuItem::new(if n == 0 { "All".to_string() } else { n.to_string() }, true, app.prefs.borrow().shown == n, None))).collect();
-        for (_, c) in &counts {
-            let _ = shown_menu.append(c);
-        }
-        let readings = CheckMenuItem::new("Readings over Japanese and Chinese", true, app.prefs.borrow().readings, None);
-        let off_here = CheckMenuItem::new("Off in this app", true, false, None);
-        let selection = CheckMenuItem::new("Preview selected text", true, app.prefs.borrow().selection, None);
-        let copy_click = CheckMenuItem::new("Copy a word when clicked", true, app.prefs.borrow().copy_click, None);
-        // Words said aloud when clicked, or not (owner, 2026-11-13).
-        let speak = CheckMenuItem::new("Say a word when clicked", true, app.prefs.borrow().speak, None);
+        APP_REF.with(|c| c.set(Some(app)));
         crate::speak::set_on(app.prefs.borrow().speak);
-        // Words on screen, grouped (owner, 2026-11-15: the 0-12 column and
-        // the 1-24 one were clunky): how many, then when they come back,
-        // then the toggles. Each group is short presets; a stored value
-        // that isn't a preset keeps an item of its own, so what is set now
-        // always shows as set and stored values stay as they were.
-        let words_menu = Submenu::new("Words on screen", true);
-        let mut word_vals: Vec<usize> = vec![0, 2, 4, 6, 8, 12];
-        let set_count = app.prefs.borrow().words_on_screen;
-        if !word_vals.contains(&set_count) {
-            let at = word_vals.iter().position(|&n| n > set_count).unwrap_or(word_vals.len());
-            word_vals.insert(at, set_count);
-        }
-        let word_counts: Vec<(usize, CheckMenuItem)> =
-            word_vals.iter().map(|&n| (n, CheckMenuItem::new(if n == 0 { "Off".to_string() } else { n.to_string() }, true, set_count == n, None))).collect();
-        for (_, c) in &word_counts {
-            let _ = words_menu.append(c);
-        }
-        // How soon a word comes back after Again (owner, 2026-11-15: options
-        // between 1 and 5 min; a new word's first Good stays at Anki's 10 min).
-        // In the core's settings with the rest, so the phone's grading
-        // (through the same core) honours the setting it holds.
-        let comeback_menu = Submenu::new("Come back in", true);
-        let comeback_now = app.engine.setting("learning.comeback".into()).ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(2);
-        let comebacks: Vec<(u64, CheckMenuItem)> = (1u64..=5).map(|n| (n, CheckMenuItem::new(format!("{n} min"), true, comeback_now == n, None))).collect();
-        for (_, c) in &comebacks {
-            let _ = comeback_menu.append(c);
-        }
-        // A break once every word on screen is answered (owner, 2026-11-13:
-        // "a breather after clearing the screen"; 2026-11-15: "set how long
-        // I should wait before they come back", so up to an hour, and with
-        // the other word settings).
-        let break_menu = Submenu::new("Back after clearing", true);
-        let secs_words = |n: u64| match n {
-            0 => "At once".to_string(),
-            1..=59 => format!("{n} s"),
-            n if n % 3600 == 0 => format!("{} h", n / 3600),
-            n if n % 60 == 0 => format!("{} min", n / 60),
-            n => format!("{n} s"),
-        };
-        let mut break_vals: Vec<u64> = vec![0, 30, 60, 300, 900, 3600];
-        let set_break = app.prefs.borrow().words_break;
-        if !break_vals.contains(&set_break) {
-            let at = break_vals.iter().position(|&n| n > set_break).unwrap_or(break_vals.len());
-            break_vals.insert(at, set_break);
-        }
-        let breaks: Vec<(u64, CheckMenuItem)> =
-            break_vals.iter().map(|&n| (n, CheckMenuItem::new(secs_words(n), true, set_break == n, None))).collect();
-        for (_, c) in &breaks {
-            let _ = break_menu.append(c);
-        }
-        // How many languages they come from (the first few, in the owner's order).
-        let langs_menu = Submenu::new("Languages", true);
-        let mut lang_vals: Vec<usize> = vec![0];
-        for n in [1usize, 2, 3, 6] {
-            if n <= app.langs.len() {
-                lang_vals.push(n);
-            }
-        }
-        let set_langs = app.prefs.borrow().words_langs;
-        if !lang_vals.contains(&set_langs) {
-            let at = lang_vals.iter().position(|&n| n > set_langs).unwrap_or(lang_vals.len());
-            lang_vals.insert(at, set_langs);
-        }
-        let lang_counts: Vec<(usize, CheckMenuItem)> =
-            lang_vals.iter().map(|&n| (n, CheckMenuItem::new(if n == 0 { "All".to_string() } else { format!("First {n}") }, true, set_langs == n, None))).collect();
-        for (_, c) in &lang_counts {
-            let _ = langs_menu.append(c);
-        }
-        let words_typing = CheckMenuItem::new("While typing", true, app.prefs.borrow().words_typing, None);
-        let words_video = CheckMenuItem::new("While a video plays", true, app.prefs.borrow().words_video, None);
-        let words_shots = CheckMenuItem::new("Hide in screenshots", true, app.prefs.borrow().words_hide_shots, None);
-        let words_sep = PredefinedMenuItem::separator();
-        let words_sep2 = PredefinedMenuItem::separator();
-        let _ = words_menu.append_items(&[&words_sep, &comeback_menu, &break_menu, &langs_menu, &words_sep2, &words_typing, &words_video, &words_shots]);
-        let chat_swap = CheckMenuItem::new("⌥⏎ in ChatGPT and Claude: into my language", true, app.prefs.borrow().chat_swap, None);
-        // Translations run on this Mac, in the languages downloaded in System
-        // Settings: this opens that page, and names any still missing.
-        let languages = MenuItem::new("ⓘ Translation languages…", true, None);
-        let login = CheckMenuItem::new("Open at login", true, login_on(), None);
-        let quit = MenuItem::new("Quit", true, None);
-        let sep = PredefinedMenuItem::separator();
-        let sep2 = PredefinedMenuItem::separator();
-        let sep3 = PredefinedMenuItem::separator();
-        let _ = menu.append_items(&[&pause, &sep, &shown_menu, &readings, &selection, &copy_click, &speak, &words_menu, &chat_swap, &off_here, &sep2, &languages, &login, &sep3, &quit]);
-        let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_title("文").with_tooltip("ccez-keys").build();
-        // Bold and a size up: the menu bar's regular text left 文 thin and small.
-        if let Ok(t) = &tray
-            && let Some(item) = t.ns_status_item()
-            && let Some(button) = item.button(mtm)
-        {
-            // A touch lower than the font sits by itself (owner, 2026-11-09: it rode high).
-            use objc2_foundation::{NSAttributedString, NSDictionary, NSNumber};
-            let font = objc2_app_kit::NSFont::boldSystemFontOfSize(15.0);
-            let attrs: objc2::rc::Retained<NSDictionary<objc2_foundation::NSString, objc2::runtime::AnyObject>> = unsafe {
-                NSDictionary::from_slices(
-                    &[objc2_app_kit::NSFontAttributeName, objc2_app_kit::NSBaselineOffsetAttributeName],
-                    &[&*font as &objc2::runtime::AnyObject, &*NSNumber::new_f64(-1.5) as &objc2::runtime::AnyObject],
-                )
-            };
-            let title = unsafe { NSAttributedString::new_with_attributes(&objc2_foundation::NSString::from_str("文"), &attrs) };
-            button.setAttributedTitle(&title);
-        }
-        let _tray = tray;
-        let (pause_id, lang_id, login_id, quit_id) = (pause.id().clone(), languages.id().clone(), login.id().clone(), quit.id().clone());
-        let (readings_id, off_id) = (readings.id().clone(), off_here.id().clone());
-        let (selection_id, copy_id, swap_id) = (selection.id().clone(), copy_click.id().clone(), chat_swap.id().clone());
-        let speak_id = speak.id().clone();
-        let (typing_id, video_id, shots_id) = (words_typing.id().clone(), words_video.id().clone(), words_shots.id().clone());
-        let menu_tick = Cell::new(0u32);
+
+        // Screenshot UI state without polling proc_listallpids.
+        let cap_up = !NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str("com.apple.screencaptureui")).is_empty();
+        crate::float::set_capturing_ui(cap_up);
+
+        sync_front_app(app);
+        sync_fallback_tray(mtm, app);
+        start_observers(app);
+        crate::menu_ipc::serve(dirs().join("menu.sock"), ipc_queue, wake.clone(), log);
+        start_ax_thread(
+            app.awake.clone(),
+            app.front_quiet.clone(),
+            app.ax_paused.clone(),
+            app.ask_in_flight.clone(),
+            app.ax_field.clone(),
+            app.ax_signal.clone(),
+        );
 
         // The pointing finger over a word or the preview even while another
         // app is in front (owner, 2026-11-11): macOS lets only the front app
@@ -811,7 +867,7 @@ mod app {
         let started = crate::chatswap::start(
             move || app.prefs.borrow().chat_swap && !app.paused.get() && frontmost().is_some_and(|b| crate::chatswap::APPS.contains(&b.as_str())),
             {
-                let swapper = app.langs.first().map(|to| crate::chatswap::Swapper::start(to.clone(), app.swapped.clone(), log));
+                let swapper = app.langs.first().map(|to| crate::chatswap::Swapper::start_with_wake(to.clone(), app.swapped.clone(), log, wake.clone()));
                 move || {
                     if let Some(s) = &swapper {
                         s.press();
@@ -819,7 +875,10 @@ mod app {
                 }
             },
             // A screenshot key: the words on screen get out of the picture.
-            move || app.floaters.screenshot(),
+            move || {
+                app.floaters.screenshot();
+                wake_main();
+            },
         );
         log("info", &format!("chat swap key {}", if started { "on" } else { "unavailable" }));
 
@@ -875,6 +934,7 @@ mod app {
                         let _ = e.sync_words("ccez-keys-mac".into());
                     });
                 }
+                ensure_ui_timer(app, needs_ui_timer(app));
             }));
         });
 
@@ -991,100 +1051,506 @@ mod app {
                     }
                     _ => {}
                 }
+                ensure_ui_timer(app, needs_ui_timer(app));
             }));
         });
 
-        let tick_block = RcBlock::new(move |_t: NonNull<NSTimer>| {
-            autoreleasepool(|_| {
-                while let Ok(e) = MenuEvent::receiver().try_recv() {
-                    if e.id == pause_id {
-                        app.paused.set(!app.paused.get());
-                        pause.set_text(if app.paused.get() { "Resume" } else { "Pause" });
-                    } else if e.id == lang_id {
-                        let _ = std::process::Command::new("open").arg("x-apple.systempreferences:com.apple.Localization-Settings.extension").spawn();
-                    } else if e.id == login_id {
-                        set_login(login.is_checked());
-                    } else if e.id == quit_id {
-                        std::process::exit(0);
-                    } else if e.id == readings_id {
-                        app.prefs.borrow_mut().readings = readings.is_checked();
-                        app.prefs.borrow().save(&dirs());
-                        app.preview.borrow_mut().redo();
-                    } else if e.id == selection_id || e.id == copy_id || e.id == speak_id || e.id == swap_id || e.id == typing_id || e.id == video_id || e.id == shots_id {
-                        {
-                            let mut p = app.prefs.borrow_mut();
-                            p.selection = selection.is_checked();
-                            p.copy_click = copy_click.is_checked();
-                            p.speak = speak.is_checked();
-                            crate::speak::set_on(p.speak);
-                            p.chat_swap = chat_swap.is_checked();
-                            p.words_typing = words_typing.is_checked();
-                            p.words_video = words_video.is_checked();
-                            p.words_hide_shots = words_shots.is_checked();
-                            p.save(&dirs());
-                        }
-                        app.preview.borrow_mut().redo();
-                    } else if e.id == off_id {
-                        if let Some((bundle, _)) = app.typing_in.borrow().clone() {
-                            let mut p = app.prefs.borrow_mut();
-                            let now_off = off_here.is_checked();
-                            p.off.retain(|b| *b != bundle);
-                            p.on.retain(|b| *b != bundle);
-                            if now_off && !QUIET.contains(&bundle.as_str()) {
-                                p.off.push(bundle);
-                            } else if !now_off && QUIET.contains(&bundle.as_str()) {
-                                p.on.push(bundle);
-                            }
-                            p.save(&dirs());
-                        }
-                    } else if let Some((n, _)) = lang_counts.iter().find(|(_, c)| *c.id() == e.id) {
-                        app.prefs.borrow_mut().words_langs = *n;
-                        app.prefs.borrow().save(&dirs());
-                        for (m, c) in &lang_counts {
-                            c.set_checked(m == n);
-                        }
-                    } else if let Some((n, _)) = comebacks.iter().find(|(_, c)| *c.id() == e.id) {
-                        let _ = app.engine.set_setting("learning.comeback".to_string(), n.to_string());
-                        for (m, c) in &comebacks {
-                            c.set_checked(m == n);
-                        }
-                    } else if let Some((n, _)) = breaks.iter().find(|(_, c)| *c.id() == e.id) {
-                        app.prefs.borrow_mut().words_break = *n;
-                        app.prefs.borrow().save(&dirs());
-                        for (m, c) in &breaks {
-                            c.set_checked(m == n);
-                        }
-                    } else if let Some((n, _)) = word_counts.iter().find(|(_, c)| *c.id() == e.id) {
-                        app.prefs.borrow_mut().words_on_screen = *n;
-                        app.prefs.borrow().save(&dirs());
-                        for (m, c) in &word_counts {
-                            c.set_checked(m == n);
-                        }
-                    } else if let Some((n, _)) = counts.iter().find(|(_, c)| *c.id() == e.id) {
-                        app.prefs.borrow_mut().shown = *n;
-                        app.prefs.borrow().save(&dirs());
-                        for (m, c) in &counts {
-                            c.set_checked(m == n);
-                        }
-                        app.preview.borrow_mut().redo();
-                    }
-                }
-                // "Off in Claude": the menu names the app being typed in (every second or so).
-                menu_tick.set(menu_tick.get() + 1);
-                if menu_tick.get().is_multiple_of(7) {
-                    if let Some((bundle, name)) = app.typing_in.borrow().clone() {
-                        off_here.set_text(format!("Off in {name}"));
-                        off_here.set_checked(quiet(app, &bundle));
-                    }
-                    let missing = app.worker.missing.lock().unwrap().clone();
-                    let flags: Vec<String> = missing.iter().map(|l| app.flags.get(l).cloned().unwrap_or_else(|| l.clone())).collect();
-                    languages.set_text(if flags.is_empty() { "ⓘ Translation languages…".to_string() } else { format!("ⓘ Translation languages… ({} missing)", flags.join(" ")) });
-                }
-                tick(mtm, app);
-            })
-        });
-        unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(0.15, true, &tick_block) };
+        {
+            let q = app.tray_events.clone();
+            MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
+                q.lock().unwrap().push(e.id.0);
+                wake_main();
+            }));
+        }
+
+        drain_and_tick(mtm, app);
         nsapp.run();
+    }
+
+    fn menu_bar_image() -> objc2::rc::Retained<objc2_app_kit::NSImage> {
+        use objc2::AllocAnyThread;
+        use objc2_app_kit::{NSBitmapImageRep, NSImage};
+        use objc2_foundation::NSData;
+        let size = objc2_foundation::NSSize::new(16.0, 16.0);
+        let img = NSImage::initWithSize(NSImage::alloc(), size);
+        for png in [&include_bytes!("../assets/menubar-feather-16.png")[..], &include_bytes!("../assets/menubar-feather-32.png")[..]] {
+            if let Some(rep) = NSBitmapImageRep::imageRepWithData(&NSData::with_bytes(png)) {
+                rep.setSize(size);
+                img.addRepresentation(&rep);
+            }
+        }
+        img.setTemplate(true);
+        img.setAccessibilityDescription(Some(&NSString::from_str("ccez-keys")));
+        img
+    }
+
+    fn missing_flags(app: &App) -> Vec<String> {
+        let missing = app.worker.missing.lock().unwrap().clone();
+        missing.iter().map(|l| app.flags.get(l).cloned().unwrap_or_else(|| l.clone())).collect()
+    }
+
+    fn menu_state(app: &App, front_override: Option<(String, String)>) -> crate::menu_ipc::MenuState {
+        let p = app.prefs.borrow();
+        let comeback = app.engine.setting("learning.comeback".into()).ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(2);
+        let front = front_override.or_else(|| app.typing_in.borrow().clone()).map(|(b, n)| {
+            let q = quiet(app, &b);
+            (b, n, q)
+        });
+        crate::menu_ipc::MenuState {
+            paused: app.paused.get(),
+            shown: p.shown,
+            readings: p.readings,
+            selection: p.selection,
+            copy_click: p.copy_click,
+            speak: p.speak,
+            words_on_screen: p.words_on_screen,
+            words_comeback: comeback,
+            words_break: p.words_break,
+            words_langs: p.words_langs,
+            words_typing: p.words_typing,
+            words_video: p.words_video,
+            words_hide_shots: p.words_hide_shots,
+            lang_count: app.langs.len(),
+            chat_swap: p.chat_swap,
+            front,
+            missing_flags: missing_flags(app),
+            login_on: login_on(),
+        }
+    }
+
+    /// Returns Ok(true) when `quit` was requested so IPC can flush its reply first.
+    fn apply_action(mtm: MainThreadMarker, app: &App, id: &str, arg: Option<&str>) -> Result<bool, String> {
+        match id {
+            "pause" => {
+                let next = !app.paused.get();
+                app.paused.set(next);
+                app.ax_paused.store(next, Ordering::Relaxed);
+                let (lock, cvar) = &*app.ax_signal;
+                lock.lock().unwrap().dirty = true;
+                cvar.notify_all();
+            }
+            "readings" => {
+                let mut p = app.prefs.borrow_mut();
+                p.readings = !p.readings;
+                p.save(&dirs());
+                app.preview.borrow_mut().redo();
+            }
+            "selection" => {
+                let mut p = app.prefs.borrow_mut();
+                p.selection = !p.selection;
+                p.save(&dirs());
+                app.preview.borrow_mut().redo();
+            }
+            "copy_click" => {
+                let mut p = app.prefs.borrow_mut();
+                p.copy_click = !p.copy_click;
+                p.save(&dirs());
+            }
+            "speak" => {
+                let mut p = app.prefs.borrow_mut();
+                p.speak = !p.speak;
+                crate::speak::set_on(p.speak);
+                p.save(&dirs());
+            }
+            "words.typing" => {
+                let mut p = app.prefs.borrow_mut();
+                p.words_typing = !p.words_typing;
+                p.save(&dirs());
+            }
+            "words.video" => {
+                let mut p = app.prefs.borrow_mut();
+                p.words_video = !p.words_video;
+                p.save(&dirs());
+            }
+            "words.shots" => {
+                let mut p = app.prefs.borrow_mut();
+                p.words_hide_shots = !p.words_hide_shots;
+                p.save(&dirs());
+            }
+            "chat_swap" => {
+                let mut p = app.prefs.borrow_mut();
+                p.chat_swap = !p.chat_swap;
+                p.save(&dirs());
+            }
+            "off_in" => {
+                let bundle = arg.map(str::to_string).or_else(|| app.typing_in.borrow().as_ref().map(|(b, _)| b.clone()));
+                if let Some(bundle) = bundle {
+                    let was_quiet = quiet(app, &bundle);
+                    let mut p = app.prefs.borrow_mut();
+                    p.off.retain(|b| *b != bundle);
+                    p.on.retain(|b| *b != bundle);
+                    let now_off = !was_quiet;
+                    if now_off && !QUIET.contains(&bundle.as_str()) {
+                        p.off.push(bundle);
+                    } else if !now_off && QUIET.contains(&bundle.as_str()) {
+                        p.on.push(bundle);
+                    }
+                    p.save(&dirs());
+                    drop(p);
+                    sync_front_app(app);
+                }
+            }
+            "languages" => {
+                let _ = std::process::Command::new("open").arg("x-apple.systempreferences:com.apple.Localization-Settings.extension").spawn();
+            }
+            "login" => set_login(!login_on()),
+            "quit" => return Ok(true),
+            _ if id.starts_with("shown=") => {
+                let n: usize = id.trim_start_matches("shown=").parse().map_err(|_| format!("bad {id}"))?;
+                app.prefs.borrow_mut().shown = n;
+                app.prefs.borrow().save(&dirs());
+                app.preview.borrow_mut().redo();
+            }
+            _ if id.starts_with("words.count=") => {
+                let n: usize = id.trim_start_matches("words.count=").parse().map_err(|_| format!("bad {id}"))?;
+                app.prefs.borrow_mut().words_on_screen = n;
+                app.prefs.borrow().save(&dirs());
+            }
+            _ if id.starts_with("words.comeback=") => {
+                let n: u64 = id.trim_start_matches("words.comeback=").parse().map_err(|_| format!("bad {id}"))?;
+                let _ = app.engine.set_setting("learning.comeback".to_string(), n.to_string());
+            }
+            _ if id.starts_with("words.break=") => {
+                let n: u64 = id.trim_start_matches("words.break=").parse().map_err(|_| format!("bad {id}"))?;
+                app.prefs.borrow_mut().words_break = n;
+                app.prefs.borrow().save(&dirs());
+            }
+            _ if id.starts_with("words.langs=") => {
+                let n: usize = id.trim_start_matches("words.langs=").parse().map_err(|_| format!("bad {id}"))?;
+                app.prefs.borrow_mut().words_langs = n;
+                app.prefs.borrow().save(&dirs());
+            }
+            _ => return Err(format!("unknown action {id}")),
+        }
+        if app.fallback_tray.borrow().is_some() {
+            rebuild_fallback_tray(mtm, app);
+        }
+        Ok(false)
+    }
+
+    fn append_nodes(menu: &Menu, nodes: &[crate::menu_ipc::Node], refs: &mut FallbackRefs) {
+        for n in nodes {
+            match n {
+                crate::menu_ipc::Node::Action { id, title, .. } => {
+                    let item = MenuItem::with_id(id.as_str(), title, true, None);
+                    if id == "pause" {
+                        refs.pause = Some((item.id().clone(), item.clone()));
+                    } else if id == "languages" {
+                        refs.languages = Some((item.id().clone(), item.clone()));
+                    } else if id == "quit" {
+                        refs.quit = Some(item.id().clone());
+                    }
+                    let _ = menu.append(&item);
+                }
+                crate::menu_ipc::Node::Check { id, title, checked, .. } | crate::menu_ipc::Node::Radio { id, title, checked, .. } => {
+                    let item = CheckMenuItem::with_id(id.as_str(), title, true, *checked, None);
+                    if id == "off_in" {
+                        refs.off = Some((item.id().clone(), item.clone()));
+                    } else if id == "login" {
+                        refs.login = Some((item.id().clone(), item.clone()));
+                    }
+                    let _ = menu.append(&item);
+                }
+                crate::menu_ipc::Node::Submenu { title, items } => {
+                    let sub = Submenu::new(title, true);
+                    append_nodes_sub(&sub, items, refs);
+                    let _ = menu.append(&sub);
+                }
+                crate::menu_ipc::Node::Sep => {
+                    let _ = menu.append(&PredefinedMenuItem::separator());
+                }
+                crate::menu_ipc::Node::Info { title } => {
+                    let _ = menu.append(&MenuItem::new(title, false, None));
+                }
+            }
+        }
+    }
+
+    fn append_nodes_sub(sub: &Submenu, nodes: &[crate::menu_ipc::Node], refs: &mut FallbackRefs) {
+        for n in nodes {
+            match n {
+                crate::menu_ipc::Node::Action { id, title, .. } => {
+                    let _ = sub.append(&MenuItem::with_id(id.as_str(), title, true, None));
+                }
+                crate::menu_ipc::Node::Check { id, title, checked, .. } | crate::menu_ipc::Node::Radio { id, title, checked, .. } => {
+                    let _ = sub.append(&CheckMenuItem::with_id(id.as_str(), title, true, *checked, None));
+                }
+                crate::menu_ipc::Node::Submenu { title, items } => {
+                    let child = Submenu::new(title, true);
+                    append_nodes_sub(&child, items, refs);
+                    let _ = sub.append(&child);
+                }
+                crate::menu_ipc::Node::Sep => {
+                    let _ = sub.append(&PredefinedMenuItem::separator());
+                }
+                crate::menu_ipc::Node::Info { title } => {
+                    let _ = sub.append(&MenuItem::new(title, false, None));
+                }
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct FallbackRefs {
+        pause: Option<(tray_icon::menu::MenuId, MenuItem)>,
+        off: Option<(tray_icon::menu::MenuId, CheckMenuItem)>,
+        languages: Option<(tray_icon::menu::MenuId, MenuItem)>,
+        login: Option<(tray_icon::menu::MenuId, CheckMenuItem)>,
+        quit: Option<tray_icon::menu::MenuId>,
+    }
+
+    fn build_fallback_tray(mtm: MainThreadMarker, app: &App) -> Option<FallbackTray> {
+        let state = menu_state(app, None);
+        let has_front = state.front.is_some();
+        let nodes = crate::menu_ipc::build_menu(&state);
+        let menu = Menu::new();
+        let mut refs = FallbackRefs::default();
+        append_nodes(&menu, &nodes, &mut refs);
+        let tray = TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            .with_tooltip("ccez-keys")
+            .build()
+            .ok()?;
+        if let Some(item) = tray.ns_status_item()
+            && let Some(button) = item.button(mtm)
+        {
+            button.setImage(Some(&menu_bar_image()));
+        }
+        let _ = tray.set_tooltip(Some("ccez-keys"));
+        let (pause_id, pause) = refs.pause?;
+        let (lang_id, languages) = refs.languages?;
+        let (login_id, login) = refs.login?;
+        let quit_id = refs.quit?;
+        let (off_id, off_here) = refs.off.unwrap_or_else(|| {
+            let dummy = CheckMenuItem::with_id("off_in", "Off in this app", false, false, None);
+            (dummy.id().clone(), dummy)
+        });
+        Some(FallbackTray {
+            _tray: tray,
+            pause_id,
+            pause,
+            off_id,
+            off_here,
+            lang_id,
+            languages,
+            login_id,
+            login,
+            quit_id,
+            front: Cell::new(has_front),
+        })
+    }
+
+    fn rebuild_fallback_tray(mtm: MainThreadMarker, app: &App) {
+        *app.fallback_tray.borrow_mut() = None;
+        *app.fallback_tray.borrow_mut() = build_fallback_tray(mtm, app);
+    }
+
+    fn sync_fallback_tray(mtm: MainThreadMarker, app: &App) {
+        let clip_running = !NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str("uk.ccez.clip")).is_empty();
+        if clip_running {
+            if app.fallback_tray.borrow().is_some() {
+                *app.fallback_tray.borrow_mut() = None;
+            }
+        } else if app.fallback_tray.borrow().is_none() {
+            *app.fallback_tray.borrow_mut() = build_fallback_tray(mtm, app);
+        }
+    }
+
+    fn needs_ui_timer(app: &App) -> bool {
+        (app.awake.load(Ordering::Relaxed) && !app.paused.get() && app.prefs.borrow().words_on_screen > 0)
+            || app.floaters.has_activity()
+            || app.view.is_shown()
+            || app.view.card_open.get()
+            || app.preview.borrow().is_waiting()
+    }
+
+    fn ensure_ui_timer(app: &'static App, need: bool) {
+        let cur = app.ui_timer.take();
+        if need {
+            if let Some(t) = cur {
+                app.ui_timer.set(Some(t));
+                return;
+            }
+            let cb = RcBlock::new(move |_t: NonNull<NSTimer>| {
+                if let Some(mtm) = MainThreadMarker::new() {
+                    autoreleasepool(|_| drain_and_tick(mtm, app));
+                }
+            });
+            let timer = unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(0.15, true, &cb) };
+            app.ui_timer.set(Some(timer));
+        } else if let Some(t) = cur {
+            t.invalidate();
+        }
+    }
+
+    fn drain_and_tick(mtm: MainThreadMarker, app: &'static App) {
+        // 1. IPC menu/action requests from ccez-clip.
+        let jobs: Vec<crate::menu_ipc::Job> = std::mem::take(&mut *app.ipc_queue.lock().unwrap());
+        for job in jobs {
+            let reply = match job.cmd.as_str() {
+                "menu" => {
+                    let front = job
+                        .front
+                        .filter(|b| !b.is_empty() && b != "uk.ccez.clip" && b != "uk.ccez.keys.mac")
+                        .map(|b| (b.clone(), job.front_name.unwrap_or(b)));
+                    let state = menu_state(app, front);
+                    let items: Vec<serde_json::Value> = crate::menu_ipc::build_menu(&state).iter().map(crate::menu_ipc::Node::to_json).collect();
+                    serde_json::json!({ "v": crate::menu_ipc::PROTOCOL_VERSION, "ok": true, "items": items })
+                }
+                "act" => match apply_action(mtm, app, &job.id, job.arg.as_deref()) {
+                    Ok(quit) => {
+                        let ok = serde_json::json!({ "v": crate::menu_ipc::PROTOCOL_VERSION, "ok": true });
+                        let _ = job.reply.send(ok);
+                        if quit {
+                            let cb = RcBlock::new(|_t: NonNull<NSTimer>| std::process::exit(0));
+                            unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(0.05, false, &cb) };
+                        }
+                        continue;
+                    }
+                    Err(e) => serde_json::json!({ "v": crate::menu_ipc::PROTOCOL_VERSION, "ok": false, "error": e }),
+                },
+                other => serde_json::json!({ "v": crate::menu_ipc::PROTOCOL_VERSION, "ok": false, "error": format!("unknown cmd {other:?}") }),
+            };
+            let _ = job.reply.send(reply);
+        }
+
+        // 2. Fallback tray menu events (only when ccez-clip isn't running).
+        if app.fallback_tray.borrow().is_some() {
+            let mut acted = false;
+            let events: Vec<String> = std::mem::take(&mut *app.tray_events.lock().unwrap());
+            for id in events {
+                match apply_action(mtm, app, &id, None) {
+                    Ok(true) => std::process::exit(0),
+                    Ok(false) => acted = true,
+                    Err(_) => {}
+                }
+            }
+            if !acted {
+                let front = app.typing_in.borrow().as_ref().map(|(b, n)| (b.clone(), n.clone(), quiet(app, b)));
+                let missing = missing_flags(app);
+                let front_changed = *app.last_tray_front.borrow() != front;
+                let missing_changed = *app.last_missing.borrow() != missing;
+                if front_changed || missing_changed {
+                    let has_front = app.fallback_tray.borrow().as_ref().is_some_and(|t| t.front.get());
+                    if front_changed && front.is_some() != has_front {
+                        rebuild_fallback_tray(mtm, app);
+                    } else if let Some(t) = app.fallback_tray.borrow().as_ref() {
+                        if let Some((ref _b, ref name, q)) = front {
+                            t.off_here.set_text(format!("Off in {name}"));
+                            t.off_here.set_checked(q);
+                        }
+                        let title = if missing.is_empty() {
+                            "ⓘ Translation languages…".to_string()
+                        } else {
+                            format!("ⓘ Translation languages… ({} missing)", missing.join(" "))
+                        };
+                        t.languages.set_text(title);
+                        let _ = (&t.pause_id, &t.pause, &t.off_id, &t.lang_id, &t.login_id, &t.login, &t.quit_id);
+                    }
+                    *app.last_tray_front.borrow_mut() = front;
+                    *app.last_missing.borrow_mut() = missing;
+                }
+            }
+        }
+
+        // 3. Preview + floating words tick.
+        let field = app.ax_field.lock().unwrap().clone();
+        tick(mtm, app, field);
+        ensure_ui_timer(app, needs_ui_timer(app));
+    }
+
+    fn start_observers(app: &'static App) {
+        let nc = NSWorkspace::sharedWorkspace().notificationCenter();
+        let observe_ws = |name: &NSNotificationName, f: Box<dyn Fn(MainThreadMarker, &NSNotification)>| {
+            let block = RcBlock::new(move |n: NonNull<NSNotification>| {
+                if let Some(mtm) = MainThreadMarker::new() {
+                    autoreleasepool(|_| f(mtm, unsafe { n.as_ref() }));
+                }
+            });
+            let tok = unsafe { nc.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block) };
+            std::mem::forget((tok, block));
+        };
+
+        observe_ws(
+            unsafe { NSWorkspaceDidActivateApplicationNotification },
+            Box::new(move |mtm, _n| {
+                sync_front_app(app);
+                drain_and_tick(mtm, app);
+            }),
+        );
+
+        let bundle_of = |n: &NSNotification| -> Option<String> {
+            n.userInfo()?
+                .objectForKey(unsafe { NSWorkspaceApplicationKey })?
+                .downcast::<NSRunningApplication>()
+                .ok()?
+                .bundleIdentifier()
+                .map(|b| b.to_string())
+        };
+
+        observe_ws(
+            unsafe { NSWorkspaceDidLaunchApplicationNotification },
+            Box::new(move |mtm, n| {
+                let Some(b) = bundle_of(n) else { return };
+                if b == "com.apple.screencaptureui" {
+                    crate::float::set_capturing_ui(true);
+                    drain_and_tick(mtm, app);
+                } else if b == "uk.ccez.clip" {
+                    sync_fallback_tray(mtm, app);
+                }
+            }),
+        );
+
+        observe_ws(
+            unsafe { NSWorkspaceDidTerminateApplicationNotification },
+            Box::new(move |mtm, n| {
+                let Some(b) = bundle_of(n) else { return };
+                if b == "com.apple.screencaptureui" {
+                    crate::float::set_capturing_ui(false);
+                    drain_and_tick(mtm, app);
+                } else if b == "uk.ccez.clip" {
+                    sync_fallback_tray(mtm, app);
+                }
+            }),
+        );
+
+        observe_ws(
+            unsafe { NSWorkspaceScreensDidSleepNotification },
+            Box::new(move |mtm, _n| {
+                app.awake.store(false, Ordering::Relaxed);
+                let (lock, cvar) = &*app.ax_signal;
+                lock.lock().unwrap().dirty = true;
+                cvar.notify_all();
+                drain_and_tick(mtm, app);
+            }),
+        );
+
+        observe_ws(
+            unsafe { NSWorkspaceScreensDidWakeNotification },
+            Box::new(move |mtm, _n| {
+                app.awake.store(true, Ordering::Relaxed);
+                let (lock, cvar) = &*app.ax_signal;
+                lock.lock().unwrap().dirty = true;
+                cvar.notify_all();
+                drain_and_tick(mtm, app);
+            }),
+        );
+
+        let dnc = NSDistributedNotificationCenter::defaultCenter();
+        for (name, woke) in [("com.apple.screenIsLocked", false), ("com.apple.screenIsUnlocked", true)] {
+            let n = NSString::from_str(name);
+            let block = RcBlock::new(move |_n: NonNull<NSNotification>| {
+                app.awake.store(woke, Ordering::Relaxed);
+                let (lock, cvar) = &*app.ax_signal;
+                lock.lock().unwrap().dirty = true;
+                cvar.notify_all();
+                if let Some(mtm) = MainThreadMarker::new() {
+                    autoreleasepool(|_| drain_and_tick(mtm, app));
+                }
+            });
+            let tok = unsafe { dnc.addObserverForName_object_queue_usingBlock(Some(&n), None, None, &block) };
+            std::mem::forget((tok, block));
+        }
     }
 
     fn launcher() -> Option<auto_launch::AutoLaunch> {

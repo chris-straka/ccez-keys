@@ -19,6 +19,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # The bundle keeps its executable name (Accessibility knows the app by it).
 cp target/release/ccez-keys-desktop "$APP/Contents/MacOS/ccez-keys-mac"
 swiftc -O -o "$APP/Contents/MacOS/ccez-keys-translate" desktop/swift/translate.swift
+[ -f desktop/assets/AppIcon.icns ] && cp desktop/assets/AppIcon.icns "$APP/Contents/Resources/"
 sed "s/@VERSION@/$VERSION/g" desktop/Info.plist > "$APP/Contents/Info.plist"
 
 security unlock-keychain -p "$(cat "$DIR/keychain-password")" "$KC"

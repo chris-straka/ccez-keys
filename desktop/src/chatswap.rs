@@ -140,7 +140,12 @@ pub struct Swapper {
 }
 
 impl Swapper {
+    #[allow(dead_code)]
     pub fn start(to: String, done: Arc<Mutex<Option<String>>>, log: fn(&str, &str)) -> Swapper {
+        Self::start_with_wake(to, done, log, Arc::new(|| {}))
+    }
+
+    pub fn start_with_wake(to: String, done: Arc<Mutex<Option<String>>>, log: fn(&str, &str), wake: Arc<dyn Fn() + Send + Sync>) -> Swapper {
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         std::thread::spawn(move || {
             use crate::worker::Translator;
@@ -160,6 +165,7 @@ impl Swapper {
                     // A broken helper is started again on the next press.
                     helper = None;
                 }
+                wake();
             }
         });
         Swapper { tx }

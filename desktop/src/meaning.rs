@@ -25,6 +25,7 @@ pub struct Meanings {
     helper: Mutex<Option<Helper>>,
     /// The newest answer: (cache key, meaning), taken by the app.
     pub out: Arc<Mutex<Option<(String, String)>>>,
+    wake: Arc<dyn Fn() + Send + Sync>,
 }
 
 /// "2": answers since the model picks a dictionary sense (older ones,
@@ -34,10 +35,15 @@ pub fn key(lang: &str, word: &str, sentence: &str) -> String {
 }
 
 impl Meanings {
+    #[allow(dead_code)]
     pub fn new(dir: &std::path::Path) -> Arc<Meanings> {
+        Self::new_with_wake(dir, Arc::new(|| {}))
+    }
+
+    pub fn new_with_wake(dir: &std::path::Path, wake: Arc<dyn Fn() + Send + Sync>) -> Arc<Meanings> {
         let file = dir.join("meanings.json");
         let cache: Vec<(String, String)> = std::fs::read_to_string(&file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-        Arc::new(Meanings { file, cache: Mutex::new(cache), helper: Mutex::new(None), out: Arc::default() })
+        Arc::new(Meanings { file, cache: Mutex::new(cache), helper: Mutex::new(None), out: Arc::default(), wake })
     }
 
     /// The meaning if it's been asked before.
@@ -65,6 +71,7 @@ impl Meanings {
                 }
             }
             *me.out.lock().unwrap() = Some((k, text));
+            (me.wake)();
         });
     }
 

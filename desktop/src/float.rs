@@ -239,8 +239,6 @@ pub struct Floaters {
     away: RefCell<Vec<((String, String), Instant)>>,
     /// Spots whose word was clicked, and when: resting (RESTS).
     rested: RefCell<Vec<(Rect, Instant)>>,
-    /// When the screenshot tools were last looked for, and whether they were up.
-    capture_seen: Cell<(Instant, bool)>,
     /// From the spot thread: the free spots, and whether a video is playing
     /// (holding the display awake, or in the front window).
     spots: Arc<Mutex<Option<Vec<Rect>>>>,
@@ -248,6 +246,7 @@ pub struct Floaters {
     /// For the spot thread: the screen (top-left coordinates) and whether to look.
     screen: Arc<Mutex<Rect>>,
     looking: Arc<AtomicBool>,
+    need_spots: Arc<AtomicBool>,
     /// For the spot thread: each word up, where it is (top-left coordinates).
     up: Arc<Mutex<Vec<(isize, Rect)>>>,
     /// From the spot thread: words with something under them now.
@@ -287,6 +286,8 @@ impl Floaters {
     /// `under` says whether a word at a place has anything under it.
     pub fn new(
         engine: std::sync::Arc<ccez_keys_core::Engine>,
+        awake: Arc<AtomicBool>,
+        wake: Arc<dyn Fn() + Send + Sync>,
         find: impl Fn(Rect) -> (Vec<Rect>, bool) + Send + 'static,
         video: impl Fn() -> bool + Send + 'static,
         under: impl Fn(Rect) -> Option<bool> + Send + 'static,
@@ -295,49 +296,56 @@ impl Floaters {
         let playing: Arc<AtomicBool> = Arc::default();
         let screen: Arc<Mutex<Rect>> = Arc::default();
         let looking: Arc<AtomicBool> = Arc::default();
+        let need_spots: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
         let up: Arc<Mutex<Vec<(isize, Rect)>>> = Arc::default();
         let covered: Arc<Mutex<Vec<isize>>> = Arc::default();
         {
-            let (spots, playing, screen, looking) = (spots.clone(), playing.clone(), screen.clone(), looking.clone());
+            let (spots, playing, screen, looking, need_spots) = (spots.clone(), playing.clone(), screen.clone(), looking.clone(), need_spots.clone());
             let (up, covered) = (up.clone(), covered.clone());
             std::thread::spawn(move || {
                 // Windows looked at every 0.3 s (cheap): the moment one moves,
                 // opens or closes, or another app comes forward, the front
-                // window's layout is read again; else every 2 s (its content
-                // scrolls without the windows moving).
+                // window's layout is read again; else every 2 s when a word
+                // needs a spot or input was recent.
                 let mut seen: Option<String> = None;
                 let mut walked = std::time::Instant::now() - WALK_EVERY;
                 let mut unsure = std::collections::HashMap::new();
                 loop {
                     std::thread::sleep(Duration::from_millis(300));
-                    if !looking.load(Ordering::Relaxed) {
+                    if !looking.load(Ordering::Relaxed) || !awake.load(Ordering::Relaxed) {
                         seen = None;
                         continue;
                     }
-                    // Under every word, every look: the walk below may wait
-                    // two seconds, and a scroll moves no window.
-                    let words = up.lock().unwrap().clone();
-                    if !words.is_empty() {
-                        let hit = covered_words(&words, &under, &mut unsure);
-                        if !hit.is_empty() {
-                            covered.lock().unwrap().extend(hit);
+                    objc2::rc::autoreleasepool(|_| {
+                        // Under every word, every look: the walk below may wait
+                        // or skip while idle, and streaming text moves no window.
+                        let words = up.lock().unwrap().clone();
+                        if !words.is_empty() {
+                            let hit = covered_words(&words, &under, &mut unsure);
+                            if !hit.is_empty() {
+                                covered.lock().unwrap().extend(hit);
+                                wake();
+                            }
                         }
-                    }
-                    let front = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
-                    let now = format!("{front}:{:?}", crate::idle::windows(-1));
-                    if seen.as_deref() == Some(now.as_str()) && walked.elapsed() < WALK_EVERY {
-                        continue;
-                    }
-                    seen = Some(now);
-                    walked = std::time::Instant::now();
-                    let mut on = video();
-                    let s = *screen.lock().unwrap();
-                    if s.w > 0.0 {
-                        let (free, in_window) = find(s);
-                        on |= in_window;
-                        *spots.lock().unwrap() = Some(free);
-                    }
-                    playing.store(on, Ordering::Relaxed);
+                        let front = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()).unwrap_or(0);
+                        let now = format!("{front}:{:?}", crate::idle::windows(-1));
+                        let changed = seen.as_deref() != Some(now.as_str());
+                        let should_walk = changed || (walked.elapsed() >= WALK_EVERY && (need_spots.load(Ordering::Relaxed) || crate::idle::input_idle() < Duration::from_secs(4)));
+                        if !should_walk {
+                            return;
+                        }
+                        seen = Some(now);
+                        walked = std::time::Instant::now();
+                        let mut on = video();
+                        let s = *screen.lock().unwrap();
+                        if s.w > 0.0 {
+                            let (free, in_window) = find(s);
+                            on |= in_window;
+                            *spots.lock().unwrap() = Some(free);
+                        }
+                        playing.store(on, Ordering::Relaxed);
+                        wake();
+                    });
                 }
             });
         }
@@ -358,14 +366,18 @@ impl Floaters {
             hide_in_shots: Cell::new(true),
             readings: Cell::new(true),
             rested: RefCell::default(),
-            capture_seen: Cell::new((Instant::now(), false)),
             spots,
             video: playing,
             screen,
             looking,
+            need_spots,
             up,
             covered,
         }
+    }
+
+    pub fn has_activity(&self) -> bool {
+        !self.words.borrow().is_empty() || !self.leaving.borrow().is_empty()
     }
 
     fn now() -> u64 {
@@ -419,16 +431,7 @@ impl Floaters {
                 self.words.borrow_mut().push(w);
             }
         }
-        let (at, up) = self.capture_seen.get();
-        let up = if !self.hide_in_shots.get() {
-            false
-        } else if at.elapsed() > Duration::from_millis(600) {
-            let now = capturing();
-            self.capture_seen.set((Instant::now(), now));
-            now
-        } else {
-            up
-        };
+        let up = self.hide_in_shots.get() && capturing();
         let quiet = self.hide_in_shots.get() && (self.quiet_until.get().is_some_and(|t| Instant::now() < t) || up);
         if quiet {
             self.hide_now();
@@ -542,6 +545,9 @@ impl Floaters {
             }
             self.leave(w, revive);
         }
+        let in_break = self.break_until.get().is_some_and(|t| Instant::now() < t);
+        let room_now = if self.breather.get().is_zero() { most } else { most.saturating_sub(self.answered.get()) };
+        self.need_spots.store(enabled && !in_break && self.words.borrow().len() < room_now, Ordering::Relaxed);
         // A new word now and then, in a spot nobody holds.
         let Some(free) = fresh else { return };
         let mut room = most;
@@ -760,29 +766,15 @@ impl Floaters {
     }
 }
 
-/// The screenshot tools are up: ⇧⌘5's panel, or `screencapture` picking an
-/// area or a window (⇧⌘4).
-fn capturing() -> bool {
-    use objc2_app_kit::NSRunningApplication;
-    if !NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str("com.apple.screencaptureui")).is_empty() {
-        return true;
-    }
-    process_running("screencapture")
+static CAPTURE_UI_UP: AtomicBool = AtomicBool::new(false);
+
+pub fn set_capturing_ui(up: bool) {
+    CAPTURE_UI_UP.store(up, Ordering::Relaxed);
 }
 
-fn process_running(name: &str) -> bool {
-    #[link(name = "proc", kind = "dylib")]
-    unsafe extern "C" {
-        fn proc_listallpids(buffer: *mut i32, size: i32) -> i32;
-        fn proc_name(pid: i32, buffer: *mut u8, size: u32) -> i32;
-    }
-    let mut pids = vec![0i32; 4096];
-    let n = unsafe { proc_listallpids(pids.as_mut_ptr(), (pids.len() * 4) as i32) };
-    let mut buf = [0u8; 64];
-    pids.iter().take(n.max(0) as usize).any(|&pid| {
-        let len = unsafe { proc_name(pid, buf.as_mut_ptr(), buf.len() as u32) };
-        len > 0 && &buf[..len as usize] == name.as_bytes()
-    })
+/// The screenshot tools are up: ⇧⌘5's panel (`com.apple.screencaptureui`).
+fn capturing() -> bool {
+    CAPTURE_UI_UP.load(Ordering::Relaxed)
 }
 
 /// A tag as a small grey pill: (it, width, height).

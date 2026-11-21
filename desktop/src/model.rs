@@ -19,7 +19,7 @@ pub struct Place {
 }
 
 /// The focused text field now.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Field {
     /// Its role and subrole (AXTextField / AXTextArea; AXSecureTextField for passwords).
     pub secure: bool,

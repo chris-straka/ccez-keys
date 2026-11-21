@@ -178,6 +178,19 @@ mod sys {
         std::time::Duration::from_secs_f64(s.max(0.0))
     }
 
+    /// Time since the last key, modifier change, click, drag or scroll (ignores pointer moves).
+    pub fn input_idle() -> std::time::Duration {
+        // KeyDown(10), FlagsChanged(12), LeftMouseUp(2), RightMouseUp(4),
+        // OtherMouseUp(26), LeftMouseDragged(6), ScrollWheel(22).
+        const KINDS: [u32; 7] = [10, 12, 2, 4, 26, 6, 22];
+        let s = KINDS
+            .iter()
+            .map(|&k| unsafe { CGEventSourceSecondsSinceLastEventType(0, k) })
+            .filter(|&v| v >= 0.0)
+            .fold(f64::INFINITY, f64::min);
+        if s.is_finite() { std::time::Duration::from_secs_f64(s) } else { std::time::Duration::from_secs(3600) }
+    }
+
     /// A video (or anything else) is keeping the display awake.
     pub fn video() -> bool {
         let mut out: *mut c_void = std::ptr::null_mut();
@@ -240,7 +253,7 @@ mod sys {
 }
 
 #[cfg(target_os = "macos")]
-pub use sys::{idle, owner_at, video, windows};
+pub use sys::{idle, input_idle, owner_at, video, windows};
 
 #[cfg(test)]
 mod tests {

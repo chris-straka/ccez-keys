@@ -89,6 +89,11 @@ impl Preview {
         self.appeared = now;
     }
 
+    /// Whether a translation ask is still pending or lines are held for display.
+    pub fn is_waiting(&self) -> bool {
+        (!self.asked && !self.sentence.is_empty()) || !self.complete || !self.line.is_empty()
+    }
+
     /// Asked again on the next tick (a word's status changed: its colour).
     pub fn redo(&mut self) {
         self.sentence.clear();
