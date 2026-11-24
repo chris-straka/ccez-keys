@@ -52,4 +52,13 @@ class StripTest {
         org.junit.Assert.assertTrue(uk.ccez.keys.learn.sameSentenceAs("Je", "Je pense"))
         org.junit.Assert.assertFalse(uk.ccez.keys.learn.sameSentenceAs("", "Je"))
     }
+
+    @Test
+    fun askAboutSkipsRepeatedWordAndBlankContext() {
+        assertEquals("影响", uk.ccez.keys.ui.askAbout("影响", null))
+        assertEquals("影响", uk.ccez.keys.ui.askAbout("影响", ""))
+        assertEquals("影响", uk.ccez.keys.ui.askAbout("影响", "影响"))
+        assertEquals("Freund", uk.ccez.keys.ui.askAbout("Freund", " freund "))
+        assertEquals("影响 (这对我很有影响)", uk.ccez.keys.ui.askAbout("影响", "这对我很有影响"))
+    }
 }

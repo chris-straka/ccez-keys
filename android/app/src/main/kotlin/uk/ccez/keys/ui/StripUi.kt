@@ -379,7 +379,7 @@ fun BoxScope.CardOverlay(c: CardView, ui: UiState, typist: Typist) {
                 ) { Icon(Icons.book, "Dictionary", tint = Colors.muted, modifier = Modifier.size(17.dp)) }
                 Box(
                     Modifier.width(44.dp).height(36.dp).clip(RoundedCornerShape(8.dp)).background(VIOLET_BG)
-                        .combinedClickable(onClick = { typist.openAsk("$key (${ui.strip?.text ?: c.word})") }),
+                        .combinedClickable(onClick = { typist.openAsk(askAbout(key, ui.strip?.text)) }),
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.spark, "Ask", tint = VIOLET, modifier = Modifier.size(17.dp)) }
             }
@@ -434,6 +434,13 @@ fun TipNote(t: uk.ccez.keys.learn.Tip, typist: Typist) {
     }
 }
 
+/** Heading for Ask from a word card: "word (sentence)" when the strip has a sentence beyond the word, else just the word. */
+internal fun askAbout(word: String, context: String?): String {
+    val w = word.trim()
+    val ctx = context?.trim().orEmpty()
+    return if (ctx.isEmpty() || ctx.equals(w, ignoreCase = true)) w else "$w ($ctx)"
+}
+
 /** Ask: the chat above the keys; the keys type into it until it's closed. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -450,6 +457,7 @@ fun AskPanel(a: uk.ccez.keys.learn.AskState, typist: Typist) {
                 color = Color(0xFFCFC8E6),
                 fontSize = 12.sp,
                 maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(Color(0xFF221F2B)).padding(horizontal = 9.dp, vertical = 3.dp),
             )
             // Carry on in ccez-llm.
@@ -488,14 +496,30 @@ fun AskPanel(a: uk.ccez.keys.learn.AskState, typist: Typist) {
                 }
             }
         }
+        val canSend = a.input.isNotBlank() && !a.busy
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF1E1C24)).padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xFF1E1C24))
+                .padding(start = 12.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(a.input, color = Colors.fg, fontSize = 13.5.sp, maxLines = 3)
-            Box(Modifier.width(1.5.dp).height(16.dp).background(Colors.accent))
-            Spacer(Modifier.weight(1f))
-            Text("↵", color = if (a.input.isBlank() || a.busy) Colors.dim else VIOLET, fontSize = 18.sp)
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(a.input, color = Colors.fg, fontSize = 13.5.sp, maxLines = 3, modifier = Modifier.weight(1f, fill = false))
+                Box(Modifier.width(1.5.dp).height(16.dp).background(Colors.accent))
+            }
+            Spacer(Modifier.width(6.dp))
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(if (canSend) VIOLET_BG else Color.Transparent)
+                    .combinedClickable(enabled = canSend, onClick = { typist.ask.send() }),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.enter, "Send", tint = if (canSend) VIOLET else Colors.muted, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }
