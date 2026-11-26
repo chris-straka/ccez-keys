@@ -904,6 +904,8 @@ private fun SettingsMain(version: Int, go: (Page) -> Unit) {
     ComeBackRow(version)
     Heading("Languages")
     FlagGrid(learning(), version, go)
+    Heading("Preview")
+    PreviewFlags(version)
     Heading("Default language")
     val def = remember(version) { App.instance.text("languages.default") }
     val d = Langs.of(ctx, def)
@@ -1087,7 +1089,46 @@ private fun FlagActions(p: String, order: List<String>, ctx: Context, removed: (
         if (i > 0) Action("First") { move(0) }
         if (i > 0) Action("Earlier") { move(i - 1) }
         if (i < order.lastIndex) Action("Later") { move(i + 1) }
-        Action("Remove") { set("languages.learning", JSONArray(order - p).toString()); removed() }
+        Action("Remove") {
+            set("languages.learning", JSONArray(order - p).toString())
+            val hidden = App.instance.engine.settingStrings("learning.strip_hidden")
+            if (p in hidden) set("learning.strip_hidden", JSONArray(hidden.filter { it != p }).toString())
+            removed()
+        }
+    }
+}
+
+/** Learning languages to preview in the strip: tapped to show or hide. */
+@Composable
+private fun PreviewFlags(version: Int) {
+    val ctx = LocalContext.current
+    val order = remember(version) { learning() }
+    val hidden = remember(version) { App.instance.engine.settingStrings("learning.strip_hidden") }
+    val hiddenSet = remember(hidden) { hidden.toSet() }
+    val shape = RoundedCornerShape(10.dp)
+    FlowRow(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        order.forEach { code ->
+            val shown = code !in hiddenSet
+            Box(
+                Modifier.width(44.dp).height(36.dp).clip(shape)
+                    .let { m -> if (shown) m.background(Colors.key) else m.border(1.dp, Colors.line, shape) }
+                    .combinedClickableCompat {
+                        val next = if (shown) hidden + code else hidden.filter { it != code }
+                        set("learning.strip_hidden", JSONArray(next).toString())
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    Langs.of(ctx, code)?.flag ?: code,
+                    fontSize = 20.sp,
+                    modifier = if (shown) Modifier else Modifier.graphicsLayer { alpha = 0.3f },
+                )
+            }
+        }
     }
 }
 
