@@ -124,3 +124,7 @@ ends with GATE PASS or GATE FAIL.
   its time on the busy Mac in the first attempt's check while every other
   check passed. The gate now runs it again alone, up to three times, when
   it is the suite's only failure. Don't change that test.
+- 2026-11-26: the second run skips the baseline (`--baseline-on ''`): the
+  gate at 07f550b failed on main on the Mac with the goal's 13 reasons
+  (fleet job 5avbr4vs), and the only change since (the retry above) acts
+  only once the core suite builds, which it can't on main.
