@@ -150,6 +150,8 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips span { font-size: 12.5px; background: #232325; border-radius: 14px; padding: 4px 10px; }
 .chips .add { color: var(--k-mut); background: transparent; border: 1px dashed #3a3a3a; }
+.chips.flags span { font-size: 18px; width: 44px; height: 36px; padding: 0; border-radius: 10px; display: grid; place-items: center; box-sizing: border-box; }
+.chips.flags .off { background: transparent; border: 1px solid #2a2a2a; opacity: .3; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
 @media (prefers-reduced-motion: no-preference) { .caret { animation: blink 1.1s steps(1) infinite } @keyframes blink { 50% { opacity: 0 } } }
 .sugg i { font-style: normal; font-size: 9.5px; color: var(--k-mut); line-height: 11px; height: 11px; }
@@ -475,10 +477,12 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
             <div class="chips"><span>🇬🇧 English</span></div>
             <h4>I'm learning</h4>
             <div class="chips"><span>🇫🇷 Français</span><span>🇩🇪 Deutsch</span><span>🇪🇸 Español</span><span>🇯🇵 日本語</span><span>🇨🇳 中文</span><span>🇸🇦 العربية</span><span class="add">＋</span></div>
+            <h4>Preview</h4>
+            <div class="chips flags"><span>🇫🇷</span><span class="off">🇩🇪</span><span class="off">🇪🇸</span><span>🇯🇵</span><span>🇨🇳</span><span class="off">🇸🇦</span></div>
           </div>
         </div>
       </div>
-      <figcaption><b>Empty field: buttons</b>With nothing typed, the suggestion row becomes the button row. ⚙ opens settings in place of the keys; any button can be turned off there. Drag the languages you're learning into the order the strip uses. Every setting can also be changed from the Mac with <code>keys</code>.</figcaption>
+      <figcaption><b>Empty field: buttons</b>With nothing typed, the suggestion row becomes the button row. ⚙ opens settings in place of the keys; any button can be turned off there. Drag the languages you're learning into the order the strip uses. Preview picks which of them the strip shows (all at first). Every setting can also be changed from the Mac with <code>keys</code>.</figcaption>
     </figure>
 
   </div>
