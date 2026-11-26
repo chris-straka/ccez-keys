@@ -3,7 +3,9 @@ package uk.ccez.keys.learn
 import android.content.Context
 import kotlinx.coroutines.withTimeoutOrNull
 import uk.ccez.keys.App
+import uk.ccez.keys.core.Ruby
 import uk.ccez.keys.core.WordStatus
+import uk.ccez.keys.core.rubySplit
 import uk.ccez.keys.ui.Langs
 
 /**
@@ -24,6 +26,7 @@ object Review {
         val flag: String,
         val article: String,
         val reading: String,
+        val ruby: List<Ruby>,
         val form: String,
         val meaning: String,
     )
@@ -107,12 +110,15 @@ object Review {
             ?: withTimeoutOrNull(4000) { Translator.translate(word, lang, app.text("languages.default"), download = false) }
             ?: ""
         val article = article(word, card?.article.orEmpty())
+        val reading = card?.reading?.takeIf { it.isNotEmpty() && it != word }.orEmpty()
+        val ruby = if (lang == "ja") rubySplit(word, reading) else listOf(Ruby(word, reading))
         return Face(
             lang = lang,
             word = word,
             flag = Langs.of(ctx, lang)?.flag ?: lang,
             article = article,
-            reading = card?.reading?.takeIf { it.isNotEmpty() && it != word }.orEmpty(),
+            reading = reading,
+            ruby = ruby,
             form = pointer?.let { uk.ccez.keys.core.formTag(it) }.orEmpty(),
             meaning = meaning,
         )

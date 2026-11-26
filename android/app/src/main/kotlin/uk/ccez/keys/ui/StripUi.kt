@@ -600,10 +600,7 @@ fun ReviewRow(f: uk.ccez.keys.learn.Review.Face, typist: Typist) {
             if (f.article.isNotEmpty()) {
                 Text(if (f.article.endsWith("'")) f.article else "${f.article} ", color = Colors.dim, fontSize = 15.sp, modifier = Modifier.alignBy(androidx.compose.ui.layout.LastBaseline))
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.alignBy(androidx.compose.ui.layout.LastBaseline)) {
-                if (f.reading.isNotEmpty()) Text(f.reading, color = Colors.muted, fontSize = 9.5.sp, lineHeight = 11.sp, maxLines = 1)
-                Text(f.word, color = Colors.fg, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            }
+            RubyWord(f.ruby, Colors.fg, 17.sp, FontWeight.SemiBold, Colors.muted, 9.5.sp, Modifier.alignBy(androidx.compose.ui.layout.LastBaseline))
             Spacer(Modifier.width(8.dp))
             Text(
                 f.meaning.ifEmpty { f.form },

@@ -11,6 +11,7 @@ pub mod layout;
 pub mod learn;
 pub mod log;
 pub mod review;
+pub mod ruby;
 pub mod settings;
 pub mod swipe;
 pub mod telex;
@@ -28,6 +29,7 @@ pub use convert::Conversion;
 pub use layout::{Key, KeyKind, Layout, Page, Row};
 pub use learn::{Card, Ruby, StripWord, WordStatus};
 pub use review::Grade;
+pub use ruby::ruby_split;
 pub use typing::Suggestions;
 
 uniffi::setup_scaffolding!();
