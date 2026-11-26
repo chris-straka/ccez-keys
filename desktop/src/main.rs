@@ -848,6 +848,7 @@ mod app {
         sync_front_app(app);
         sync_fallback_tray(mtm, app);
         start_observers(app);
+        watch_running_apps(mtm);
         crate::menu_ipc::serve(dirs().join("menu.sock"), ipc_queue, wake.clone(), log);
         start_ax_thread(
             app.awake.clone(),
@@ -1350,10 +1351,61 @@ mod app {
         if clip_running {
             if app.fallback_tray.borrow().is_some() {
                 *app.fallback_tray.borrow_mut() = None;
+                log("info", "fallback tray icon hidden: ccez-clip is running");
             }
         } else if app.fallback_tray.borrow().is_none() {
             *app.fallback_tray.borrow_mut() = build_fallback_tray(mtm, app);
+            log("info", "fallback tray icon shown: ccez-clip is not running");
         }
+    }
+
+    objc2::define_class!(
+        /// Key-value observer on NSWorkspace.runningApplications: unlike the
+        /// launch/terminate notifications it also fires for accessory
+        /// (LSUIElement) apps such as ccez-clip.
+        #[unsafe(super(objc2_foundation::NSObject))]
+        #[thread_kind = objc2::MainThreadOnly]
+        #[name = "CcezKeysRunningWatcher"]
+        struct RunningWatcher;
+
+        impl RunningWatcher {
+            #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
+            fn observe(
+                &self,
+                _key_path: Option<&NSString>,
+                _object: Option<&objc2::runtime::AnyObject>,
+                _change: Option<&objc2::runtime::AnyObject>,
+                _context: *mut std::ffi::c_void,
+            ) {
+                // KVO may fire off the main thread: hop to it.
+                unsafe extern "C" {
+                    static _dispatch_main_q: u8;
+                    fn dispatch_async_f(queue: *const u8, context: *mut std::ffi::c_void, work: extern "C" fn(*mut std::ffi::c_void));
+                }
+                extern "C" fn on_main(_: *mut std::ffi::c_void) {
+                    if let Some(mtm) = MainThreadMarker::new()
+                        && let Some(app) = APP_REF.with(|c| c.get())
+                    {
+                        autoreleasepool(|_| sync_fallback_tray(mtm, app));
+                    }
+                }
+                unsafe { dispatch_async_f(&_dispatch_main_q as *const u8, std::ptr::null_mut(), on_main) };
+            }
+        }
+    );
+
+    /// Re-check the fallback icon whenever any app starts or quits.
+    fn watch_running_apps(mtm: MainThreadMarker) {
+        use objc2::rc::Retained;
+        use objc2::{msg_send, runtime::AnyObject};
+        let watcher: Retained<RunningWatcher> = unsafe { msg_send![mtm.alloc::<RunningWatcher>(), init] };
+        let ws = NSWorkspace::sharedWorkspace();
+        let key = NSString::from_str("runningApplications");
+        // Options 0: the callback re-reads the list itself.
+        unsafe {
+            let _: () = msg_send![&*ws, addObserver: &*watcher as &AnyObject, forKeyPath: &*key, options: 0usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
+        }
+        std::mem::forget(watcher);
     }
 
     fn needs_ui_timer(app: &App) -> bool {
