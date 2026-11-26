@@ -33,7 +33,9 @@ https://claude.ai/artifact/BMPuXSqMHX8s5msaQwv6NV
   locked, paused or in quiet apps.
 - Shares `ccez-clip`'s menu bar feather: when `ccez-clip` runs, its menu is
   served over `menu.sock` inside `ccez-clip`'s popup settings; otherwise it
-  shows its own feather fallback icon.
+  shows its own feather fallback icon. It finds `ccez-clip` coming and going by
+  observing `NSWorkspace.runningApplications` (the launch/quit notifications skip
+  accessory apps) and logs each show/hide of the fallback icon to `mac.log`.
 - Apple's on-device translation (macOS 15+, Translation framework) through
   a small Swift helper; the AI rewords after a pause, answers cached.
 
