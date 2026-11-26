@@ -120,10 +120,11 @@ ends with GATE PASS or GATE FAIL.
   on mac). On main the Android build passes on the Mac (18 unit tests) and
   fails on the Linux worker, so a Linux run can't tell the work from the
   machine. SWE builds and checks run on the Mac mini anyway.
-- 2026-11-26: typing.rs's `fast_enough_for_each_key` (a 4 ms clock) missed
-  its time on the busy Mac in the first attempt's check while every other
-  check passed. The gate now runs it again alone, up to three times, when
-  it is the suite's only failure. Don't change that test.
+- 2026-11-26: typing.rs's `fast_enough_for_each_key` (a 4 ms clock) misses
+  its time on the busy fleet Mac with nothing changed: it failed in this
+  goal's checks, alone and in the suite, on a branch that touches no typing
+  code. The gate skips it in the suite, runs it on its own and prints its
+  time as INFO, never counted. Don't change that test.
 - 2026-11-26: the second run skips the baseline (`--baseline-on ''`): the
   gate at 07f550b failed on main on the Mac with the goal's 13 reasons
   (fleet job 5avbr4vs), and the only change since (the retry above) acts
