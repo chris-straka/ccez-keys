@@ -124,12 +124,8 @@ class Strip(private val ui: UiState) {
     private fun defaultLang() = app.text("languages.default")
 
     /** Where the strip translates to, in turn. */
-    private fun targets(typing: String): List<String> {
-        val def = defaultLang()
-        val learning = app.strings("languages.learning")
-        return if (typing != def && typing in learning) listOf(def)
-        else learning.filter { it != typing && Translator.supports(it) }
-    }
+    private fun targets(typing: String): List<String> =
+        engine.stripLanguages(typing).filter { Translator.supports(it) }
 
     private var polite = false
     private var refineJob: Job? = null

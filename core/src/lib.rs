@@ -537,6 +537,18 @@ impl Engine {
         self.lock().settings.strings(&key)
     }
 
+    /// Languages the learning strip previews in, in order.
+    pub fn strip_languages(&self, typing: String) -> Vec<String> {
+        let s = self.lock();
+        let default = s.settings.get("languages.default").and_then(|v| v.as_str()).unwrap_or("en").to_string();
+        let learning = s.settings.strings("languages.learning");
+        if typing != default && learning.iter().any(|l| l == &typing) {
+            return vec![default];
+        }
+        let hidden = s.settings.strings("learning.strip_hidden");
+        learning.into_iter().filter(|l| l != &typing && !hidden.iter().any(|h| h == l)).collect()
+    }
+
     /// Sets one setting from JSON (`true`, `105`, `["fr","ja"]`); a bare
     /// word is taken as a string. Returns the stored value.
     pub fn set_setting(&self, key: String, value: String) -> Result<String, KeysError> {
