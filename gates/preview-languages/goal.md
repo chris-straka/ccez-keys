@@ -120,3 +120,7 @@ ends with GATE PASS or GATE FAIL.
   on mac). On main the Android build passes on the Mac (18 unit tests) and
   fails on the Linux worker, so a Linux run can't tell the work from the
   machine. SWE builds and checks run on the Mac mini anyway.
+- 2026-11-26: typing.rs's `fast_enough_for_each_key` (a 4 ms clock) missed
+  its time on the busy Mac in the first attempt's check while every other
+  check passed. The gate now runs it again alone, up to three times, when
+  it is the suite's only failure. Don't change that test.
