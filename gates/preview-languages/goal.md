@@ -113,3 +113,10 @@ through `targets`.
 Run `check` (the gate through fleet) when you think it passes; read its
 output, fix, and run it again. The gate prints PASS or FAIL per check and
 ends with GATE PASS or GATE FAIL.
+
+## Log
+
+- 2026-11-26: the gate runs on a Mac only (`--fleet-arg=--mac`, baseline
+  on mac). On main the Android build passes on the Mac (18 unit tests) and
+  fails on the Linux worker, so a Linux run can't tell the work from the
+  machine. SWE builds and checks run on the Mac mini anyway.

@@ -20,10 +20,12 @@ UI=android/app/src/main/kotlin/uk/ccez/keys/ui/KeyboardUi.kt
 OUT="${FLEET_ARTIFACTS:-$PWD/gate-out}/preview-languages"
 rm -rf "$OUT"
 mkdir -p "$OUT"
-# This run's own cargo target folder (fleet may share one per repo): no
-# other job can swap the binaries under it. Removed at exit.
-export CARGO_TARGET_DIR="$PWD/target/gate-preview-$(git rev-parse --short=12 HEAD)-$$"
-trap 'rm -rf "$CARGO_TARGET_DIR"' EXIT
+# Fleet gives each job a build folder of its own (CARGO_TARGET_DIR, warm
+# from earlier jobs). Without one, this run's own, removed at exit.
+if [ -z "${CARGO_TARGET_DIR:-}" ]; then
+  export CARGO_TARGET_DIR="$PWD/target/gate-preview-$$"
+  trap 'rm -rf "$CARGO_TARGET_DIR"' EXIT
+fi
 FAILS=0
 pass() { echo "PASS  $1"; }
 fail() {
@@ -79,7 +81,7 @@ for t in \
     pass "core test $t"
   else
     fail "core test $t"
-    grep -E "^test $t |^---- $t |panicked at|assertion|left:|right:" "$OUT/core-tests.log" | head -6 | detail
+    grep -E "^test $t |^---- $t |panicked at|assertion .*failed|^  left:|^ right:" "$OUT/core-tests.log" | head -6 | detail
   fi
 done
 if [ "$core_rc" -eq 0 ] && grep -q '^test result: ok' "$OUT/core-tests.log" && ! grep -q '^test result: FAILED' "$OUT/core-tests.log"; then
