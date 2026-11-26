@@ -1,0 +1,160 @@
+# Every public function of the core at the base (core/src/*.rs, leading spaces trimmed):
+# each line must still be in core/src (the launcher builds this core read-only).
+pub fn ai_allowed(input_type: i32, ime_options: i32) -> bool {
+pub fn ai_test(&self, key: String) -> Result<String, KeysError> {
+pub fn around(lang: &Lang, typed: &str, after: &str, keys: &Neighbours, n: usize) -> Vec<String> {
+pub fn ask(&self, messages: Vec<ChatMessage>, key: String, sink: Box<dyn AnswerSink>) -> Result<AskReply, KeysError> {
+pub fn ask_start(&self, typed: String, question: String) -> Vec<ChatMessage> {
+pub fn ask_start(typed: &str, question: &str) -> Vec<ChatMessage> {
+pub fn block_on<F: std::future::Future>(&self, f: F) -> F::Output {
+pub fn bool(&self, key: &str) -> bool {
+pub fn build_chinese(dict_gz: &Path, freq: &str, out: &Path) -> std::io::Result<usize> {
+pub fn build_converter(&self, lang: String, dict_path: String, freq: String) -> Result<u32, KeysError> {
+pub fn build_japanese(dict_gz: &Path, freq: &str, out: &Path) -> std::io::Result<usize> {
+pub fn card(&self, lang: &str, word: &str, lemma: &str) -> Option<Card> {
+pub fn card_meaning(&self, lang: String, word: String) -> String {
+pub fn chosen(lang: &str, word: &str) -> Option<&'static str> {
+pub fn chosen_shown(lang: &str, word: &str) -> Option<&'static str> {
+pub fn common(lang: &Lang, word: &str) -> bool {
+pub fn common_english(w: &str) -> bool {
+pub fn common_word(&self, lang: String, word: String) -> bool {
+pub fn convert(&self, input: &str, japanese: bool) -> Vec<Conversion> {
+pub fn convert(&self, lang: String, input: String) -> Vec<Conversion> {
+pub fn correct(&self, lang: String, text: String, key: String) -> Result<Option<Fix>, KeysError> {
+pub fn correction_messages(lang: &str, text: &str, explain_in: &str) -> Vec<Message> {
+pub fn current_language(&self) -> String {
+pub fn decode(lex: &Lexicon, path: &str, n: usize) -> Vec<String> {
+pub fn def(key: &str) -> Option<&'static Def> {
+pub fn delete_span(before: String) -> u32 {
+pub fn detect_language(&self, current: String, words: Vec<String>) -> Option<String> {
+pub fn dict_dir(dir: &Path) -> PathBuf {
+pub fn dictionary_dir(&self) -> String {
+pub fn dictionary_ready(&self, lang: String) -> bool {
+pub fn digit_joins(before: String) -> bool {
+pub fn due(&self, lang: &str, word: &str, now: u64) -> bool {
+pub fn due_at(&self, lang: &str, word: &str) -> Option<u64> {
+pub fn export(&self) -> String {
+pub fn fit(lang: &Lang, words: &[String]) -> f32 {
+pub fn fixes(lang: &str) -> HashMap<String, String> {
+pub fn fold(s: &str) -> String {
+pub fn forget(&self, lang: String, word: String) -> bool {
+pub fn forget(user: &mut UserWords, word: &str) -> bool {
+pub fn form_of(meaning: &str) -> Option<String> {
+pub fn form_tag(meaning: String) -> String {
+pub fn from_json(text: &str) -> Self {
+pub fn from_ranked(text: &str) -> Self {
+pub fn from_rows(rows: &[Vec<String>]) -> Self {
+pub fn get(&self, key: &str) -> Option<&Value> {
+pub fn gloss(&self, context: String, word: String, key: String) -> Result<String, KeysError> {
+pub fn grade(&mut self, lang: &str, word: &str, g: Grade, now: u64) {
+pub fn grade_screen_word(&self, lang: String, word: String, grade: Grade) {
+pub fn grade_with_come_back(&mut self, lang: &str, word: &str, g: Grade, now: u64, come_back: u64) {
+pub fn has(&self, lang: &str) -> bool {
+pub fn has_converter(&self, lang: String) -> bool {
+pub fn has_words(&self, text: String) -> bool {
+pub fn insert(&mut self, word: &str, logf: f32) {
+pub fn install_dictionary(&self, lang: String, path: String) -> Result<(), KeysError> {
+pub fn install_pitch(&self, path: String) -> Result<(), KeysError> {
+pub fn is_word(lang: &Lang, w: &str) -> bool {
+pub fn is_word_char(c: char) -> bool {
+pub fn knows(&self, word: &str) -> bool {
+pub fn knows_word(&self, lang: String, word: String) -> bool {
+pub fn layout(&self, lang: &str, page: Page) -> Layout {
+pub fn layout(&self, lang: String, page: Page) -> Layout {
+pub fn learn(&self, lang: String, prev: String, word: String, strong: bool) {
+pub fn learn(lang: &mut Lang, prev: &str, word: &str, strong: bool) {
+pub fn learning_words(&self) -> Vec<LearningWord> {
+pub fn len(&self) -> usize {
+pub fn listed(lang: &Lang, word: &str) -> bool {
+pub fn load() -> Self {
+pub fn load(dir: &Path) -> Review {
+pub fn load(path: &Path) -> Option<Self> {
+pub fn load_next(&self, lang: String, text: String) -> u32 {
+pub fn load_words(&self, lang: String, text: String) -> u32 {
+pub fn loaded(&self, lang: String) -> bool {
+pub fn log(&self, level: String, event: String, ctx: String) {
+pub fn log_tail(&self, lines: u32) -> String {
+pub fn looks_secret(text: String) -> bool {
+pub fn mark_after_space(lang: String, mark: String, before: String) -> Option<String> {
+pub fn merge(&mut self, json: &str) -> usize {
+pub fn mistakes(&self) -> String {
+pub fn mixed(words: Vec<(String, String)>) -> Vec<(String, String)> {
+pub fn neighbours(&self, lang: &str) -> Neighbours {
+pub fn new(dir: &Path) -> Self {
+pub fn new(dir: String) -> Arc<Self> {
+pub fn new(lex: Lexicon, user: UserWords) -> Self {
+pub fn next(&self, words: &[(String, String)], up: &[(String, String)], n: usize, now: u64, seed: usize) -> Vec<(String, String)> {
+pub fn note_mistake(&self, lang: String, written: String, fixed: String, why: String) {
+pub fn noun_after_verb(meaning: &str, pos: &[String]) -> String {
+pub fn of(before: &str, typed: &str) -> Self {
+pub fn parse_next(text: &str) -> HashMap<String, Vec<String>> {
+pub fn predict(&self, lang: String, prev: String) -> Vec<String> {
+pub fn predict(lang: &Lang, prev: &str) -> Vec<String> {
+pub fn reflexive(lang: &str, shown: &str) -> String {
+pub fn remove(lang: &mut Lang, word: &str) {
+pub fn remove_word(&self, lang: String, word: String) {
+pub fn restore(&mut self, lang: &str, word: &str, snap: Snapshot, now: u64) {
+pub fn review_due(&self, lang: String, word: String) -> bool {
+pub fn romaji(&self, input: String, finish: bool) -> Romaji {
+pub fn romaji(input: &str, finish: bool) -> (String, String) {
+pub fn romaji_to_kana(input: &str) -> (String, String) {
+pub fn romaji_word(&self, current: String, typed: String) -> Option<String> {
+pub fn same_folded(&self, word: &str) -> impl Iterator<Item = &Entry> {
+pub fn save(&self) {
+pub fn schema() -> String {
+pub fn screen_words(&self, up: Vec<LearningWord>) -> Vec<ScreenWord> {
+pub fn search(&self, typed: &str, max: f32, completions: usize, keys: &Neighbours) -> Vec<Cand> {
+pub fn sentence_capitals(input_type: i32, ime_options: i32, hint: String) -> bool {
+pub fn sentence_of(before: String) -> String {
+pub fn set(&mut self, key: &str, value: Value) -> Result<(), String> {
+pub fn set_current_language(&self, lang: String) {
+pub fn set_setting(&self, key: String, value: String) -> Result<String, KeysError> {
+pub fn set_status(&self, lang: &str, word: &str, status: Status) {
+pub fn set_word_status(&self, lang: String, word: String, status: WordStatus) {
+pub fn setting(&self, key: String) -> Result<String, KeysError> {
+pub fn setting_bool(&self, key: String) -> bool {
+pub fn setting_strings(&self, key: String) -> Vec<String> {
+pub fn settings_json(&self) -> String {
+pub fn settings_schema(&self) -> String {
+pub fn short_gloss(word: &str, meanings: &[String], base: impl Fn(&str) -> Vec<String>) -> (String, String, Vec<String>) {
+pub fn short_grammar(grammar: &str) -> String {
+pub fn snapshot(&self, lang: &str, word: &str) -> Snapshot {
+pub fn space_after_mark(before: String) -> bool {
+pub fn space_makes_stop(before: String) -> bool {
+pub fn starts_sentence(before: String) -> bool {
+pub fn step_language(&self, step: i32) -> String {
+pub fn strings(&self, key: &str) -> Vec<String> {
+pub fn strip_words(&self, lang: String, text: String) -> Vec<StripWord> {
+pub fn suggest(&self, lang: String, typed: String) -> Suggestions {
+pub fn suggest(lang: &Lang, others: &[&Lang], typed: &str, keys: &Neighbours, autocorrect: bool) -> Suggestions {
+pub fn suggest_around(&self, lang: String, typed: String, after: String, n: u32) -> Vec<String> {
+pub fn suggest_in(&self, lang: String, typed: String, before: String) -> Suggestions {
+pub fn suggest_in(lang: &Lang, others: &[&Lang], typed: &str, ctx: &Context, keys: &Neighbours, autocorrect: bool) -> Suggestions {
+pub fn swipe(&self, lang: String, path: String) -> Vec<String> {
+pub fn sync(&self, server: &str, from: &str) -> Result<u32, String> {
+pub fn sync_words(&self, from: String) -> Result<u32, KeysError> {
+pub fn tags_of(meaning: &str) -> Vec<String> {
+pub fn tail(&self, n: usize) -> String {
+pub fn telex(&self, raw: String) -> String {
+pub fn telex(raw: &str) -> String {
+pub fn to_fix(written: &str, answer: &str) -> Option<Fix> {
+pub fn to_json(&self) -> String {
+pub fn to_katakana(s: &str) -> String {
+pub fn to_messages(v: &[ChatMessage]) -> Vec<Message> {
+pub fn to_reply(r: ai::Reply) -> AskReply {
+pub fn tokens(&self, lang: &str, text: &str) -> Vec<StripWord> {
+pub fn translate_ai(&self, text: String, from: String, to: String, polite: bool, key: String) -> Result<String, KeysError> {
+pub fn typing_languages(&self) -> Vec<String> {
+pub fn unload(&self, lang: String) {
+pub fn untagged(meaning: &str) -> &str {
+pub fn version(&self) -> String {
+pub fn very_common(lang: &Lang, word: &str) -> bool {
+pub fn wait_words(secs: u64) -> String {
+pub fn with_case(typed: &str, word: &str) -> String {
+pub fn with_pos(tags: Vec<String>, pos: Vec<String>, meaning: &str) -> Vec<String> {
+pub fn with_review<T>(&self, f: impl FnOnce(&mut review::Review) -> T) -> T {
+pub fn word_before(before: String, skip: u32) -> String {
+pub fn word_card(&self, lang: String, word: String, lemma: String) -> Option<Card> {
+pub fn word_face(&self, lang: &str, word: &str) -> (String, String, Vec<String>) {
+pub fn word_status(&self, lang: String, word: String) -> WordStatus {
+pub fn write(&self, level: &str, event: &str, ctx: &str) {
